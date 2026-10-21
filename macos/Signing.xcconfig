@@ -1,0 +1,18 @@
+// Code signing for LivingMarble.xcodeproj.
+//
+// Your own signing details stay out of git: create Signing.local.xcconfig next to
+// this file (it is in .gitignore) with your Team ID, from developer.apple.com ›
+// Account › Membership details:
+//
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   CODE_SIGN_IDENTITY = Apple Development
+//
+// Set the team there, not under Signing & Capabilities in Xcode, which would write
+// it into the project file. Without the local file the app is signed to run on
+// this Mac only.
+
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Signing.local.xcconfig"

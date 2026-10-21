@@ -226,8 +226,23 @@ are no dependencies to download.
 open "macos/build/Living Marble.app"
 ```
 
-`--universal` builds for both Apple silicon and Intel Macs. To work on the
-code in Xcode, open `macos/Package.swift`.
+`--universal` builds for both Apple silicon and Intel Macs.
+
+To work on it or build it in Xcode, open `macos/LivingMarble.xcodeproj`. To
+sign it with your Apple developer account, create
+`macos/Signing.local.xcconfig` with your Team ID (git ignores that file, so
+your details are never pushed):
+
+```
+DEVELOPMENT_TEAM = ABCDE12345
+CODE_SIGN_IDENTITY = Apple Development
+```
+
+Without it the app is signed to run on your own Mac only. Set the team there
+rather than under *Signing & Capabilities*, which would write it into the
+project file. For a copy that opens on any Mac, choose *Product › Archive*,
+then *Distribute App › Direct Distribution*: Xcode signs it with your
+Developer ID, has Apple notarize it and exports *Living Marble.app*.
 
 Or build a disk image to install it from (*Living Marble* and an Applications
 shortcut to drag it onto). It is a universal build signed with your Developer

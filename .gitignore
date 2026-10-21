@@ -6,3 +6,4 @@ build/
 !linux/icons/*.png
 .DS_Store
 xcuserdata/
+macos/Signing.local.xcconfig
