@@ -2310,7 +2310,7 @@ class KingMothership : public ABattle {
             float best = 1e9f;
             for (int k = -1; k <= 1; ++k) {
               for (int e = 0; e < 2; ++e) {
-                float ang = std::atan2(0.8f, -0.6f) + 0.09f * (float)k;
+                float ang = 2.356f + 0.09f * (float)k;  // between the fill panel and the key light
                 vec3 look(std::cos(ang), 0, std::sin(ang));
                 vec3 cam = mid - look * (4.2f + 0.8f * (float)e) + vec3(0, 1.1f, 0);
                 float score = std::fabs(glm::dot(look, dir)) + 0.1f * (float)std::abs(k) + 0.2f * (float)e;
@@ -2327,7 +2327,7 @@ class KingMothership : public ABattle {
               }
             }
             s.target = mid + vec3(0, 1.8f, 0);
-            s.fov = 52.0f;
+            s.fov = 46.0f;
             s.focus = glm::length(s.pos - V);
             s.aperture = 4.0f;
             w.cam.setShot(s, 1.6f);
