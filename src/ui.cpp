@@ -81,6 +81,11 @@ void App::drawUI() {
   ImGui::TextColored(kGold, "Living Marble");
   ImGui::PopFont();
   ImGui::TextDisabled("3D Battle Chess");
+  {
+    const char* ver = "v" LM_VERSION;
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(ver).x);
+    ImGui::TextDisabled("%s", ver);
+  }
   ImGui::Separator();
   {
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -230,6 +235,8 @@ void App::drawUI() {
     for (int k = 0; k < 6; ++k)
       ImGui::BulletText("%s: %s, %s, %s", kPieces[k], battleStyleName(k, 0, pieceSet), battleStyleName(k, 1, pieceSet),
                         battleStyleName(k, 2, pieceSet));
+    ImGui::Spacing();
+    ImGui::TextDisabled("Living Marble %s", LM_VERSION);
     ImGui::End();
   }
 

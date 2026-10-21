@@ -19,6 +19,10 @@
 struct GLFWwindow;
 struct ImFont;
 
+#ifndef LM_VERSION  // set from project(VERSION) in CMakeLists.txt
+#define LM_VERSION "dev"
+#endif
+
 struct Options {
   int width = 1600, height = 900;
   int quality = 3;      // mesh/texture quality 0..3

@@ -11,7 +11,7 @@
 
 static void usage() {
   std::printf(
-      "Living Marble - 3D Battle Chess\n\n"
+      "Living Marble " LM_VERSION " - 3D Battle Chess\n\n"
       "  --fullscreen            start full screen (F11 or Alt+Enter toggles it)\n"
       "  --size WxH              window size (default 1600x900)\n"
       "  --quality 0..3          sculpting/texture detail (default 3)\n"
@@ -22,6 +22,7 @@ static void usage() {
       "  --dof                   depth of field: blur what the camera is not focused on\n"
       "  --mute                  no sound\n"
       "  --selftest              verify the move generator (perft)\n"
+      "  --version               print the version\n"
       "\n capture tools:\n"
       "  --shot file.png [--frames N] [--scenario 0|1|2|4]   (4: a gallery of ghosts)\n"
       "  --battle K --shots t1,t2,... [--prefix name]   (K: 0 pawn .. 5 king)\n"
@@ -40,6 +41,9 @@ int main(int argc, char** argv) {
     auto next = [&]() -> std::string { return i + 1 < argc ? std::string(argv[++i]) : std::string(); };
     if (a == "--help" || a == "-h") {
       usage();
+      return 0;
+    } else if (a == "--version") {
+      std::printf("Living Marble %s\n", LM_VERSION);
       return 0;
     } else if (a == "--fullscreen") o.fullscreen = true;
     else if (a == "--size") std::sscanf(next().c_str(), "%dx%d", &o.width, &o.height);

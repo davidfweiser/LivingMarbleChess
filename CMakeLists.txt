@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(LivingMarble VERSION 1.0 LANGUAGES C CXX)
+project(LivingMarble VERSION 1.2 LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 #  Living Marble - 3D Battle Chess
@@ -100,7 +100,8 @@ add_executable(living_marble
 
 target_include_directories(living_marble PRIVATE src)
 target_link_libraries(living_marble PRIVATE glfw glm::glm imgui)
-target_compile_definitions(living_marble PRIVATE GLFW_INCLUDE_NONE GLM_FORCE_SILENT_WARNINGS)
+target_compile_definitions(living_marble PRIVATE GLFW_INCLUDE_NONE GLM_FORCE_SILENT_WARNINGS
+                           LM_VERSION="${PROJECT_VERSION}")
 
 if(LM_ENABLE_AUDIO)
   target_include_directories(living_marble PRIVATE ${miniaudio_SOURCE_DIR})

@@ -29,7 +29,28 @@ On the Mac the game is a native app written in Swift: Metal graphics, an
 AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
 [`macos/`](macos)). The same Swift code runs on iPhone and iPad with touch
 controls (see [`ios/`](ios)). Windows and Linux use the C++/OpenGL version in
-`src/`. All versions play, look and sound the same.
+`src/`. All versions play, look and sound the same; the Windows/Linux version
+starts at a finer sculpting detail, *Ultra* graphics and no depth-of-field blur,
+while the Mac, iPhone and iPad keep lighter defaults.
+
+## Download
+
+The current version is **1.2**. For Linux (Debian, Ubuntu, Pop!_OS, Mint …)
+there is a ready-made package on the
+[Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest):
+
+```sh
+sudo apt install ./living-marble_1.2_amd64.deb   # or double-click it
+```
+
+Then start *Living Marble* from the app menu (`sudo apt remove living-marble`
+uninstalls it). On the Mac, `macos/build-dmg.sh` makes a signed disk image to
+install from; for Windows, iPhone and iPad, build it from source (see
+[Building](#building)).
+
+The game shows its version under the title in the panel and at the bottom of
+the Help window (F1), and `living_marble --version` prints it; on the Mac it is
+in *Living Marble › About Living Marble*.
 
 ## The battles
 
@@ -76,8 +97,8 @@ captured piece back to life and its ghost disappears.
 
 Switch armies with *Pieces* in the panel (on iPhone and iPad: Settings; on the
 Mac also *Game › Pieces*). The pieces on the board swap in place; the first
-time, the medieval figures are sculpted in the background (a few seconds)
-while the game goes on. `--pieces medieval` starts with them.
+time, the medieval figures are sculpted in the background (about ten seconds
+at the default detail) while the game goes on. `--pieces medieval` starts with them.
 
 - **Pawn** — a man-at-arms in a kettle hat and gambeson, with spear and kite shield
 - **Knight** — a knight in a great helm on a caparisoned horse, with a lance
@@ -175,7 +196,7 @@ mothership's drone and a sputtering disintegrator.
 - Inlaid maple and walnut board with a lacquer clear-coat, **planar
   reflections** of the pieces, brass inlay and gold coordinate lettering
 - SSAO, baked per-vertex ambient occlusion and analytic contact shadows
-- 4× MSAA HDR pipeline, physically based bloom, optional bokeh depth of
+- MSAA HDR pipeline (8× on *Ultra*), physically based bloom, optional bokeh depth of
   field (off by default so every piece stays sharp; strong during cinematic
   battle shots when on), ACES filmic tone mapping, vignette and film grain
 - Voronoi fracture: every piece is pre-shattered into 10–16 real chunks
@@ -207,7 +228,7 @@ shortcut to drag it onto). It is a universal build signed with your Developer
 ID certificate, so it opens on other Macs:
 
 ```sh
-macos/build-dmg.sh                         # -> macos/build/LivingMarble-1.0.dmg
+macos/build-dmg.sh                         # -> macos/build/LivingMarble-1.2.dmg
 NOTARY_PROFILE=notary macos/build-dmg.sh   # also notarize it with Apple
 ```
 
@@ -274,15 +295,22 @@ sudo cmake --install build                # or for everyone, into /usr/local
 Then start *Living Marble* from the app menu, or run `living_marble`.
 
 Or build a `.deb` package (Debian, Ubuntu, Pop!_OS, Mint …) that installs into
-`/usr` and uninstalls cleanly with `sudo apt remove living-marble`:
+`/usr` and uninstalls cleanly with `sudo apt remove living-marble` — the same
+package that is on the Releases page:
 
 ```sh
-(cd build && cpack -G DEB)                              # -> build/living-marble_1.0_amd64.deb
-sudo apt install ./build/living-marble_1.0_amd64.deb   # or double-click it
+(cd build && cpack -G DEB)                              # -> build/living-marble_1.2_amd64.deb
+sudo apt install ./build/living-marble_1.2_amd64.deb   # or double-click it
 ```
 
-On startup the pieces are sculpted and fractured procedurally — this takes a
-few seconds (shown on the loading screen).
+The version number comes from `project(LivingMarble VERSION …)` in
+`CMakeLists.txt` (and `CFBundleShortVersionString` / `MARKETING_VERSION` for
+the Mac and iOS apps).
+
+On startup the pieces are sculpted and fractured procedurally — at the default
+detail (`--quality 3`) this takes about 5–10 seconds on a fast multi-core PC,
+longer when starting with the medieval or alien army (shown on the loading
+screen). On a slower computer `--quality 1` starts much quicker.
 
 ## Controls
 
@@ -332,7 +360,8 @@ search per move).
 
 ## Command-line options
 
-The Mac app takes the same options when started from Terminal:
+The Mac app takes the same options when started from Terminal (except
+`--dof`, `--version` and `--quality 3`, which are Windows/Linux only):
 `"macos/build/Living Marble.app/Contents/MacOS/LivingMarble" --demo`. There,
 `--size` is in points, so screenshots on a Retina screen come out at twice that
 many pixels, and screenshots show the 3D scene without the interface panels.
@@ -349,6 +378,7 @@ many pixels, and screenshots show the 3D scene without the interface panels.
 --dof                   depth of field: blur what the camera is not focused on
 --mute                  no sound
 --selftest              verify the move generator (perft)
+--version               print the version
 ```
 
 Capture tools (handy for making videos): `--shot file.png [--frames N]`,
@@ -360,9 +390,11 @@ times, with `--battle K` or with `--fen "<FEN>" --move e2e4` for any move),
 through the battles), `--scenario 4` (a gallery of ghosts on both sides),
 `--no-ui`. All of them work with `--pieces medieval` and `--pieces alien`.
 
-If the frame rate is low, open *Graphics* in the panel and pick *Medium* or
-*Low* (turns off depth of field, reflections and SSAO and lowers MSAA and the
-shadow map size). *Depth of field* in the same section (or `--dof`) brings
+*Ultra*, the default, renders at the screen's full resolution (on a 4K screen
+too); *High* caps the internal resolution at 1440p. If the frame rate is low,
+open *Graphics* in the panel and pick *High*, *Medium* or *Low* (*Medium*
+turns off depth of field and lowers MSAA and the shadow map size; *Low* also
+turns off reflections and SSAO). *Depth of field* in the same section (or `--dof`) brings
 back the camera-focus blur on *High* and *Ultra*.
 
 ## How it is built
