@@ -153,4 +153,30 @@ if(UNIX AND NOT APPLE)
                       "${CMAKE_INSTALL_PREFIX}/${LM_DATADIR}/applications" ERROR_QUIET)
     endif()
   ]])
+
+  # --- .deb package ------------------------------------------------------------
+  #   cd build && cpack -G DEB          -> build/living-marble_<version>_amd64.deb
+  #   sudo apt install ./build/living-marble_<version>_amd64.deb
+  set(CPACK_PACKAGE_NAME living-marble)
+  set(CPACK_PACKAGE_VENDOR "David Weiser")
+  set(CPACK_PACKAGE_CONTACT "David Weiser <davidfweiser@gmail.com>")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "3D battle chess with living marble, medieval and alien armies")
+  string(CONCAT CPACK_PACKAGE_DESCRIPTION
+      "Chess on a floating lacquered board where the pieces come alive and fight\n"
+      "for every capture. Play the marble set, whose pieces shatter, or the medieval\n"
+      "and alien armies, with a battle for every kind of capture; captured pieces\n"
+      "come back as ghosts to cheer their side on. Play the computer at five\n"
+      "strengths, a friend on the same screen, or watch the AI play itself.")
+  set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/davidfweiser/LivingMarbleChess")
+  set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
+  set(CPACK_INSTALL_PREFIX /usr)  # (with DESTDIR staging this is the prefix that counts)
+  set(CPACK_SET_DESTDIR ON)       # stage with DESTDIR so the cache refresh above stays out of the package
+  set(CPACK_STRIP_FILES ON)
+  set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+  set(CPACK_DEBIAN_PACKAGE_SECTION games)
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+  # GLFW and miniaudio load these at run time, so dpkg-shlibdeps cannot see them
+  set(CPACK_DEBIAN_PACKAGE_DEPENDS "libgl1, libx11-6, libxrandr2, libxcursor1, libxi6, libxinerama1")
+  set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "libasound2t64 | libasound2, libpulse0")
+  include(CPack)
 endif()

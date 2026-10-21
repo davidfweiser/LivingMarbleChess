@@ -259,6 +259,14 @@ sudo cmake --install build                # or for everyone, into /usr/local
 
 Then start *Living Marble* from the app menu, or run `living_marble`.
 
+Or build a `.deb` package (Debian, Ubuntu, Pop!_OS, Mint …) that installs into
+`/usr` and uninstalls cleanly with `sudo apt remove living-marble`:
+
+```sh
+(cd build && cpack -G DEB)                              # -> build/living-marble_1.0_amd64.deb
+sudo apt install ./build/living-marble_1.0_amd64.deb   # or double-click it
+```
+
 On startup the pieces are sculpted and fractured procedurally — this takes a
 few seconds (shown on the loading screen).
 
