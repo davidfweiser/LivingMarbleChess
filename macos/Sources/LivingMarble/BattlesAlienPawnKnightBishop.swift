@@ -19,8 +19,15 @@ final class PawnRayGun: ABattle {
     let v = w.actors[plan.victim]
     let c = victimCenter(w)
     let side = vec3(-dir.z, 0, dir.x)
-    if k == 0 { return flat(c) + side * 0.45 + dir * 0.6 }  // wide to the left, into the board
-    if k == 1 { return c + side * -0.32 + vec3(0, v.height() * 0.45, 0) + dir * 0.9 }  // high and right, over the board
+    if k == 0 {  // wide to the left, into the board
+      let p: vec3 = flat(c) + side * 0.45
+      return p + dir * 0.6
+    }
+    if k == 1 {  // high and right, over the board
+      let p: vec3 = c + side * -0.32
+      let up = vec3(0, v.height() * 0.45, 0)
+      return p + up + dir * 0.9
+    }
     return c
   }
 

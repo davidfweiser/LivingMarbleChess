@@ -123,7 +123,9 @@ final class RookStompA: ABattle {
       if pt <= dt + 1e-6 {
         w.sound(.grind, 0.4, a.pos, 1.6)
         let side = vec3(-dir.z, 0, dir.x)
-        dodge = V + side * (w.fx.rnd() < 0.5 ? 0.42 : -0.42) + dir * 0.1
+        let off: Float = w.fx.rnd() < 0.5 ? 0.42 : -0.42
+        let d: vec3 = V + side * off
+        dodge = d + dir * 0.1
       }
       let d = clamp((pt - 0.25) / 0.3, 0, 1)
       v.pos = mix(V, dodge, easeInOut(d))
@@ -523,7 +525,8 @@ final class QueenTail: ABattle {
       if u >= 0.6 && !struck {
         struck = true
         let side = vec3(-dir.z, 0, dir.x)
-        flight.launch(v, dir * 1.2 + side * 3.4 + vec3(0, 4.2, 0), 12)
+        let kick: vec3 = dir * 1.2 + side * 3.4
+        flight.launch(v, kick + vec3(0, 4.2, 0), 12)
         w.sound(.clack, 1, victimCenter(w), 0.7)
         w.sound(.boing, 0.6, victimCenter(w), 0.9)
         w.fx.sparks(victimCenter(w), side, 25, 3.0, 0.6, armyLight(a.color) * 3)

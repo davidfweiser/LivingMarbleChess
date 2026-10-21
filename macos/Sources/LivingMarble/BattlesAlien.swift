@@ -210,7 +210,8 @@ final class AQuietMove: Staged {
         // castling: the overlord swings out in an arc while the tripod strides past
         let u = clamp(pt / 1.6, 0, 1), e = easeInOut(u)
         let toCenter = vec3(0, 0, a.color == 0 ? -1 : 1)
-        let W = (A + B) * 0.5 + toCenter * 1.6
+        let half: vec3 = (A + B) * 0.5
+        let W: vec3 = half + toCenter * 1.6  // well clear of the tripod's legs
         let pa = (1 - e) * (1 - e) * A
         let pw = 2 * (1 - e) * e * W
         let p = pa + pw + e * e * B
@@ -327,7 +328,8 @@ final class ACheckmate: Staged {
           var p = CamPose()
           p.target = k.pos + vec3(0, 0.7, 0) + k.forward() * 0.3
           let player = normalize(flat(w.cam.orbitPose().pos - k.pos) + vec3(1e-4))
-          let back = normalize(k.forward() * 1.0 + player * 0.45 + vec3(1e-4))
+          let fwd: vec3 = k.forward() * 1.0
+          let back = normalize(fwd + player * 0.45 + vec3(1e-4))
           p.pos = p.target + back * 3.2 + vec3(0, 1.0, 0)
           p.fov = 32
           p.focus = length(p.pos - p.target)
