@@ -156,7 +156,8 @@ std::vector<Buf> synthAll() {
     addDampedSine(b, 0, 95, 0.8f, 14, 1.0f);
     for (int i = 0; i < 90; ++i) {
       float t = -std::log(1.0f - r.next() * 0.995f) * 0.16f;
-      addDampedSine(b, t, 1800 + r.next() * 5500, 0.25f + 0.35f * r.next(), 120 + r.next() * 120);
+      float fr = 1800 + r.next() * 5500, a = 0.25f + 0.35f * r.next(), d = 120 + r.next() * 120;  // in this order
+      addDampedSine(b, t, fr, a, d);
     }
     normalize(b, 0.95f);
     S[SFX_SHATTER] = b;
