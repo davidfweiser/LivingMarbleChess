@@ -216,7 +216,7 @@ class AQuietMove : public Staged {
             // castling: the overlord swings out in an arc while the tripod strides past
             float u = glm::clamp(pt / 1.6f, 0.0f, 1.0f), e = easeInOut(u);
             vec3 toCenter = vec3(0, 0, a.color == 0 ? -1.0f : 1.0f);
-            vec3 W = (A + B) * 0.5f + toCenter * 0.8f;
+            vec3 W = (A + B) * 0.5f + toCenter * 1.6f;  // well clear of the tripod's legs
             vec3 p = (1 - e) * (1 - e) * A + 2 * (1 - e) * e * W + e * e * B;
             a.pos = vec3(p.x, 0, p.z);
             a.ctl.hover = 0.08f * std::sin(kPI * u);
@@ -2290,14 +2290,27 @@ class KingMothership : public ABattle {
         if (pt > 0.5f) {
           ship = w.addPuppet(al::AL_MOTHERSHIP, a.color, 2);
           shipPos = vec3(V.x, 12.0f, V.z);
-          if (Puppet* q = w.puppet(ship)) q->scale = S;
+          if (Puppet* q = w.puppet(ship)) {
+            q->scale = S;
+            q->pos = shipPos;
+            q->yaw = shipYaw;
+          }
           w.sound(SFX_DRONE, 1.0f, V);
-          if (w.cinematic) {  // down low, looking up at the sky
+          if (w.cinematic) {
+            // down low, looking up at the sky - towards the dark side of the room, away
+            // from the studio lights, and as side-on to the fighters as that allows
             vec3 mid = (A + V) * 0.5f;
-            vec3 side(-dir.z, 0, dir.x);
-            if (glm::dot(side, flat(w.cam.current.pos - mid)) < 0) side = -side;
             CamPose s;
-            s.pos = mid + side * 3.6f - dir * 0.6f + vec3(0, 0.45f, 0);
+            float best = 1e9f;
+            for (int k = -1; k <= 1; ++k) {
+              float ang = std::atan2(0.8f, -0.6f) + 0.17f * (float)k;
+              vec3 look(std::cos(ang), 0, std::sin(ang));
+              float score = std::fabs(glm::dot(look, dir)) + 0.2f * (float)std::abs(k);
+              if (score < best) {
+                best = score;
+                s.pos = mid - look * 3.6f + vec3(0, 0.45f, 0);
+              }
+            }
             s.target = mid + vec3(0, 1.7f, 0);
             s.fov = 52.0f;
             s.focus = glm::length(s.pos - V);
