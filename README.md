@@ -12,6 +12,11 @@ bishops and royals on their thrones and a gatehouse with a drawbridge — and a
 dragon living inside it. Its figures walk, ride, stand up from their thrones
 and fight with their own battles, sounds and music.
 
+And a third: **the aliens** (`--pieces alien`). Little green men with ray
+guns, flying saucers, big-brained psychics floating in glass jars, tripod war
+machines, an alien queen and an overlord on a hovering egg-chair throne — with
+their own (slightly ridiculous) battles and B-movie sound effects.
+
 Everything is procedural. There are **no model, texture or sound files**:
 the pieces are sculpted from signed-distance fields at startup, the board's
 inlaid wood is baked on the fly, and every sound effect is synthesised.
@@ -88,6 +93,52 @@ Sounds of the medieval army: a synthesised pipe organ and choir, thunder,
 storm wind, the dragon's roar and fire, drawbridge chains, grinding stone,
 giant footsteps, hooves and a whinny, a church bell, splintering lances and
 armoured steps.
+
+## The aliens
+
+The third army (*Pieces › Aliens*, or `--pieces alien`) is sculpted the same
+way, also in the background the first time.
+
+- **Pawn** — a little green man in a silver flight suit, with antennae, big
+  glossy black eyes and a ray gun. He waddles
+- **Knight** — a flying saucer with a little pilot under a glass canopy, a
+  ring of running lights and landing legs. It takes off, flies its move and
+  lands (the knight's move is a hop)
+- **Bishop** — a psychic with an enormous brain in a glass jar, floating
+  cross-legged on a hover disc, with a third eye
+- **Rook** — a tripod war machine: a domed pod with a glowing eye on three
+  long legs, with tentacles. It strides across the board
+- **Queen** — the alien queen: a crested head, a shell bodice, a long gown and
+  a tail with a spade on the end
+- **King** — the overlord: an enormous veined head with a monocle and a tiny
+  crown, a royal robe and medals, on a hovering egg-chair throne with a big
+  red button
+
+The heads, eyes, glass, chrome and lights get their own materials (glossy
+eyes, see-through glass canopies and jars, glowing running lights). White's
+aliens are green in silver suits with cyan lights, Black's purple in black
+suits with magenta lights.
+
+| Attacker | Attacks |
+|---|---|
+| Pawn   | **Ray gun** — two wild misses (the victim hops out of the way), then a hit that disintegrates it; he blows the smoke off the muzzle · **Goo grenade** — a blob of slime lobbed at the victim, which melts into a puddle · **Tongue** — it shoots out, wraps the victim, reels it in — gulp — and he burps up the pieces |
+| Knight | **Abduction** — the saucer beams the victim up, there are noises inside, and out it comes again in pieces · **Crop circle** — a laser carves a glowing ring into the board around the victim, then cuts it in two from above · **Cow drop** — a cow falls out of the saucer onto the victim, bounces, moos and is beamed back up |
+| Bishop | **Mind blast** — the victim swells under the strain and pops · **Hypnosis** — the victim dances in a daze, then blasts off into the sky and twinkles · **Telekinetic crush** — lifted into the air and squeezed until it bursts |
+| Rook   | **Heat ray** — the tripod rises up tall, sounds its horn and burns the victim to a cinder · **Stomp** — it raises a foot over the victim, which hops aside; a miss, so it tries again · **Tentacle toss** — the tentacles grab the victim, lift it, give it a shake and fling it away |
+| Queen  | **Acid spit** — she rears back and spits a glob of acid; the victim sizzles and melts · **Brood** — she lays an egg, which hops over to the victim and hatches a swarm of hungry little critters · **Tail strike** — she turns her back and her tail lashes round, swatting the victim away |
+| King   | **Shrink ray** — zap: the victim shrinks to a squeaking speck, and the throne floats over and sits on it · **The mothership** — he summons it; it fills the sky, beams the victim to dust and leaves · **Disintegrator** — it sputters; he gives it a tap, and it fires far too hard, blowing the victim apart and his throne backwards |
+
+Waiting aliens fidget: they look about with their antennae swivelling, hop
+nervously and yawn; saucers bob and whirl their light rings, tripods shift
+their weight and peer about. When castling, the overlord's throne
+swings out in an arc while the tripod strides past. A promoted little green
+man becomes a queen in a pillar of light; a mated overlord's throne sputters,
+drops to the board and shatters.
+
+Sounds of the aliens: ray-gun pews, a theremin, the saucer's hum and its
+tractor beam, gibbering, slurps and burps, boings, splats, a moo, the tripod's
+horn and heat ray, the shrink ray, sizzling acid, a hatching egg, the
+mothership's drone and a sputtering disintegrator.
 
 ## Graphics
 
@@ -247,7 +298,7 @@ many pixels, and screenshots show the 3D scene without the interface panels.
 --demo                  watch the AI play itself
 --level 0..4            AI strength
 --fen "<FEN>"           start from a position
---pieces marble|medieval  which army to play with (default marble)
+--pieces marble|medieval|alien  which army to play with (default marble)
 --mute                  no sound
 --selftest              verify the move generator (perft)
 ```
@@ -257,7 +308,8 @@ Capture tools (handy for making videos): `--shot file.png [--frames N]`,
 `--battle K` (stages one battle: 0 pawn … 5 king), `--style S` (forces battle
 style 0–2 instead of a random one), `--shots t1,t2,...` (screenshots at those
 times, with `--battle K` or with `--fen "<FEN>" --move e2e4` for any move),
-`--camera yaw,pitch,dist`, `--no-ui`. All of them work with `--pieces medieval`.
+`--camera yaw,pitch,dist`, `--no-ui`. All of them work with `--pieces medieval`
+and `--pieces alien`.
 
 If the frame rate is low, open *Graphics* in the panel and pick *Medium* or
 *Low* (turns off depth of field, reflections and SSAO and lowers MSAA and the
@@ -273,12 +325,15 @@ shadow map size).
 | `meshgen.*` | Sculpts the six pieces, Voronoi fracture chunks, slice halves, the sword, the board |
 | `medieval.h`, `medieval_mesh.cpp` | The medieval army: figures built from blended, painted SDF parts, each bound to a bone; skeletons and skin weights |
 | `medieval_pose.cpp` | Turns animation controls into bone matrices: walking, riding, standing up, drawbridge, dragon |
+| `alien.h`, `alien_mesh.cpp`, `alien_pose.cpp` | The aliens: their figures, skeletons and poses (waddling, hovering, the saucer's flight, the tripod's legs, tongues, tails) |
+| `sculpt.h`, `pose_kit.h` | The sculpting and posing kit shared by the medieval army and the aliens |
 | `textures.*` | Bakes the inlaid wooden board (grain, pores, seams, brass, lettering) and 3D noise |
 | `shaders.cpp` | All GLSL: PBR, PCSS, marble, lacquer, IBL generation, SSAO, DoF, bloom, tone mapping |
 | `renderer.*` | Render passes: shadow → reflection → prepass → SSAO → MSAA HDR → DoF → bloom → composite |
 | `animation.*` | The living-piece rig, rigid-body debris, props, lights, cinematic camera |
 | `battle.*`, `battle_kit.h` | Choreography for moves, castling, promotion, checkmate and the marble battles |
 | `battle_medieval.cpp` | The medieval army's moves, castling, checkmate and its 18 battles |
+| `battle_alien.cpp` | The aliens' moves, castling, checkmate and their 18 battles |
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
 | `audio.*` | Procedural sound synthesis (including a pipe organ and choir) and a small real-time mixer (miniaudio) |
 | `app.*`, `ui.cpp` | Window, game flow, input/picking, Dear ImGui interface |
@@ -291,11 +346,14 @@ same design:
 | `Chess.swift`, `AI.swift` | Rules and the alpha-beta engine (as `chess.*`, `ai.*`) |
 | `SDF.swift`, `MeshGen.swift`, `Textures.swift` | Procedural sculpting, fracture and the baked board (as `sdf.*`, `meshgen.*`, `textures.*`) |
 | `Medieval.swift`, `MedievalMesh.swift`, `MedievalPose.swift` | The medieval army, its skeletons and poses (as `medieval*`) |
+| `Alien.swift`, `AlienMesh.swift`, `AlienPose.swift` | The aliens, their skeletons and poses (as `alien*`) |
+| `Sculpt.swift`, `PoseKit.swift` | The shared sculpting and posing kit (as `sculpt.h`, `pose_kit.h`) |
 | `Shaders.swift` | All Metal Shading Language, compiled at startup |
 | `Renderer.swift` | The same render passes on Metal |
 | `Animation.swift`, `Particles.swift` | The living-piece rig, debris, props, lights, camera and particles |
 | `BattleCore.swift`, `Battles*.swift` | Moves, castling, promotion, checkmate and all 18 battle styles |
 | `BattlesMedieval*.swift` | The medieval army's choreography and battles (as `battle_medieval.cpp`) |
+| `BattlesAlien*.swift` | The aliens' choreography and battles (as `battle_alien.cpp`) |
 | `Audio.swift` | Procedural sounds mixed in real time through AVAudioEngine |
 | `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, capture tools |
 | `Interface.swift`, `AppDelegate.swift` | Native SwiftUI interface, window and menu bar |

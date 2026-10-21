@@ -18,7 +18,7 @@ final class GameModel {
   var slowOrbit = false
   var volume: Float = 0.8
   var gfxPreset = 2
-  var pieceSet = 0  // 0 Living Marble, 1 medieval (what the picker shows: the set being switched to)
+  var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens (what the picker shows: the set being switched to)
   var exposure: Float = 1
   var showUI = true
   var showHelp = false
@@ -40,6 +40,8 @@ final class GameModel {
   var audioOK = false
   var medievalBuilding = false  // the medieval army is being sculpted in the background
   var medievalProgress: Double = 0
+  var alienBuilding = false  // ... and the aliens
+  var alienProgress: Double = 0
   var screenshotsSaved = 0  // counts saved screenshots (the touch interface confirms each)
 }
 
@@ -266,9 +268,15 @@ private struct ControlPanel: View {
       Picker("Pieces", selection: Binding(get: { model.pieceSet }, set: { controller.setPieceSet($0) })) {
         Text("Living Marble").tag(0)
         Text("Medieval").tag(1)
+        Text("Aliens").tag(2)
       }
       if model.medievalBuilding {
         Text("Raising the medieval army... \(Int(model.medievalProgress * 100))%")
+          .font(.system(size: 12))
+          .foregroundStyle(Palette.dim)
+      }
+      if model.alienBuilding {
+        Text("The aliens are landing... \(Int(model.alienProgress * 100))%")
           .font(.system(size: 12))
           .foregroundStyle(Palette.dim)
       }

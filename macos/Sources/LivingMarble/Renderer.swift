@@ -203,6 +203,13 @@ final class Renderer {
   var libraryReady = false
   var medieval = (0..<MAsset.count).map { _ in PieceGpu() }
   var medievalReady = false
+  var alien = (0..<AAsset.count).map { _ in PieceGpu() }
+  var alienReady = false
+  /// The GPU meshes of a skinned set (1 medieval, 2 aliens) once uploaded, else nil.
+  func figures(_ set: Int) -> [PieceGpu]? {
+    if set == 2 { return alienReady ? alien : nil }
+    return medievalReady ? medieval : nil
+  }
   /// Bound as the bone palette of meshes that are not skinned.
   private var restBones = [mat4.identity]
 
@@ -223,6 +230,7 @@ final class Renderer {
 
   // pipelines (the MSAA-dependent ones are rebuilt when the sample count changes)
   private var mpShadow: MeshPipes!, mpPrepass: MeshPipes!, mpObjectRefl: MeshPipes!, mpObject: MeshPipes!
+  private var mpGlassRefl: MeshPipes!, mpGlass: MeshPipes!  // see-through items, blended
   private var psBoard: MTLRenderPipelineState!
   private var psBackground: MTLRenderPipelineState!, psParticle: MTLRenderPipelineState!
   private var psEnv: MTLRenderPipelineState!, psIrr: MTLRenderPipelineState!
@@ -397,6 +405,7 @@ final class Renderer {
                                                     mesh: true))
     mpPrepass = try meshPipes("prepass", fs: "prepassFS", color: hdr, depth: dep)
     mpObjectRefl = try meshPipes("object (reflection)", fs: "objectFS", color: hdr, depth: dep)
+    mpGlassRefl = try meshPipes("glass (reflection)", fs: "objectFS", color: hdr, depth: dep, blend: .premultiplied)
     psEnv = try makePipeline("envgen", vs: "fullscreenVS", fs: "envGenFS", color: hdr)
     psIrr = try makePipeline("irradiance", vs: "fullscreenVS", fs: "irradianceFS", color: hdr)
     psPrefilter = try makePipeline("prefilter", vs: "fullscreenVS", fs: "prefilterFS", color: hdr)
@@ -412,17 +421,18 @@ final class Renderer {
   }
 
   private func meshPipes(_ label: String, fs: String, color: MTLPixelFormat, depth: MTLPixelFormat,
-                         samples: Int = 1) throws -> MeshPipes {
+                         samples: Int = 1, blend: Blend = .none) throws -> MeshPipes {
     MeshPipes(plain: try makePipeline(label, vs: "meshVS", fs: fs, color: color, depth: depth, samples: samples,
-                                      mesh: true, dissolve: false),
+                                      blend: blend, mesh: true, dissolve: false),
               dissolve: try makePipeline(label + " (dissolve)", vs: "meshVS", fs: fs, color: color, depth: depth,
-                                         samples: samples, mesh: true, dissolve: true))
+                                         samples: samples, blend: blend, mesh: true, dissolve: true))
   }
 
   /// Pipelines of the multisampled main pass.
   private func buildMainPrograms(samples: Int) throws {
     let hdr = MTLPixelFormat.rgba16Float, dep = MTLPixelFormat.depth32Float
     mpObject = try meshPipes("object", fs: "objectFS", color: hdr, depth: dep, samples: samples)
+    mpGlass = try meshPipes("glass", fs: "objectFS", color: hdr, depth: dep, samples: samples, blend: .premultiplied)
     psBoard = try makePipeline("board", vs: "meshVS", fs: "boardFS", color: hdr, depth: dep, samples: samples,
                                mesh: true)
     psBackground = try makePipeline("background", vs: "fullscreenVS", fs: "backgroundFS", color: hdr, depth: dep,
@@ -621,23 +631,32 @@ final class Renderer {
     libraryReady = true
   }
 
-  func uploadMedieval(_ lib: MedievalLibrary) {
-    for k in 0..<MAsset.count {
-      let A = lib.asset[k]
-      medieval[k].lod0.upload(A.lod0, device: device)
-      medieval[k].lod1.upload(A.lod1, device: device)
-      medieval[k].shards = A.shards.map { f in
+  private func uploadFigures(_ gpu: inout [PieceGpu], _ assets: [PieceAssets]) {
+    for k in gpu.indices {
+      let A = assets[k]
+      gpu[k].lod0.upload(A.lod0, device: device)
+      gpu[k].lod1.upload(A.lod1, device: device)
+      gpu[k].shards = A.shards.map { f in
         let g = GpuMesh()
         g.upload(f.mesh, device: device)
         return g
       }
-      medieval[k].halves = A.halves.map { f in
+      gpu[k].halves = A.halves.map { f in
         let g = GpuMesh()
         g.upload(f.mesh, device: device)
         return g
       }
     }
+  }
+
+  func uploadMedieval(_ lib: MedievalLibrary) {
+    uploadFigures(&medieval, lib.asset)
     medievalReady = true
+  }
+
+  func uploadAlien(_ lib: AlienLibrary) {
+    uploadFigures(&alien, lib.asset)
+    alienReady = true
   }
 
   func uploadBoardTextures(albedo: TexImage, detail: TexImage, half: Float) {
@@ -733,9 +752,10 @@ final class Renderer {
   }
 
   private func drawItems(_ enc: MTLRenderCommandEncoder, _ sv: SceneView, _ pipes: MeshPipes, lowLod: Bool,
-                         shadowPass: Bool, reflectPass: Bool) {
+                         shadowPass: Bool, reflectPass: Bool, glass: Bool = false) {
     var bound: MTLRenderPipelineState?
     for it in sv.items {
+      if it.glass != glass { continue }
       if shadowPass && !it.castShadow { continue }
       if reflectPass && !it.reflect { continue }
       guard let m = (lowLod && it.meshLow != nil) ? it.meshLow : it.mesh, !m.isEmpty else { continue }
@@ -750,6 +770,20 @@ final class Renderer {
       setBones(enc, du.boneCount > 0 ? it.bones : restBones, Int(du.boneCount))
       draw(enc, m)
     }
+  }
+
+  /// See-through items (glass canopies): blended over everything solid, without
+  /// writing depth, inner (back) faces first. Leaves face culling at `cull` afterwards.
+  private func drawGlass(_ enc: MTLRenderCommandEncoder, _ sv: SceneView, _ pipes: MeshPipes, lowLod: Bool,
+                         reflectPass: Bool, cull: MTLCullMode) {
+    if !sv.items.contains(where: { $0.glass }) { return }
+    enc.setDepthStencilState(dsTest)
+    enc.setCullMode(.front)
+    drawItems(enc, sv, pipes, lowLod: lowLod, shadowPass: false, reflectPass: reflectPass, glass: true)
+    enc.setCullMode(.back)
+    drawItems(enc, sv, pipes, lowLod: lowLod, shadowPass: false, reflectPass: reflectPass, glass: true)
+    enc.setDepthStencilState(dsWrite)
+    enc.setCullMode(cull)
   }
 
   /// The skinning palette of the next draw (vertex buffer 3).
@@ -848,6 +882,7 @@ final class Renderer {
         pu.clip = 1
         bindLighting(enc, pu, sv, ssao: white)
         drawItems(enc, sv, mpObjectRefl, lowLod: true, shadowPass: false, reflectPass: true)
+        drawGlass(enc, sv, mpGlassRefl, lowLod: true, reflectPass: true, cull: .back)
         enc.endEncoding()
       }
       if let blit = cb.makeBlitCommandEncoder() {
@@ -967,6 +1002,13 @@ final class Renderer {
         enc.setFragmentBytes(&bg, length: MemoryLayout<BackgroundUniforms>.stride, index: 0)
         enc.setFragmentTexture(envCube, index: 0)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+
+        // glass (the background rebound texture 0: the lighting inputs go back on)
+        if sv.items.contains(where: { $0.glass }) {
+          bindLighting(enc, pu, sv, ssao: settings.ssao ? ssaoBlurTex : white)
+          drawGlass(enc, sv, mpGlass, lowLod: false, reflectPass: false, cull: .none)
+          enc.setDepthStencilState(dsTest)
+        }
 
         // particles, sorted back to front
         if !sv.particles.isEmpty, let buf = particleBuffer(slot: slot, count: sv.particles.count) {

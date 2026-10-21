@@ -25,7 +25,7 @@ struct PieceGpu {
 }
 
 enum Material: Int32 {
-  case white = 0, black = 1, sword = 2, iron = 3, medieval = 4
+  case white = 0, black = 1, sword = 2, iron = 3, medieval = 4, alien = 5, glass = 6
 }
 
 struct DrawItem {
@@ -46,8 +46,9 @@ struct DrawItem {
   var castShadow = true
   var reflect = true
   var groundAO = true
-  var bones: [mat4] = []  // skinned meshes (medieval figures), at most Medieval.maxBones
-  var team: Int32 = 0     // medieval: 0 white army, 1 black army
+  var glass = false       // see-through (drawn blended after everything solid)
+  var bones: [mat4] = []  // skinned meshes (medieval and alien figures), at most Medieval.maxBones
+  var team: Int32 = 0     // medieval / aliens: 0 white army, 1 black army
 }
 
 struct PointLight {

@@ -4,41 +4,14 @@
 import Foundation
 import simd
 
-private let PI: Float = 3.14159265
-private let X = vec3(1, 0, 0), Y = vec3(0, 1, 0), Z = vec3(0, 0, 1)
-@inline(__always) private func aa(_ a: Float, _ axis: vec3) -> quat { quat(angle: a, axis: axis) }
-/// Pitch a limb that hangs down: + swings it forward (+z).
-@inline(__always) private func swing(_ a: Float) -> quat { aa(-a, X) }
-/// Bend a knee: + folds the shin backwards.
-@inline(__always) private func knee(_ a: Float) -> quat { aa(a, X) }
-@inline(__always) private func smooth(_ t: Float) -> Float {
-  let t = clamp(t, 0, 1)
-  return t * t * (3 - 2 * t)
-}
-
-private struct Builder {
-  let s: MSkeleton
-  var R = [quat](repeating: .identity, count: Medieval.maxBones)
-  var off = [vec3](repeating: vec3(0), count: Medieval.maxBones)
-  var sc = [Float](repeating: 1, count: Medieval.maxBones)
-  init(_ sk: MSkeleton) { s = sk }
-
-  /// Rotate bone b about an arbitrary pivot (in its parent's space) instead of its joint.
-  mutating func rotateAbout(_ b: Int, _ q: quat, _ pivot: vec3) {
-    let j = s.joint[b]
-    R[b] = q * R[b]
-    off[b] += (pivot - j) - q * (pivot - j)
-  }
-  func finish(_ out: inout MPose) {
-    out.count = s.count
-    for b in 0..<s.count {
-      let j = s.joint[b]
-      let L = translate(mat4.identity, j + off[b]) * mat4_cast(R[b]) * scale(mat4.identity, vec3(sc[b])) *
-        translate(mat4.identity, -j)
-      out.bone[b] = s.parent[b] >= 0 ? out.bone[s.parent[b]] * L : L
-    }
-  }
-}
+// the pose kit (PoseKit.swift)
+private let PI = PoseKit.PI
+private let X = PoseKit.X, Y = PoseKit.Y, Z = PoseKit.Z
+@inline(__always) private func aa(_ a: Float, _ axis: vec3) -> quat { PoseKit.aa(a, axis) }
+@inline(__always) private func swing(_ a: Float) -> quat { PoseKit.swing(a) }
+@inline(__always) private func knee(_ a: Float) -> quat { PoseKit.knee(a) }
+@inline(__always) private func smooth(_ t: Float) -> Float { PoseKit.smooth(t) }
+private typealias Builder = PoseKit.Builder
 
 /// Men-at-arms walk; kings, queens and bishops can also get up from their thrones.
 private func humanPose(_ asset: Int, _ c: MControls, _ out: inout MPose) {

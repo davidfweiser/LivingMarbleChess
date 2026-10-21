@@ -28,7 +28,7 @@ struct Options {
   var selectSq = ""           // e.g. e2, pre-select a piece (screenshots)
   var loadingShot = ""        // capture the loading screen
   var scenario = 0            // canned positions for screenshots
-  var pieces = 0              // 0 Living Marble, 1 medieval
+  var pieces = 0              // 0 Living Marble, 1 medieval, 2 aliens
   var dumpSfx = ""
 
   static let usage = """
@@ -41,7 +41,7 @@ struct Options {
       --demo                  watch the AI play itself
       --level 0..4            AI strength
       --fen "<fen>"           start from a position
-      --pieces marble|medieval  which army to play with (default marble)
+      --pieces marble|medieval|alien  which army to play with (default marble)
       --mute                  no sound
       --selftest              verify the move generator (perft)
 
@@ -85,7 +85,7 @@ struct Options {
       case "--mute": o.noAudio = true
       case "--pieces":
         let v = next()
-        o.pieces = (v == "medieval" || v == "1") ? 1 : 0
+        o.pieces = (v == "medieval" || v == "1") ? 1 : ((v == "alien" || v == "aliens" || v == "2") ? 2 : 0)
       case "--selftest": o.selftest = true
       case "--shot": o.shotPath = next()
       case "--frames": o.frames = Int(next()) ?? o.frames

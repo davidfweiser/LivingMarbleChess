@@ -77,8 +77,8 @@ struct DrawU {
   float crack;
   float heat;
   float groundAO;
-  int mat;           // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure
-  int team;          // medieval: 0 white army, 1 black army
+  int mat;           // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass
+  int team;          // medieval / aliens: 0 white army, 1 black army
   int boneCount;     // > 0: skinned
   float stone;       // medieval: turned to salt
 };
@@ -546,6 +546,147 @@ void medievalSurface(int id, bool black, float3 o, float3 on, float aux, float3 
   }
 }
 
+// The aliens. The white army is green-skinned in silver and pearl with cyan
+// lights, the black army violet-skinned in black and gunmetal with magenta lights.
+float3 alienLight(bool black) { return black ? float3(1.0, 0.18, 0.62) : float3(0.25, 1.0, 0.92); }
+void alienSurface(int id, bool black, float3 o, float3 on, float aux, float3 texOffset, float3 V, float time,
+                  texture3d<float> noise, thread float3& albedo, thread float& rough, thread float& metal,
+                  thread float& wrap, thread float3& sss, thread float3& N, thread float3& emissive,
+                  thread float& specOcc) {
+  float n1 = noise.sample(sNoise, o * 3.3 + texOffset * 0.13).r;
+  float n2 = noise.sample(sNoise, o * 12.0 + texOffset * 0.07).g;
+  float n3 = noise.sample(sNoise, o * 41.0).b;
+  float NoV = saturate(dot(N, V));
+  if (id == 0 || id == 1) {  // skin: wet, mottled, translucent
+    float3 base = id == 0 ? (black ? float3(0.30, 0.13, 0.42) : float3(0.25, 0.52, 0.17))
+                          : (black ? float3(0.62, 0.45, 0.72) : float3(0.60, 0.80, 0.42));
+    float mottle = smoothstep(0.45, 0.75, noise.sample(sNoise, o * 9.0 + texOffset * 0.2).g);
+    albedo = base * (0.82 + 0.3 * n1) * (1.0 - 0.25 * mottle * float(id == 0));
+    rough = 0.3 + 0.18 * n2;
+    wrap = 0.5;
+    sss = (black ? float3(1.0, 0.35, 0.75) : float3(0.7, 1.0, 0.35)) * 1.3;
+    N = normalize(N + (float3(n2, n3, n1) - 0.5) * 0.12);
+  } else if (id == 2) {  // big glossy eyes
+    albedo = black ? float3(0.012, 0.004, 0.008) : float3(0.004, 0.008, 0.012);
+    rough = 0.04;
+    emissive += alienLight(black) * 0.05 * pow(1.0 - NoV, 3.0);  // a sheen deep in the eye
+  } else if (id == 3) {  // jumpsuit: satin
+    albedo = black ? float3(0.03, 0.026, 0.04) : float3(0.72, 0.74, 0.78);
+    albedo *= 0.9 + 0.15 * n1;
+    rough = 0.38 + 0.1 * n2;
+    metal = 0.25;
+    emissive += (black ? float3(0.25, 0.05, 0.35) : float3(0.2)) * pow(1.0 - NoV, 3.0) * 0.4;
+  } else if (id == 4) {  // chrome
+    albedo = black ? float3(0.26, 0.25, 0.29) : float3(0.93, 0.94, 0.96);
+    metal = 1.0;
+    rough = (black ? 0.16 : 0.07) + 0.06 * n2;
+  } else if (id == 5) {  // painted hull with panel seams and rivets
+    float a = atan2(o.x, o.z);
+    float r = length(o.xz);
+    float seamA = abs(fract(a * 12.0 / 6.2831853) - 0.5) * 2.0;
+    float seamR = abs(fract(r / 0.055 + o.y / 0.07) - 0.5) * 2.0;
+    float seam = (1.0 - smoothstep(0.0, 0.04, 1.0 - seamA)) + (1.0 - smoothstep(0.0, 0.05, 1.0 - seamR));
+    albedo = (black ? float3(0.045, 0.045, 0.055) : float3(0.84, 0.85, 0.87)) * (0.93 + 0.12 * n1);
+    albedo *= 1.0 - 0.55 * saturate(seam);
+    rough = (black ? 0.32 : 0.22) + 0.1 * n2;
+    metal = 0.15;
+  } else if (id == 6 || id == 18) {  // running lights (chasing round) and plasma
+    float3 c = alienLight(black);
+    float chase = id == 6 ? 0.35 + 0.65 * pow(0.5 + 0.5 * sin(atan2(o.x, o.z) * 6.0 - time * 7.0), 3.0)
+                          : 0.7 + 0.3 * sin(time * 9.0 + n1 * 6.0);
+    albedo = c * 0.3;
+    rough = 0.15;
+    emissive += c * chase * (id == 6 ? 5.0 : 3.5);
+  } else if (id == 7) {  // brain: pink folds, glistening
+    float f = noise.sample(sNoise, o * 24.0 + texOffset * 0.05).r;
+    float sulcus = 1.0 - smoothstep(0.0, 0.12, abs(f - 0.5));
+    albedo = float3(0.86, 0.50, 0.55) * (0.85 + 0.2 * n1) * (1.0 - 0.45 * sulcus);
+    rough = 0.25 + 0.2 * sulcus;
+    wrap = 0.5;
+    sss = float3(1.0, 0.35, 0.35) * 1.5;
+    N = normalize(N + (float3(noise.sample(sNoise, o * 24.0 + 0.3).r, 0.0, noise.sample(sNoise, o * 24.0 + 0.6).r) - 0.5) *
+                          0.5);
+  } else if (id == 8) {  // gold
+    albedo = float3(1.0, 0.76, 0.33) * (0.9 + 0.15 * n1);
+    metal = 1.0;
+    rough = 0.18 + 0.1 * n2;
+  } else if (id == 9) {  // cape and gown: velvet
+    float3 base = black ? float3(0.42, 0.03, 0.07) : float3(0.03, 0.30, 0.36);
+    albedo = base * (0.8 + 0.3 * n1);
+    rough = 0.65;
+    wrap = 0.3;
+    emissive += base * pow(1.0 - NoV, 3.0) * 0.6;  // velvet sheen
+    specOcc = 0.5;
+  } else if (id == 10) {  // glowing crystal
+    float3 c = alienLight(black);
+    albedo = c * 0.4;
+    rough = 0.05;
+    emissive += c * (1.2 + 0.6 * sin(time * 3.0 + n1 * 4.0));
+  } else if (id == 11) {  // slime
+    float3 c = black ? float3(0.55, 0.12, 0.8) : float3(0.35, 0.9, 0.08);
+    albedo = c * (0.7 + 0.3 * n1);
+    rough = 0.04;
+    wrap = 0.6;
+    sss = c * 2.0;
+    emissive += c * 0.25;
+  } else if (id == 12) {  // rubber
+    albedo = float3(0.035, 0.035, 0.04) * (0.8 + 0.3 * n1);
+    rough = 0.65;
+  } else if (id == 13) {  // cowhide: black patches on white
+    float patchy = smoothstep(0.52, 0.56, noise.sample(sNoise, o * 4.5 + float3(1.7)).r);
+    albedo = mix(float3(0.86, 0.84, 0.8), float3(0.03, 0.028, 0.026), patchy) * (0.9 + 0.12 * n2);
+    rough = 0.65;
+    wrap = 0.3;
+  } else if (id == 14) {  // tongue, gums, cow's nose: wet pink
+    albedo = float3(0.82, 0.42, 0.48) * (0.85 + 0.2 * n1);
+    rough = 0.22;
+    wrap = 0.4;
+    sss = float3(1.0, 0.3, 0.3);
+  } else if (id == 15) {  // teeth
+    albedo = float3(0.9, 0.88, 0.8);
+    rough = 0.25;
+  } else if (id == 16) {  // the dark inside
+    albedo = float3(0.01, 0.008, 0.01);
+    rough = 0.9;
+    specOcc = 0.0;
+  } else if (id == 17) {  // carapace: glossy, iridescent
+    float3 base = black ? float3(0.07, 0.02, 0.1) : float3(0.04, 0.26, 0.24);
+    float3 film = black ? float3(0.5, 0.1, 0.9) : float3(0.2, 0.9, 0.6);
+    albedo = mix(base, film * 0.4, pow(1.0 - NoV, 2.0)) * (0.85 + 0.25 * n1);
+    rough = 0.12 + 0.08 * n2;
+    metal = 0.35;
+  } else if (id == 19) {  // horn, hooves, claws
+    albedo = float3(0.72, 0.66, 0.55) * (0.8 + 0.25 * n1);
+    rough = 0.4;
+  } else if (id == 20) {  // leathery egg with veins
+    float vein = 1.0 - smoothstep(0.0, 0.05, abs(noise.sample(sNoise, o * 7.0).g - 0.5));
+    albedo = mix(float3(0.62, 0.55, 0.36), black ? float3(0.45, 0.1, 0.4) : float3(0.3, 0.55, 0.1), vein * 0.7) *
+             (0.85 + 0.2 * n1);
+    rough = 0.35;
+    wrap = 0.5;
+    sss = float3(1.0, 0.8, 0.4);
+  }
+  // fresh fracture faces: alien goo inside
+  if (aux > 0.0) {
+    float3 goo = black ? float3(0.5, 0.1, 0.75) : float3(0.35, 0.85, 0.1);
+    albedo = mix(albedo, goo * (0.8 + 0.3 * n3), aux);
+    rough = mix(rough, 0.08, aux);
+    metal = mix(metal, 0.0, aux);
+    emissive += goo * 0.3 * aux;
+  }
+}
+
+// Glass: reflections and a faint tint, more opaque at grazing angles (premultiplied alpha).
+float4 glassColor(float3 N, float3 V, bool black, float3 P, constant PassU& u, texturecube<float> prefilter) {
+  float NoV = max(dot(N, V), 1e-4);
+  float3 R = reflect(-V, N);
+  float F = 0.04 + 0.96 * pow(1.0 - NoV, 5.0);
+  float3 env = prefilter.sample(sTrilinear, R, level(0.04 * u.prefilterMaxLod)).rgb * u.ambient * lightPool(P);
+  float3 tint = black ? float3(0.5, 0.2, 0.45) : float3(0.3, 0.55, 0.6);
+  float a = saturate(F + 0.07);
+  return float4(env * F * 1.6 + tint * 0.025, a);
+}
+
 fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], LIGHT_BINDINGS,
                          constant DrawU& d [[buffer(1)]], texture3d<float> noise [[texture(5)]]) {
   float2 fragCoord = in.position.xy;
@@ -558,6 +699,10 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
     float edge = dissolveField(in.obj, d.texOffset, noise) - d.dissolve;
     if (edge < 0.0) discard_fragment();
     emissive += d.dissolveColor * (1.0 - smoothstep(0.0, 0.06, edge)) * 7.0;
+  }
+  if (d.mat == 6) {
+    float4 g = glassColor(N, V, d.team == 1, in.world, u, prefilter);
+    return float4(g.rgb + emissive * g.a, g.a);
   }
   float3 albedo = float3(0.5);
   float rough = 0.5, metalness = 0.0, wrap = 0.0;
@@ -617,8 +762,12 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
     rough = 0.42 + 0.2 * g;
     emissive += float3(1.0, 0.33, 0.07) * d.heat * (0.6 + 0.8 * g) * 4.0;
   } else {
-    medievalSurface(int(in.mat + 0.5), d.team == 1, in.obj, normalize(in.objN), in.aux, d.texOffset, V, noise, albedo,
-                    rough, metalness, wrap, sss, N, emissive, specOcc);
+    if (d.mat == 5)
+      alienSurface(int(in.mat + 0.5), d.team == 1, in.obj, normalize(in.objN), in.aux, d.texOffset, V, u.time, noise,
+                   albedo, rough, metalness, wrap, sss, N, emissive, specOcc);
+    else
+      medievalSurface(int(in.mat + 0.5), d.team == 1, in.obj, normalize(in.objN), in.aux, d.texOffset, V, noise,
+                      albedo, rough, metalness, wrap, sss, N, emissive, specOcc);
     if (d.stone > 0.0) {  // turning to salt: pale, crystalline, glittering
       float g = noise.sample(sNoise, in.obj * 18.0 + d.texOffset * 0.3).r;
       float front = smoothstep(0.0, 0.15, d.stone * 1.3 - (1.0 - saturate(in.obj.y / 1.3)) * 0.3 - g * 0.15);

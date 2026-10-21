@@ -132,6 +132,12 @@ struct MControls {
   var neck: Float = 0       // dragon: rear the neck back (+) or lunge (-)
   var tail: Float = 0       // tail swish phase
   var idle: Float = 0       // breathing / idle phase (radians)
+  // the aliens (Alien.swift)
+  var tongue: Float = 0     // tongue / inner jaw out (model units)
+  var perk: Float = 0       // antennae up (+) or droop (-)
+  var hover: Float = 0      // the base floats this much higher than at rest
+  var spin: Float = 0       // saucer light ring, throne fans (radians)
+  var hatch: Float = 0      // saucer belly hatch / tripod eye opening (0..1)
 }
 
 struct MPose {

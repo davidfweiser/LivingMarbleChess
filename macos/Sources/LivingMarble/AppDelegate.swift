@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     oppItem.submenu = opponent
     game.addItem(oppItem)
     let pieces = NSMenu(title: "Pieces")
-    for (i, name) in ["Living Marble", "Medieval"].enumerated() {
+    for (i, name) in ["Living Marble", "Medieval", "Aliens"].enumerated() {
       add(pieces, name, #selector(GameController.piecesAction(_:)), tag: i, target: c)
     }
     let piecesItem = NSMenuItem(title: "Pieces", action: nil, keyEquivalent: "")

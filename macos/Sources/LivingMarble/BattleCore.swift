@@ -518,7 +518,7 @@ final class PromotionAnim: Staged {
       let n = p.copy()
       n.id = w.actors.count
       n.kind = kind
-      if n.set == 1 { n.resetControls() }
+      if n.set != 0 { n.resetControls() }
       n.alive = true
       n.visible = true
       n.dissolve = 1
@@ -720,26 +720,29 @@ private func makeBattle(_ kind: Int, _ style: Int, _ plan: MovePlan) -> Anim {
   }
 }
 
-/// set: 0 Living Marble, 1 medieval.
+/// set: 0 Living Marble, 1 medieval, 2 aliens.
 func battleStyleName(_ kind: Int, _ style: Int, _ set: Int = 0) -> String {
   if set == 1 { return medievalBattleStyleName(kind, style) }
+  if set == 2 { return alienBattleStyleName(kind, style) }
   if kind < 0 || kind >= Kind.count || style < 0 || style >= kBattleStyles { return "" }
   return kStyleNames[kind][style]
 }
 
 func makeMoveAnim(_ w: World, _ plan: MovePlan) -> Anim {
   let seq = SeqAnim()
-  let med = w.actors[plan.mover].set == 1
+  let set = w.actors[plan.mover].set
+  let med = set == 1, ali = set == 2
   if plan.victim >= 0 {
     if plan.fast {
-      seq.add(med ? makeMedievalQuickCapture(plan) : QuickCapture(plan))
+      seq.add(med ? makeMedievalQuickCapture(plan) : (ali ? makeAlienQuickCapture(plan) : QuickCapture(plan)))
     } else {
       let kind = w.actors[plan.mover].kind
       let style = pickStyle(kind, plan.style)
-      seq.add(med ? makeMedievalBattle(kind, style, plan) : makeBattle(kind, style, plan))
+      seq.add(med ? makeMedievalBattle(kind, style, plan)
+                  : (ali ? makeAlienBattle(kind, style, plan) : makeBattle(kind, style, plan)))
     }
   } else {
-    seq.add(med ? makeMedievalQuiet(plan) : QuietMove(plan))
+    seq.add(med ? makeMedievalQuiet(plan) : (ali ? makeAlienQuiet(plan) : QuietMove(plan)))
   }
   if plan.promoKind >= 0 { seq.add(PromotionAnim(plan.mover, plan.promoSquare, plan.promoKind)) }
   return seq
@@ -747,6 +750,7 @@ func makeMoveAnim(_ w: World, _ plan: MovePlan) -> Anim {
 
 func makeCheckmateAnim(_ w: World, _ kingId: Int, _ winnerColor: Int) -> Anim {
   if w.actors[kingId].set == 1 { return makeMedievalCheckmate(kingId, winnerColor) }
+  if w.actors[kingId].set == 2 { return makeAlienCheckmate(kingId, winnerColor) }
   return CheckmateAnim(kingId, winnerColor)
 }
 
