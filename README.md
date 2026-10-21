@@ -39,10 +39,7 @@ The current version is **1.2**. Ready-made downloads are on the
 [Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest).
 
 **Mac** (macOS 14 or later, Apple silicon and Intel): open
-`LivingMarble-1.2.dmg` and drag *Living Marble* onto Applications. The first
-time you start it, macOS may say it cannot check the app for malicious
-software; then open *System Settings › Privacy & Security* and click
-*Open Anyway*.
+`LivingMarble-1.2.dmg` and drag *Living Marble* onto Applications.
 
 **Linux** (Debian, Ubuntu, Pop!_OS, Mint …):
 
@@ -244,19 +241,20 @@ project file. For a copy that opens on any Mac, choose *Product › Archive*,
 then *Distribute App › Direct Distribution*: Xcode signs it with your
 Developer ID, has Apple notarize it and exports *Living Marble.app*.
 
-Or build a disk image to install it from (*Living Marble* and an Applications
-shortcut to drag it onto). It is a universal build signed with your Developer
-ID certificate, so it opens on other Macs:
+To put that app in a disk image to install from (*Living Marble* and an
+Applications shortcut to drag it onto), give it to `build-dmg.sh`, which packs
+it as it is:
 
 ```sh
-macos/build-dmg.sh                         # -> macos/build/LivingMarble-1.2.dmg
-NOTARY_PROFILE=notary macos/build-dmg.sh   # also notarize it with Apple
+macos/build-dmg.sh "path/to/Living Marble.app"   # -> macos/build/LivingMarble-1.2.dmg
 ```
 
-Without notarization, other Macs only open it via *System Settings › Privacy &
-Security › Open Anyway*. To notarize, first save your Apple ID with an
-app-specific password once: `xcrun notarytool store-credentials notary
---apple-id <your Apple ID> --team-id <your team ID>`.
+Without an app, `macos/build-dmg.sh` makes a universal build itself and signs
+it with your Developer ID, but does not notarize it, so other Macs only open
+it via *System Settings › Privacy & Security › Open Anyway*. To notarize that
+one too, save your Apple ID with an app-specific password once
+(`xcrun notarytool store-credentials notary --apple-id <your Apple ID>
+--team-id <your team ID>`) and run `NOTARY_PROFILE=notary macos/build-dmg.sh`.
 
 ### iPhone and iPad
 

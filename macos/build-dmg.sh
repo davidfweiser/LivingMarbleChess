@@ -1,12 +1,19 @@
 #!/bin/sh
 # Builds the Mac installer: a disk image with "Living Marble" and an
-# Applications shortcut to drag it onto. The app is a universal build signed
-# with your Developer ID (hardened runtime), so it opens on other Macs.
-#   ./build-dmg.sh                           sign with the first Developer ID Application identity
-#   SIGN_ID=<sha1 or name> ./build-dmg.sh    pick the identity
-#   NOTARY_PROFILE=<name> ./build-dmg.sh     also notarize and staple (a profile saved
-#                                            with: xcrun notarytool store-credentials <name>)
+# Applications shortcut to drag it onto.
+#   ./build-dmg.sh                           universal build signed with your Developer ID
+#                                            (hardened runtime), so it opens on other Macs
+#   ./build-dmg.sh "path/to/Living Marble.app"   pack an app exported from Xcode (Distribute
+#                                            App › Direct Distribution, already notarized) as it is
+#   SIGN_ID=<sha1 or name> ./build-dmg.sh    pick the identity (default: the first Developer ID
+#                                            Application one in the keychain)
+#   NOTARY_PROFILE=<name> ./build-dmg.sh     also notarize and staple the disk image (a profile
+#                                            saved with: xcrun notarytool store-credentials <name>)
 set -e
+EXPORTED=""
+if [ -n "$1" ]; then
+  EXPORTED="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+fi
 cd "$(dirname "$0")"
 
 if [ -z "$SIGN_ID" ]; then
@@ -17,14 +24,17 @@ if [ -z "$SIGN_ID" ]; then
   exit 1
 fi
 
-./build-app.sh --universal
-
-APP="build/Living Marble.app"
-VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist)
-DMG="build/LivingMarble-$VERSION.dmg"
-
-codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$APP"
+if [ -n "$EXPORTED" ]; then
+  APP="$EXPORTED"
+else
+  ./build-app.sh --universal
+  APP="build/Living Marble.app"
+  codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$APP"
+fi
 codesign --verify --strict "$APP"
+
+VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")
+DMG="build/LivingMarble-$VERSION.dmg"
 
 STAGE="build/dmg"
 rm -rf "$STAGE" "$DMG"
