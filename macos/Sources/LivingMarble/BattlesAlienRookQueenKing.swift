@@ -693,7 +693,7 @@ final class KingMothership: ABattle {
           var best: Float = 1e9
           for k in -1...1 {
             for e in 0..<2 {
-              let ang = atan2(Float(0.8), Float(-0.6)) + 0.09 * Float(k)
+              let ang: Float = 2.356 + 0.09 * Float(k)  // between the fill panel and the key light
               let look = vec3(cos(ang), 0, sin(ang))
               let back: vec3 = mid - look * (4.2 + 0.8 * Float(e))
               let cam = back + vec3(0, 1.1, 0)
@@ -711,7 +711,7 @@ final class KingMothership: ABattle {
             }
           }
           s.target = mid + vec3(0, 1.8, 0)
-          s.fov = 52
+          s.fov = 46
           s.focus = length(s.pos - V)
           s.aperture = 4
           w.cam.setShot(s, 1.6)
