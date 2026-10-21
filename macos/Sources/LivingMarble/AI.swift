@@ -308,12 +308,13 @@ private struct Searcher {
     return e
   }
 
+  // path[n-1] is the current position; earlier positions with the same side to
+  // move lie 2, 4, ... plies before it, back to the last capture or pawn move
   @inline(__always) func isRepetition(_ b: Board) -> Bool {
     let n = pathLen
-    let lim = min(n, b.halfmove + 1)
     var i = 2
-    while i <= lim {
-      if path[n - i] == b.hash { return true }
+    while i <= b.halfmove && i < n {
+      if path[n - 1 - i] == b.hash { return true }
       i += 2
     }
     return false

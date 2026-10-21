@@ -214,11 +214,12 @@ struct AIEngine::Impl {
     return e;
   }
 
+  // path[n-1] is the current position; earlier positions with the same side to
+  // move lie 2, 4, ... plies before it, back to the last capture or pawn move
   bool isRepetition(const Board& b) {
     int n = (int)path.size();
-    int lim = std::min(n, b.halfmove + 1);
-    for (int i = 2; i <= lim; i += 2) {
-      if (path[n - i] == b.hash) return true;
+    for (int i = 2; i <= b.halfmove && i < n; i += 2) {
+      if (path[n - 1 - i] == b.hash) return true;
     }
     return false;
   }
