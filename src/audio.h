@@ -1,0 +1,44 @@
+// Procedurally synthesised sound effects (no audio files), mixed in real time.
+#pragma once
+
+enum Sfx {
+  SFX_STEP = 0,  // light stone footstep on wood
+  SFX_THUD,      // heavy landing
+  SFX_CLACK,     // stone on stone
+  SFX_SHATTER,   // marble breaking
+  SFX_WHOOSH,    // fast swing
+  SFX_CLANG,     // steel ring
+  SFX_BOOM,      // cannon
+  SFX_EXPLODE,   // impact explosion
+  SFX_CHARGE,    // magic charging
+  SFX_ZAP,       // magic bolt
+  SFX_CRACKLE,   // lightning
+  SFX_CHIME,     // promotion / materialise
+  SFX_SELECT,    // UI pick
+  SFX_CHECK,     // check horn
+  SFX_MATE,      // checkmate gong
+  SFX_DEBRIS,    // small chunk bounce
+  SFX_RUMBLE,    // low rumble
+  SFX_COUNT
+};
+
+class Audio {
+ public:
+  Audio();
+  ~Audio();
+  bool init();
+  void shutdown();
+  bool ok() const { return ok_; }
+  // pan -1..1, pitch multiplier
+  void play(Sfx s, float volume = 1.0f, float pan = 0.0f, float pitch = 1.0f);
+  void setVolume(float v);
+  static bool dumpWav(const char* dir);  // debug: write every effect as a .wav
+  float volume() const { return volume_; }
+
+  struct Impl;
+
+ private:
+  Impl* impl_ = nullptr;
+  bool ok_ = false;
+  float volume_ = 0.8f;
+};
