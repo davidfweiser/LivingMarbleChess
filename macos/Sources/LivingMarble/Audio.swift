@@ -545,6 +545,18 @@ final class Audio {
   /// Synthesises every effect and opens the output; false if there is no device.
   @discardableResult func start() -> Bool {
     if ok { return true }
+#if os(iOS)
+    // Activating the audio session can block for a while, so it happens on the
+    // audio queue instead of the caller's (main) thread. iOS always has an output.
+    let m = Mixer(sounds: Synth.synthAll(), master: volume_)
+    mixer = m
+    ok = true
+    control.async { [weak self] in
+      guard let self else { return }
+      if !Audio.prepareOutput() || !self.startEngine(m) { print("[audio] could not start the audio engine") }
+    }
+    return true
+#else
     guard Audio.prepareOutput() else { return false }
     let m = Mixer(sounds: Synth.synthAll(), master: volume_)
     let started = control.sync { startEngine(m) }
@@ -555,12 +567,14 @@ final class Audio {
     mixer = m
     ok = true
     return true
+#endif
   }
 
   func shutdown() {
-    for o in observers { NotificationCenter.default.removeObserver(o) }
-    observers.removeAll()
     control.sync {
+      // on the audio queue, where a pending start may still be adding observers
+      for o in observers { NotificationCenter.default.removeObserver(o) }
+      observers.removeAll()
       if let e = engine {
         e.stop()
         if let s = source { e.detach(s) }
