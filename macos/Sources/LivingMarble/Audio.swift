@@ -3,7 +3,9 @@
 // a few oscillators. An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
 // resampling, volume) at 44.1 kHz and AVAudioEngine converts to the device rate.
 import AVFoundation
+#if os(macOS)
 import CoreAudio
+#endif
 import Foundation
 import os
 
@@ -535,7 +537,7 @@ final class Audio {
   private let control = DispatchQueue(label: "LivingMarble.Audio")
   private var engine: AVAudioEngine?
   private var source: AVAudioSourceNode?
-  private var observer: NSObjectProtocol?
+  private var observers: [NSObjectProtocol] = []
 
   init() {}
   deinit { shutdown() }
@@ -543,7 +545,7 @@ final class Audio {
   /// Synthesises every effect and opens the output; false if there is no device.
   @discardableResult func start() -> Bool {
     if ok { return true }
-    guard Audio.hasOutputDevice() else { return false }
+    guard Audio.prepareOutput() else { return false }
     let m = Mixer(sounds: Synth.synthAll(), master: volume_)
     let started = control.sync { startEngine(m) }
     guard started else {
@@ -556,10 +558,8 @@ final class Audio {
   }
 
   func shutdown() {
-    if let o = observer {
-      NotificationCenter.default.removeObserver(o)
-      observer = nil
-    }
+    for o in observers { NotificationCenter.default.removeObserver(o) }
+    observers.removeAll()
     control.sync {
       if let e = engine {
         e.stop()
@@ -585,6 +585,19 @@ final class Audio {
     mixer?.setMaster(v)
   }
 
+  /// Starts the engine again if something stopped it (on iOS: a call or Siri, or the
+  /// app coming back from the background).
+  func resume() {
+    guard ok else { return }
+    control.async { [weak self] in
+      guard let self, let e = self.engine, !e.isRunning else { return }
+#if os(iOS)
+      try? AVAudioSession.sharedInstance().setActive(true)
+#endif
+      self.restartEngine()
+    }
+  }
+
   // On `control`.
   private func startEngine(_ m: Mixer) -> Bool {
     let e = AVAudioEngine()
@@ -607,10 +620,19 @@ final class Audio {
     engine = e
     source = src
     // The engine stops itself when the output device or its format changes.
-    observer = NotificationCenter.default.addObserver(
+    observers.append(NotificationCenter.default.addObserver(
       forName: .AVAudioEngineConfigurationChange, object: e, queue: nil) { [weak self] _ in
       self?.control.async { [weak self] in self?.restartEngine() }
-    }
+    })
+#if os(iOS)
+    // ... and when a call or another app interrupts it: pick up again once that ends
+    observers.append(NotificationCenter.default.addObserver(
+      forName: AVAudioSession.interruptionNotification, object: nil, queue: nil) { [weak self] n in
+      guard let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+            AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+      self?.resume()
+    })
+#endif
     return true
   }
 
@@ -626,7 +648,9 @@ final class Audio {
     try? e.start()
   }
 
-  private static func hasOutputDevice() -> Bool {
+#if os(macOS)
+  /// True when there is an output device to play on.
+  private static func prepareOutput() -> Bool {
     var dev = AudioObjectID(kAudioObjectUnknown)
     var size = UInt32(MemoryLayout<AudioObjectID>.size)
     var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
@@ -635,6 +659,19 @@ final class Audio {
     let err = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &dev)
     return err == noErr && dev != kAudioObjectUnknown
   }
+#else
+  /// Game sounds: they mix with the player's music and respect the silent switch.
+  private static func prepareOutput() -> Bool {
+    let session = AVAudioSession.sharedInstance()
+    do {
+      try session.setCategory(.ambient)
+      try session.setActive(true)
+    } catch {
+      return false
+    }
+    return true
+  }
+#endif
 
   /// Debug: writes every effect as a 16-bit mono .wav (same names as the C++).
   static func dumpWav(_ dir: String) -> Bool {

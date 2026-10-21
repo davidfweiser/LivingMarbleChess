@@ -2,3 +2,4 @@ build/
 *.png
 .build/
 .swiftpm/
+!ios/App/Assets.xcassets/**/*.png

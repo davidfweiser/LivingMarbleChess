@@ -1,5 +1,7 @@
 // The native interface laid over the 3D scene (SwiftUI): status, controls,
-// move list, banners, help, promotion and the loading screen.
+// move list, banners, help, promotion and the loading screen. On iPhone and
+// iPad the touch layout in ios/App/TouchInterface.swift replaces the desktop
+// panels; the banners, move list, promotion and loading screen are shared.
 import MetalKit
 import Observation
 import SwiftUI
@@ -35,9 +37,10 @@ final class GameModel {
   var promoPending = false
   var fps = 0
   var audioOK = false
+  var screenshotsSaved = 0  // counts saved screenshots (the touch interface confirms each)
 }
 
-private enum Palette {
+enum Palette {
   static let gold = Color(red: 0.98, green: 0.80, blue: 0.45)
   static let text = Color(red: 0.93, green: 0.90, blue: 0.84)
   static let dim = Color(red: 0.60, green: 0.56, blue: 0.50)
@@ -45,7 +48,7 @@ private enum Palette {
   static let banner = Color(red: 0.98, green: 0.86, blue: 0.63)
 }
 
-private extension Font {
+extension Font {
   static func serif(_ size: CGFloat) -> Font { .custom("Georgia", size: size) }
 }
 
@@ -64,7 +67,7 @@ private struct Panel: ViewModifier {
   }
 }
 
-private extension View {
+extension View {
   func panel() -> some View { modifier(Panel()) }
 }
 
@@ -75,10 +78,17 @@ struct ContentView: View {
   var body: some View {
     ZStack {
       MetalSceneView(view: controller.view)
+#if os(iOS)
+        .ignoresSafeArea()
+#endif
       if controller.model.loading {
         LoadingView(model: controller.model)
       } else {
+#if os(macOS)
         HUDView(controller: controller, model: controller.model)
+#else
+        TouchHUDView(controller: controller, model: controller.model)
+#endif
       }
     }
     .background(Color.black)
@@ -87,11 +97,19 @@ struct ContentView: View {
   }
 }
 
+#if os(macOS)
 private struct MetalSceneView: NSViewRepresentable {
   let view: MTKView
   func makeNSView(context: Context) -> MTKView { view }
   func updateNSView(_ nsView: MTKView, context: Context) {}
 }
+#else
+private struct MetalSceneView: UIViewRepresentable {
+  let view: MTKView
+  func makeUIView(context: Context) -> MTKView { view }
+  func updateUIView(_ uiView: MTKView, context: Context) {}
+}
+#endif
 
 // ---------------------------------------------------------------------------
 private struct LoadingView: View {
@@ -101,28 +119,38 @@ private struct LoadingView: View {
     VStack(spacing: 0) {
       Text("Living Marble")
         .font(.serif(64))
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
         .foregroundStyle(Color(red: 0.94, green: 0.89, blue: 0.78))
         .shadow(color: .black.opacity(0.4), radius: 2, x: 1, y: 2)
       Text("3 D   B A T T L E   C H E S S")
         .font(.serif(21))
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
         .foregroundStyle(Color(red: 0.78, green: 0.67, blue: 0.47))
         .padding(.top, 6)
-      ZStack(alignment: .leading) {
-        Capsule().fill(Color(red: 0.24, green: 0.19, blue: 0.14))
-        Capsule().fill(Palette.gold).frame(width: 380 * max(0, min(1, model.loadProgress)))
-      }
-      .frame(width: 380, height: 4)
-      .padding(.top, 34)
+      Capsule()
+        .fill(Color(red: 0.24, green: 0.19, blue: 0.14))
+        .overlay(alignment: .leading) {
+          GeometryReader { g in
+            Capsule().fill(Palette.gold).frame(width: g.size.width * max(0, min(1, model.loadProgress)))
+          }
+        }
+        .frame(maxWidth: 380)
+        .frame(height: 4)
+        .padding(.top, 34)
       Text(model.loadStage)
         .font(.system(size: 15))
         .foregroundStyle(Color(red: 0.67, green: 0.59, blue: 0.47))
         .padding(.top, 18)
     }
+    .padding(.horizontal, 32)
     .allowsHitTesting(false)
   }
 }
 
 // ---------------------------------------------------------------------------
+#if os(macOS)
 private struct HUDView: View {
   let controller: GameController
   @Bindable var model: GameModel
@@ -145,7 +173,9 @@ private struct HUDView: View {
           }
           .padding(18)
         }
-        BannerView(model: model, size: geo.size)
+        BannerView(model: model, size: geo.size,
+                   y: geo.size.height * 0.14 + (model.bannerPermanent && model.showUI && !model.noUI ? 14 : 0),
+                   hint: "Press N or choose New Game to play again")
         if model.showHelp {
           HelpPanel(model: model)
         }
@@ -157,10 +187,14 @@ private struct HUDView: View {
     }
   }
 }
+#endif
 
-private struct BannerView: View {
+/// "Check!" and the game result, centred at height y; game over adds the hint below.
+struct BannerView: View {
   let model: GameModel
   let size: CGSize
+  let y: CGFloat
+  let hint: String
 
   var body: some View {
     if !model.bannerText.isEmpty {
@@ -168,24 +202,29 @@ private struct BannerView: View {
       VStack(spacing: 6) {
         Text(model.bannerText)
           .font(.serif(fontSize))
+          .lineLimit(1)
+          .minimumScaleFactor(0.4)  // phones
           .foregroundStyle(Palette.banner)
           .shadow(color: .black.opacity(0.55), radius: 3, x: 1.5, y: 2)
         if model.bannerPermanent && model.showUI && !model.noUI {
-          Text("Press N or choose New Game to play again")
+          Text(hint)
             .font(.system(size: 15))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             .foregroundStyle(Color(red: 0.86, green: 0.78, blue: 0.63).opacity(0.86))
             .shadow(color: .black.opacity(0.5), radius: 2)
         }
       }
       .opacity(model.bannerAlpha)
-      .fixedSize()
-      .position(x: size.width / 2, y: size.height * 0.14 + (model.bannerPermanent && model.showUI && !model.noUI ? 14 : 0))
+      .frame(maxWidth: max(0, size.width - 32))
+      .position(x: size.width / 2, y: y)
       .allowsHitTesting(false)
     }
   }
 }
 
 // ---------------------------------------------------------------------------
+#if os(macOS)
 private struct ControlPanel: View {
   let controller: GameController
   @Bindable var model: GameModel
@@ -253,9 +292,10 @@ private struct ControlPanel: View {
     .panel()
   }
 }
+#endif
 
 // ---------------------------------------------------------------------------
-private struct MovesPanel: View {
+struct MovesPanel: View {
   let model: GameModel
   let maxHeight: CGFloat
 
@@ -292,12 +332,13 @@ private struct MovesPanel: View {
   }
 }
 
-private struct MoveRow: View {
+struct MoveRow: View {
   let number: Int
   let white: String
   let black: String?
   let lastIsWhite: Bool
   let lastIsBlack: Bool
+  var fontSize: CGFloat = 13
 
   var body: some View {
     HStack(spacing: 0) {
@@ -305,13 +346,14 @@ private struct MoveRow: View {
       Text(white).foregroundStyle(lastIsWhite ? Palette.gold : Palette.text).frame(maxWidth: .infinity, alignment: .leading)
       Text(black ?? "").foregroundStyle(lastIsBlack ? Palette.gold : Palette.text).frame(maxWidth: .infinity, alignment: .leading)
     }
-    .font(.system(size: 13).monospacedDigit())
-    .frame(height: 22)
+    .font(.system(size: fontSize).monospacedDigit())
+    .frame(height: fontSize + 9)
     .padding(.horizontal, 4)
   }
 }
 
 // ---------------------------------------------------------------------------
+#if os(macOS)
 private struct HelpPanel: View {
   let model: GameModel
 
@@ -354,8 +396,9 @@ private struct HelpPanel: View {
     }
   }
 }
+#endif
 
-private struct PromotionPanel: View {
+struct PromotionPanel: View {
   let controller: GameController
 
   private let choices: [(String, String, Int)] = [
@@ -374,14 +417,35 @@ private struct PromotionPanel: View {
               Text(c.1).font(.system(size: 12))
             }
             .frame(width: 74, height: 52)
+#if os(iOS)
+            .modifier(TouchKey())
+#endif
           }
         }
       }
-      Button { controller.cancelPromotion() } label: { Text("Cancel").frame(maxWidth: .infinity) }
-        .keyboardShortcut(.cancelAction)
+      Button { controller.cancelPromotion() } label: {
+        Text("Cancel")
+          .frame(maxWidth: .infinity)
+#if os(iOS)
+          .frame(height: 44)
+          .modifier(TouchKey())
+#endif
+      }
+      .keyboardShortcut(.cancelAction)
     }
     .font(.system(size: 13))
     .fixedSize()
     .panel()
   }
 }
+
+#if os(iOS)
+/// iOS buttons have no bezel of their own: give the choices a visible, finger-sized shape.
+private struct TouchKey: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.08)))
+      .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+  }
+}
+#endif

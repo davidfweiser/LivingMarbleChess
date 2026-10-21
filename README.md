@@ -12,8 +12,9 @@ inlaid wood is baked on the fly, and every sound effect is synthesised.
 
 On the Mac the game is a native app written in Swift: Metal graphics, an
 AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
-[`macos/`](macos)). Windows and Linux use the C++/OpenGL version in `src/`.
-Both versions play, look and sound the same.
+[`macos/`](macos)). The same Swift code runs on iPhone and iPad with touch
+controls (see [`ios/`](ios)). Windows and Linux use the C++/OpenGL version in
+`src/`. All versions play, look and sound the same.
 
 ## The battles
 
@@ -74,6 +75,22 @@ open "macos/build/Living Marble.app"
 `--universal` builds for both Apple silicon and Intel Macs. To work on the
 code in Xcode, open `macos/Package.swift`.
 
+### iPhone and iPad
+
+You need Xcode 16 or later. The app runs on iOS / iPadOS 17 or later. Open
+`ios/LivingMarble.xcodeproj`, pick a simulator or your device and press Run.
+To run on a device, first choose your team under *Signing & Capabilities*
+(a free Apple ID works).
+
+```sh
+xcodebuild -project ios/LivingMarble.xcodeproj -scheme LivingMarble \
+           -destination 'generic/platform=iOS Simulator' build
+```
+
+The iOS app builds the Mac app's sources in `macos/Sources/LivingMarble`
+(all but the AppKit window, menu and mouse files) together with the touch
+shell in `ios/App`, so the two never drift apart.
+
 ### Windows and Linux (C++)
 
 You need CMake 3.18+, a C++17 compiler and git. The first configure downloads
@@ -128,6 +145,25 @@ few seconds (shown on the loading screen).
 
 On the Mac every action is also in the menu bar, including the mode, the
 opponent's strength and the graphics quality. ⌃⌘F switches to full screen.
+
+On iPhone and iPad:
+
+| Touch | Action |
+|---|---|
+| Tap | Select a piece, then tap a glowing square to move |
+| Drag a piece | Carry it onto a glowing square to move it there |
+| Drag anywhere else | Turn the floating board |
+| Pinch | Zoom |
+| Twist two fingers | Turn the board |
+| Slide two fingers up or down | Tilt the board |
+
+The toolbar has New game, Undo, Flip, Reset view, the move list (on iPhone;
+iPad shows it beside the board) and Settings, which holds the mode, opponent,
+battle and camera switches, volume, graphics quality, *Hide Interface* and
+*Save Screenshot* (the board without the interface, saved to the Files app).
+The board fills the screen in portrait as well as landscape. On iPad a
+trackpad or mouse also hovers and scrolls to zoom, and a keyboard takes the
+same keys as on the Mac (including ⌘Z and ⌘N).
 
 Modes (in the panel): play White or Black against the AI, two players on one
 screen (the board turns each move), or watch the AI play itself. The AI has
@@ -194,3 +230,12 @@ same design:
 | `Audio.swift` | Procedural sounds mixed in real time through AVAudioEngine |
 | `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, capture tools |
 | `Interface.swift`, `AppDelegate.swift` | Native SwiftUI interface, window and menu bar |
+
+The iPhone and iPad app in `ios/App` adds only the touch shell around those
+sources (`main.swift`, `AppDelegate.swift` and `GameView.swift` are Mac only):
+
+| File | What it does |
+|---|---|
+| `GameView.swift` | Touch input: taps, piece drags, orbit, pinch / twist / tilt; iPad pointer, scrolling and keyboard |
+| `TouchInterface.swift` | Touch layout for phones (portrait and landscape) and tablets, settings, move list and help sheets |
+| `LivingMarbleApp.swift` | App lifecycle: full-screen scene, pausing in the background, audio resume |

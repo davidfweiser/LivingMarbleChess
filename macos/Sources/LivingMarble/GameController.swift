@@ -1,6 +1,11 @@
 // The game: flow of play, AI turns, input, scene building and capture tools.
-// It drives the Metal view once per display refresh.
+// It drives the Metal view once per display refresh. Shared by the Mac and
+// iOS apps; each platform's GameView feeds it clicks, touches and keys.
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import MetalKit
 import simd
 
@@ -16,8 +21,13 @@ enum Mode: Int, CaseIterable {
   }
 }
 
+/// Keyboard arrows turn the board while held.
+enum Arrow {
+  case left, right, up, down
+}
+
 @MainActor
-final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
+final class GameController: NSObject, MTKViewDelegate {
   let opt: Options
   let model = GameModel()
   let device: MTLDevice
@@ -58,8 +68,11 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
   private let startTime = CACurrentMediaTime()
   private var prevTime: CFTimeInterval = 0
   private var fps: Float = 0
-  private var keysDown = Set<UInt16>()
+  private var arrowsDown = Set<Arrow>()
+#if os(macOS)
   private var keyMonitor: Any?
+#endif
+  private var tallView: Bool?  // portrait-shaped view; nil until the first frame
   private var screenshotRequested = false
   private var quitRequested = false
   private var loadingShotTaken = false
@@ -83,9 +96,13 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
     view.controller = self
     view.delegate = self
     view.colorPixelFormat = Renderer.outputPixelFormat
-    view.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
     view.framebufferOnly = false  // screenshots read the drawable back
+#if os(macOS)
+    view.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
     view.preferredFramesPerSecond = 120
+#else
+    view.preferredFramesPerSecond = 60  // phones and tablets: smooth, and kinder to the battery
+#endif
     print("[metal] \(renderer.info)")
     if !o.noAudio && audio.start() {
       world.audio = audio
@@ -97,17 +114,21 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
     world.lib = lib
     world.reset()
     loadAssets()
+#if os(macOS)
     keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] e in
       guard let self else { return e }
       return self.handleKey(e) ? nil : e
     }
+#endif
   }
 
   func shutdown() {
     ai.cancel()
     audio.shutdown()
+#if os(macOS)
     if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
     keyMonitor = nil
+#endif
   }
 
   private func loadAssets() {
@@ -191,10 +212,15 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
 
   func flipCamera() { world.cam.yaw = wrapAngle(world.cam.yaw + kPI) }
 
+  /// Resting camera height and distance. Tall (portrait) views look down more steeply
+  /// from closer in, so the board fills their width.
+  private var homePitch: Float { tallView == true ? 1.1 : 0.80 }
+  private var homeDist: Float { tallView == true ? 9.8 : 12.6 }
+
   func resetView() {
     world.cam.setSide(model.mode == .humanBlack ? 1 : model.mode == .twoPlayer ? game.board.side : 0)
-    world.cam.pitch = 0.80
-    world.cam.dist = 12.6
+    world.cam.pitch = homePitch
+    world.cam.dist = homeDist
   }
 
   func setMode(_ m: Mode) {
@@ -440,42 +466,51 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
     }
   }
 
-  private static let arrowKeys: Set<UInt16> = [123, 124, 125, 126]
+  /// Touch: a drag that starts on one of the mover's pieces carries that piece (and selects it).
+  /// False when there is none under the finger: then the drag turns the board instead.
+  func beginPieceDrag(at p: CGPoint, in size: CGSize) -> Bool {
+    guard !loading, canAct else { return false }
+    let sq = pickSquare(p, size, true)
+    let b = game.board
+    guard sq >= 0, b.sq[sq] != 0, Chess.pieceColor(Int(b.sq[sq])) == b.side else { return false }
+    if sq != selected { select(sq) }
+    return true
+  }
 
-  /// Single-key game controls (command shortcuts are left to the menus). Returns true if handled.
-  private func handleKey(_ e: NSEvent) -> Bool {
-    if !e.modifierFlags.intersection([.command, .control, .option]).isEmpty { return false }
-    if Self.arrowKeys.contains(e.keyCode) {
-      if e.type == .keyDown {
-        keysDown.insert(e.keyCode)
-      } else {
-        keysDown.remove(e.keyCode)
-      }
-      return true
+  /// The end of a piece drag: dropped on a glowing square it moves there, anywhere else
+  /// the piece just stays selected.
+  func endPieceDrag(at p: CGPoint, in size: CGSize) {
+    guard !loading, canAct, selected >= 0 else { return }
+    let sq = pickSquare(p, size, true)
+    if selMoves.contains(where: { Int($0.to) == sq }) { click(at: p, in: size) }
+  }
+
+  // ---- keyboard: the Mac and iPad key handlers share these ----
+  func setArrow(_ a: Arrow, down: Bool) {
+    if down {
+      arrowsDown.insert(a)
+    } else {
+      arrowsDown.remove(a)
     }
-    guard e.type == .keyDown else { return false }
-    if e.isARepeat { return true }
-    switch e.keyCode {
-    case 53:  // Esc
-      if model.showHelp {
-        model.showHelp = false
-      } else if model.promoPending {
-        cancelPromotion()
-      } else {
-        deselect()
-      }
-      return true
-    case 122:  // F1
-      model.showHelp.toggle()
-      return true
-    case 111:  // F12
-      screenshotRequested = true
-      return true
-    default:
-      break
+  }
+
+  /// Esc: closes help or the promotion choice, else drops the selection.
+  func escape() {
+    if model.showHelp {
+      model.showHelp = false
+    } else if model.promoPending {
+      cancelPromotion()
+    } else {
+      deselect()
     }
+  }
+
+  func requestScreenshot() { screenshotRequested = true }
+
+  /// The single-letter game controls. Returns true if the key is one of them.
+  func letterKey(_ key: String) -> Bool {
     if loading { return false }
-    switch e.charactersIgnoringModifiers?.lowercased() {
+    switch key {
     case "n": newGame()
     case "u": undo()
     case "f": flipCamera()
@@ -489,13 +524,41 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
     return true
   }
 
+#if os(macOS)
+  private static let arrowKeys: [UInt16: Arrow] = [123: .left, 124: .right, 125: .down, 126: .up]
+
+  /// Single-key game controls (command shortcuts are left to the menus). Returns true if handled.
+  private func handleKey(_ e: NSEvent) -> Bool {
+    if !e.modifierFlags.intersection([.command, .control, .option]).isEmpty { return false }
+    if let a = Self.arrowKeys[e.keyCode] {
+      setArrow(a, down: e.type == .keyDown)
+      return true
+    }
+    guard e.type == .keyDown else { return false }
+    if e.isARepeat { return true }
+    switch e.keyCode {
+    case 53:  // Esc
+      escape()
+      return true
+    case 122:  // F1
+      model.showHelp.toggle()
+      return true
+    case 111:  // F12
+      requestScreenshot()
+      return true
+    default:
+      return letterKey(e.charactersIgnoringModifiers?.lowercased() ?? "")
+    }
+  }
+#endif
+
   private func handleInput(_ dt: Float) {
-    if view.window?.isKeyWindow != true { keysDown.removeAll() }
+    if view.window?.isKeyWindow != true { arrowsDown.removeAll() }
     let k = 1.5 * dt
-    if keysDown.contains(123) { world.cam.orbit(k, 0, 0) }         // left
-    if keysDown.contains(124) { world.cam.orbit(-k, 0, 0) }        // right
-    if keysDown.contains(126) { world.cam.orbit(0, k * 0.6, 0) }   // up
-    if keysDown.contains(125) { world.cam.orbit(0, -k * 0.6, 0) }  // down
+    if arrowsDown.contains(.left) { world.cam.orbit(k, 0, 0) }
+    if arrowsDown.contains(.right) { world.cam.orbit(-k, 0, 0) }
+    if arrowsDown.contains(.up) { world.cam.orbit(0, k * 0.6, 0) }
+    if arrowsDown.contains(.down) { world.cam.orbit(0, -k * 0.6, 0) }
     hover = -1
     // captures must not depend on where the cursor happens to be
     guard canAct, !fixedStep, let m = view.mouse else { return }
@@ -593,6 +656,18 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
       }
     }
 
+    // frame the board again when the view turns between landscape and portrait
+    // (device rotation, window resize); a --camera pose holds until then
+    let tall = fbH > fbW
+    if tall != tallView {
+      let first = tallView == nil
+      tallView = tall
+      if !(first && opt.hasCam) {
+        world.cam.pitch = homePitch
+        world.cam.dist = homeDist
+      }
+    }
+
     handleInput(dt)
     world.cinematic = model.cinematic
     let sdt = world.beginFrame(dt)
@@ -626,8 +701,10 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
     world.cam.evaluate(dt, world.trauma, Float(CACurrentMediaTime() - startTime))
     if bannerTime > 0 && bannerTime < 1e8 { bannerTime -= dt }
 
-    // keep the internal resolution sane on very high-DPI screens (Ultra renders native)
-    renderer.setRenderScale(model.gfxPreset >= 3 ? 1 : min(1, 1440 / Float(max(1, fbH))))
+    // keep the internal resolution sane on very high-DPI screens (Ultra renders native): at most
+    // 1440 pixels across the short side, and at most 2 pixels per point (phones are 3x)
+    let ppp = view.bounds.width > 0 ? Float(fbW) / Float(view.bounds.width) : 1
+    renderer.setRenderScale(model.gfxPreset >= 3 ? 1 : min(1, 1440 / Float(max(1, min(fbW, fbH))), 2 / max(1, ppp)))
     var sv = SceneView()
     buildScene(&sv, fbW, fbH)
     if !opt.noRender { renderer.render(sv, commandBuffer: cb, target: target) }
@@ -636,9 +713,12 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
 
     // ---- capture tools ----
     var shots: [String] = []
+    var userShot: String?
     if screenshotRequested {
       screenshotRequested = false
-      shots.append(screenshotPath())
+      let p = screenshotPath()
+      shots.append(p)
+      userShot = p
     }
     if opt.battle >= 0 {
       battleTime += sdt
@@ -666,16 +746,21 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
       cb.present(drawable)
       cb.commit()
     } else {
-      capture(cb, target, shots, drawable)
+      let saved = capture(cb, target, shots, drawable)
+      if let p = userShot, saved.contains(p) { model.screenshotsSaved += 1 }
     }
   }
 
   private func buildScene(_ sv: inout SceneView, _ fbW: Int, _ fbH: Int) {
     let cp = world.cam.current
     let aspect = fbH > 0 ? Float(fbW) / Float(fbH) : 1.6
+    // views narrower than 16:10 (portrait phones and tablets, tall windows) keep the
+    // horizontal field of view of a 16:10 one, so the board still fits across
+    var fovY = radians(cp.fov)
+    if aspect < 1.6 { fovY = 2 * atan(tan(fovY / 2) * 1.6 / aspect) }
     sv.nearZ = 0.08
     sv.farZ = 90
-    projM = perspective(radians(cp.fov), aspect, sv.nearZ, sv.farZ)
+    projM = perspective(fovY, aspect, sv.nearZ, sv.farZ)
     viewM = lookAt(cp.pos, cp.target, vec3(0, 1, 0))
     sv.view = viewM
     sv.proj = projM
@@ -738,14 +823,17 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
   }
 
   /// Presents the frame and saves it to each path (BGRA read back from the drawable).
-  private func capture(_ cb: MTLCommandBuffer, _ target: MTLTexture, _ paths: [String], _ drawable: CAMetalDrawable) {
+  /// Returns the paths that were written.
+  @discardableResult
+  private func capture(_ cb: MTLCommandBuffer, _ target: MTLTexture, _ paths: [String],
+                       _ drawable: CAMetalDrawable) -> Set<String> {
     let w = target.width, h = target.height, row = w * 4
     guard let buf = device.makeBuffer(length: row * h, options: .storageModeShared),
           let blit = cb.makeBlitCommandEncoder()
     else {
       cb.present(drawable)
       cb.commit()
-      return
+      return []
     }
     blit.copy(from: target, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
               sourceSize: MTLSize(width: w, height: h, depth: 1), to: buf, destinationOffset: 0,
@@ -755,17 +843,25 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
     cb.commit()
     cb.waitUntilCompleted()
     let px = [UInt8](UnsafeBufferPointer(start: buf.contents().assumingMemoryBound(to: UInt8.self), count: row * h))
+    var saved = Set<String>()
     for p in paths {
       if writePNG(p, w, h, bgra: px) {
         print("saved \(p)")
+        saved.insert(p)
       } else {
         print("could not write \(p)")
       }
     }
+    return saved
   }
 
   private func screenshotPath() -> String {
+#if os(macOS)
     let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures/Living Marble")
+#else
+    // the app's Documents folder: Files › On My iPhone (iPad) › Living Marble
+    let dir = URL.documentsDirectory
+#endif
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
@@ -778,7 +874,11 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
       print("moves: " + game.san.joined(separator: " "))
       print("result: \(game.result.text) (\(game.plyCount) plies, \(world.actors.count) actors, \(world.chunks.count) chunks)")
     }
+#if os(macOS)
     NSApp.terminate(nil)
+#else
+    exit(0)  // only the capture tools quit; iOS apps never close themselves otherwise
+#endif
   }
 
   // ---------------------------------------------------------------------------
@@ -828,10 +928,13 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
     world.reset()
     world.spawnFromBoard(game.board.sq, false)
   }
+}
 
-  // ---------------------------------------------------------------------------
-  // Menu actions
-  // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Menu actions (Mac menu bar)
+// ---------------------------------------------------------------------------
+#if os(macOS)
+extension GameController: NSMenuItemValidation {
   @objc func newGameAction(_ sender: Any?) { if !loading { newGame() } }
   @objc func undoAction(_ sender: Any?) { if !loading { undo() } }
   @objc func flipAction(_ sender: Any?) { flipCamera() }
@@ -872,3 +975,4 @@ final class GameController: NSObject, MTKViewDelegate, NSMenuItemValidation {
     return true
   }
 }
+#endif
