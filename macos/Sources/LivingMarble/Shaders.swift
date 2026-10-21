@@ -11,13 +11,15 @@
 // - Cube faces keep the GL face basis table: uv = texel / size, ndc = uv*2-1.
 
 enum Shaders {
-  static let source = common + lighting + mesh + object + board + fullscreen + ibl + post + particles
+  static let source = mslCommon + mslLighting + mslMesh + mslObject + mslBoard + mslFullscreen + mslIBL + mslPost +
+    mslParticles
 }
 
 // ===========================================================================
 // shared constants / helpers / samplers / uniform blocks
 // ===========================================================================
-private let common = #"""
+extension Shaders {
+  fileprivate static let mslCommon = #"""
 #include <metal_stdlib>
 using namespace metal;
 
@@ -60,7 +62,6 @@ struct PassU {
   int numLights;
   int ssaoOn;
   int clip;          // 1: clip at the board plane (reflection pass)
-  int glLeak;        // 1: raw shadow reads hit the reflection texture (Renderer.emulateGLShadowLeak)
 };
 
 // per draw item
@@ -88,20 +89,22 @@ struct BoardU {
   float reflectLod;
 };
 """#
+}
 
 // ===========================================================================
 // PBR + shadows + IBL
 // ===========================================================================
-private let lighting = #"""
+extension Shaders {
+  fileprivate static let mslLighting = #"""
 // Resources every lit fragment needs. Lights: [0..7] pos + radius, [8..15] colour.
 #define LIGHT_PARAMS constant PassU& u, constant float4* lights, depth2d<float> shadowMap, \
   texturecube<float> irradiance, texturecube<float> prefilter, texture2d<float> brdfLut, \
-  texture2d<float> ssaoTex, texture2d<float> leakTex, float2 fragCoord
-#define LIGHT_ARGS u, lights, shadowMap, irradiance, prefilter, brdfLut, ssaoTex, leakTex, fragCoord
+  texture2d<float> ssaoTex, float2 fragCoord
+#define LIGHT_ARGS u, lights, shadowMap, irradiance, prefilter, brdfLut, ssaoTex, fragCoord
 #define LIGHT_BINDINGS constant PassU& u [[buffer(2)]], constant float4* lights [[buffer(3)]], \
   depth2d<float> shadowMap [[texture(0)]], texturecube<float> irradiance [[texture(1)]], \
   texturecube<float> prefilter [[texture(2)]], texture2d<float> brdfLut [[texture(3)]], \
-  texture2d<float> ssaoTex [[texture(4)]], texture2d<float> leakTex [[texture(9)]]
+  texture2d<float> ssaoTex [[texture(4)]]
 
 constant float2 POISSON[16] = {
   float2(-0.94201624, -0.39906216), float2(0.94558609, -0.76890725), float2(-0.09418410, -0.92938870),
@@ -135,10 +138,7 @@ float lightPool(float3 p) { return mix(1.0, 0.04, smoothstep(5.2, 12.0, length(p
 float3 shadowCoord(float4 lp) { return float3(lp.xy / lp.w * float2(0.5, -0.5) + 0.5, lp.z / lp.w); }
 
 // Raw (non-comparison) shadow map depth for the blocker search and the thickness.
-// In the GL build's main pass this sampler unit was left bound to the reflection
-// texture; glLeak reproduces that on request (see Renderer.emulateGLShadowLeak).
 float rawDepth(float2 uv, LIGHT_PARAMS) {
-  if (u.glLeak == 1) return leakTex.sample(sNearest, uv, level(0)).r;
   return shadowMap.sample(sNearest, uv, level(0));
 }
 
@@ -247,11 +247,13 @@ float3 shadeSurface(Surface s, float shadow, float thick, LIGHT_PARAMS) {
   return col;
 }
 """#
+}
 
 // ===========================================================================
 // deformable mesh vertex shader (rig) + shadow / prepass fragments
 // ===========================================================================
-private let mesh = #"""
+extension Shaders {
+  fileprivate static let mslMesh = #"""
 struct MeshIn {
   float3 pos [[attribute(0)]];
   float3 nrm [[attribute(1)]];
@@ -325,6 +327,10 @@ vertex MeshOut meshVS(MeshIn in [[stage_in]], constant DrawU& d [[buffer(1)]], c
   return o;
 }
 
+// Mesh fragment shaders are compiled with and without dissolve support. Without
+// it the pipeline never discards, so Apple GPUs keep hidden surface removal on.
+constant bool kDissolve [[function_constant(0)]];
+
 // dissolve helper shared by shadow/prepass/object shaders
 float dissolveField(float3 o, float3 texOffset, texture3d<float> noise) {
   return noise.sample(sNoise, o * 2.1 + texOffset * 0.37).r * 0.78 +
@@ -338,17 +344,19 @@ fragment void shadowFS(MeshFrag in [[stage_in]], constant DrawU& d [[buffer(1)]]
 
 fragment float4 prepassFS(MeshFrag in [[stage_in]], bool front [[front_facing]], constant DrawU& d [[buffer(1)]],
                           constant PassU& u [[buffer(2)]], texture3d<float> noise [[texture(5)]]) {
-  if (d.dissolve > 0.0 && dissolveField(in.obj, d.texOffset, noise) < d.dissolve) discard_fragment();
+  if (kDissolve && d.dissolve > 0.0 && dissolveField(in.obj, d.texOffset, noise) < d.dissolve) discard_fragment();
   float3 n = normalize(float3x3(u.view[0].xyz, u.view[1].xyz, u.view[2].xyz) * normalize(in.nrm));
   if (!front) n = -n;
   return float4(n, 1.0);
 }
 """#
+}
 
 // ===========================================================================
 // marble, steel, iron, fragments
 // ===========================================================================
-private let object = #"""
+extension Shaders {
+  fileprivate static let mslObject = #"""
 fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], LIGHT_BINDINGS,
                          constant DrawU& d [[buffer(1)]], texture3d<float> noise [[texture(5)]]) {
   float2 fragCoord = in.position.xy;
@@ -356,7 +364,7 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
   if (!front) N = -N;
   float3 V = normalize(u.camPos - in.world);
   float3 emissive = float3(0.0);
-  if (d.dissolve > 0.0) {
+  if (kDissolve && d.dissolve > 0.0) {
     float edge = dissolveField(in.obj, d.texOffset, noise) - d.dissolve;
     if (edge < 0.0) discard_fragment();
     emissive += d.dissolveColor * (1.0 - smoothstep(0.0, 0.06, edge)) * 7.0;
@@ -453,11 +461,13 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
   return float4(col, 1.0);
 }
 """#
+}
 
 // ===========================================================================
 // lacquered inlaid wood board
 // ===========================================================================
-private let board = #"""
+extension Shaders {
+  fileprivate static let mslBoard = #"""
 fragment float4 boardFS(MeshFrag in [[stage_in]], LIGHT_BINDINGS,
                         constant BoardU& b [[buffer(4)]],
                         constant float4* occ [[buffer(5)]],      // x, z, radius, strength
@@ -618,11 +628,13 @@ fragment float4 boardFS(MeshFrag in [[stage_in]], LIGHT_BINDINGS,
   return float4(col, 1.0);
 }
 """#
+}
 
 // ===========================================================================
 // fullscreen triangle + background
 // ===========================================================================
-private let fullscreen = #"""
+extension Shaders {
+  fileprivate static let mslFullscreen = #"""
 struct FsOut {
   float4 position [[position]];
   float2 uv;  // position.xy / target size: top-left origin, matches texture rows
@@ -652,11 +664,13 @@ fragment float4 backgroundFS(FsOut in [[stage_in]], constant BackgroundU& u [[bu
   return float4(c * u.bgIntensity, 1.0);
 }
 """#
+}
 
 // ===========================================================================
 // image based lighting generation (run once at startup)
 // ===========================================================================
-private let ibl = #"""
+extension Shaders {
+  fileprivate static let mslIBL = #"""
 struct FaceU {
   float3 fwd;
   float3 right;
@@ -813,11 +827,13 @@ fragment float4 brdfLutFS(FsOut in [[stage_in]]) {
   return float4(A / float(SAMPLES), B / float(SAMPLES), 0.0, 1.0);
 }
 """#
+}
 
 // ===========================================================================
 // SSAO, bloom, depth of field, tonemap composite
 // ===========================================================================
-private let post = #"""
+extension Shaders {
+  fileprivate static let mslPost = #"""
 struct SsaoU {
   float4x4 proj;
   float4x4 invProj;
@@ -1004,11 +1020,13 @@ fragment float4 compositeFS(FsOut in [[stage_in]], constant CompositeU& u [[buff
   return float4(c * u.fade, 1.0);
 }
 """#
+}
 
 // ===========================================================================
 // soft, depth-faded particles (instanced camera-facing quads)
 // ===========================================================================
-private let particles = #"""
+extension Shaders {
+  fileprivate static let mslParticles = #"""
 struct ParticleU {
   float4x4 view;
   float4x4 proj;
@@ -1091,3 +1109,4 @@ fragment float4 particleFS(PartOut in [[stage_in]], constant ParticleU& u [[buff
   return float4(in.color.rgb * a, in.color.a * a);
 }
 """#
+}

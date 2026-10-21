@@ -9,171 +9,179 @@ import simd
 // Uniform blocks. Member order and types mirror the MSL structs in
 // Shaders.swift (vec3 is 16 bytes in both languages, so layouts match).
 // ---------------------------------------------------------------------------
-private struct PassUniforms {
-  var viewProj = mat4.identity
-  var view = mat4.identity
-  var lightVP = mat4.identity
-  var camPos = vec3(0)
-  var lightDir = vec3(0)
-  var lightColor = vec3(0)
-  var invScreen = vec2(0)
-  var shadowTexel: Float = 0
-  var shadowWorld: Float = 0
-  var shadowRange: Float = 0
-  var prefilterMaxLod: Float = 0
-  var ambient: Float = 0
-  var time: Float = 0
-  var boardHalf: Float = 0
-  var shadowsOn: Int32 = 0
-  var numLights: Int32 = 0
-  var ssaoOn: Int32 = 0
-  var clip: Int32 = 0
-  var glLeak: Int32 = 0
-}
-
-private struct DrawUniforms {
-  var model = mat4.identity
-  var rig = vec4(0, 0, 1, 0)  // bend, bendDir, squash, twist
-  var glow = vec4(0)
-  var texOffset = vec3(0)
-  var crackColor = vec3(1.0, 0.6, 0.25)
-  var dissolveColor = vec3(1.0, 0.8, 0.4)
-  var rigH: Float = 1
-  var dissolve: Float = 0
-  var crack: Float = 0
-  var heat: Float = 0
-  var groundAO: Float = 1
-  var mat: Int32 = 0
-
-  init() {}
-  init(_ it: DrawItem) {
-    model = it.model
-    rig = it.rig
-    glow = it.glow
-    texOffset = it.texOffset
-    crackColor = it.crackColor
-    dissolveColor = it.dissolveColor
-    rigH = it.rigH
-    dissolve = it.dissolve
-    crack = it.crack
-    heat = it.heat
-    groundAO = it.groundAO ? 1 : 0
-    mat = it.material.rawValue
+extension Renderer {
+  fileprivate struct PassUniforms {
+    var viewProj = mat4.identity
+    var view = mat4.identity
+    var lightVP = mat4.identity
+    var camPos = vec3(0)
+    var lightDir = vec3(0)
+    var lightColor = vec3(0)
+    var invScreen = vec2(0)
+    var shadowTexel: Float = 0
+    var shadowWorld: Float = 0
+    var shadowRange: Float = 0
+    var prefilterMaxLod: Float = 0
+    var ambient: Float = 0
+    var time: Float = 0
+    var boardHalf: Float = 0
+    var shadowsOn: Int32 = 0
+    var numLights: Int32 = 0
+    var ssaoOn: Int32 = 0
+    var clip: Int32 = 0
   }
-}
 
-private struct BoardUniforms {
-  var check = vec4(0)
-  var numOcc: Int32 = 0
-  var numRings: Int32 = 0
-  var reflectOn: Int32 = 0
-  var reflectLod: Float = 0
-}
+  fileprivate struct DrawUniforms {
+    var model = mat4.identity
+    var rig = vec4(0, 0, 1, 0)  // bend, bendDir, squash, twist
+    var glow = vec4(0)
+    var texOffset = vec3(0)
+    var crackColor = vec3(1.0, 0.6, 0.25)
+    var dissolveColor = vec3(1.0, 0.8, 0.4)
+    var rigH: Float = 1
+    var dissolve: Float = 0
+    var crack: Float = 0
+    var heat: Float = 0
+    var groundAO: Float = 1
+    var mat: Int32 = 0
 
-private struct FaceUniforms {
-  var fwd = vec3(0), right = vec3(0), up = vec3(0)
-  var keyDir = vec3(0)
-  var includeKey: Int32 = 0
-  var roughness: Float = 0
-  var envRes: Float = 0
-}
-
-private struct BackgroundUniforms {
-  var invViewProj: mat4
-  var camPos: vec3
-  var bgLod: Float
-  var bgIntensity: Float
-}
-
-private struct SsaoUniforms {
-  var proj: mat4
-  var invProj: mat4
-  var radius: Float
-}
-
-private struct SsaoBlurUniforms {
-  var texel: vec2
-  var nearFar: vec2
-}
-
-private struct BloomUniforms {
-  var texel: vec2  // down: source texel size; up: tap radius
-  var first: Int32
-}
-
-private struct DofCocUniforms {
-  var nearFar: vec2
-  var srcTexel: vec2
-  var focus: Float
-  var aperture: Float
-  var maxCoc: Float
-}
-
-private struct DofBokehUniforms {
-  var texel: vec2
-  var maxCoc: Float
-}
-
-private struct CompositeUniforms {
-  var flash: vec3
-  var bloomStrength: Float
-  var exposure: Float
-  var vignette: Float
-  var grain: Float
-  var time: Float
-  var fade: Float
-  var bloomOn: Int32
-}
-
-private struct ParticleUniforms {
-  var view: mat4
-  var proj: mat4
-  var invScreen: vec2
-  var nearFar: vec2
-}
-
-private enum Blend { case none, premultiplied, additive }
-
-private struct RendererError: Error, CustomStringConvertible {
-  let description: String
-}
-
-/// std::mt19937 + libc++ uniform_real_distribution<float>(0, 1), so the SSAO
-/// kernel is the same one the GL build used.
-private struct MT19937 {
-  private var mt = [UInt32](repeating: 0, count: 624)
-  private var index = 624
-  init(seed: UInt32) {
-    mt[0] = seed
-    for i in 1..<624 { mt[i] = 1_812_433_253 &* (mt[i - 1] ^ (mt[i - 1] >> 30)) &+ UInt32(i) }
-  }
-  mutating func next() -> UInt32 {
-    if index >= 624 {
-      for i in 0..<624 {
-        let y = (mt[i] & 0x8000_0000) | (mt[(i + 1) % 624] & 0x7fff_ffff)
-        var v = mt[(i + 397) % 624] ^ (y >> 1)
-        if y & 1 != 0 { v ^= 0x9908_b0df }
-        mt[i] = v
-      }
-      index = 0
+    init() {}
+    init(_ it: DrawItem) {
+      model = it.model
+      rig = it.rig
+      glow = it.glow
+      texOffset = it.texOffset
+      crackColor = it.crackColor
+      dissolveColor = it.dissolveColor
+      rigH = it.rigH
+      dissolve = it.dissolve
+      crack = it.crack
+      heat = it.heat
+      groundAO = it.groundAO ? 1 : 0
+      mat = it.material.rawValue
     }
-    var y = mt[index]
-    index += 1
-    y ^= y >> 11
-    y ^= (y << 7) & 0x9d2c_5680
-    y ^= (y << 15) & 0xefc6_0000
-    y ^= y >> 18
-    return y
   }
-  mutating func uniform() -> Float { Float(next()) / Float(4_294_967_296.0) }
-}
 
-// GL cube face basis (forward, right, up per face, +X -X +Y -Y +Z -Z).
-private let kCubeFaces: [(f: vec3, r: vec3, u: vec3)] = [
-  (vec3(1, 0, 0), vec3(0, 0, -1), vec3(0, -1, 0)), (vec3(-1, 0, 0), vec3(0, 0, 1), vec3(0, -1, 0)),
-  (vec3(0, 1, 0), vec3(1, 0, 0), vec3(0, 0, 1)), (vec3(0, -1, 0), vec3(1, 0, 0), vec3(0, 0, -1)),
-  (vec3(0, 0, 1), vec3(1, 0, 0), vec3(0, -1, 0)), (vec3(0, 0, -1), vec3(-1, 0, 0), vec3(0, -1, 0)),
-]
+  fileprivate struct BoardUniforms {
+    var check = vec4(0)
+    var numOcc: Int32 = 0
+    var numRings: Int32 = 0
+    var reflectOn: Int32 = 0
+    var reflectLod: Float = 0
+  }
+
+  fileprivate struct FaceUniforms {
+    var fwd = vec3(0), right = vec3(0), up = vec3(0)
+    var keyDir = vec3(0)
+    var includeKey: Int32 = 0
+    var roughness: Float = 0
+    var envRes: Float = 0
+  }
+
+  fileprivate struct BackgroundUniforms {
+    var invViewProj: mat4
+    var camPos: vec3
+    var bgLod: Float
+    var bgIntensity: Float
+  }
+
+  fileprivate struct SsaoUniforms {
+    var proj: mat4
+    var invProj: mat4
+    var radius: Float
+  }
+
+  fileprivate struct SsaoBlurUniforms {
+    var texel: vec2
+    var nearFar: vec2
+  }
+
+  fileprivate struct BloomUniforms {
+    var texel: vec2  // down: source texel size; up: tap radius
+    var first: Int32
+  }
+
+  fileprivate struct DofCocUniforms {
+    var nearFar: vec2
+    var srcTexel: vec2
+    var focus: Float
+    var aperture: Float
+    var maxCoc: Float
+  }
+
+  fileprivate struct DofBokehUniforms {
+    var texel: vec2
+    var maxCoc: Float
+  }
+
+  fileprivate struct CompositeUniforms {
+    var flash: vec3
+    var bloomStrength: Float
+    var exposure: Float
+    var vignette: Float
+    var grain: Float
+    var time: Float
+    var fade: Float
+    var bloomOn: Int32
+  }
+
+  fileprivate struct ParticleUniforms {
+    var view: mat4
+    var proj: mat4
+    var invScreen: vec2
+    var nearFar: vec2
+  }
+
+  fileprivate enum Blend { case none, premultiplied, additive }
+
+  /// A mesh pass compiled without dissolve support (no discard: keeps the GPU's hidden
+  /// surface removal) and with it, for items that are dissolving.
+  fileprivate struct MeshPipes {
+    let plain: MTLRenderPipelineState
+    let dissolve: MTLRenderPipelineState
+  }
+
+  fileprivate struct RendererError: Error, CustomStringConvertible {
+    let description: String
+  }
+
+  /// std::mt19937 + libc++ uniform_real_distribution<float>(0, 1), so the SSAO
+  /// kernel is the same one the GL build used.
+  fileprivate struct MT19937 {
+    private var mt = [UInt32](repeating: 0, count: 624)
+    private var index = 624
+    init(seed: UInt32) {
+      mt[0] = seed
+      for i in 1..<624 { mt[i] = 1_812_433_253 &* (mt[i - 1] ^ (mt[i - 1] >> 30)) &+ UInt32(i) }
+    }
+    mutating func next() -> UInt32 {
+      if index >= 624 {
+        for i in 0..<624 {
+          let y = (mt[i] & 0x8000_0000) | (mt[(i + 1) % 624] & 0x7fff_ffff)
+          var v = mt[(i + 397) % 624] ^ (y >> 1)
+          if y & 1 != 0 { v ^= 0x9908_b0df }
+          mt[i] = v
+        }
+        index = 0
+      }
+      var y = mt[index]
+      index += 1
+      y ^= y >> 11
+      y ^= (y << 7) & 0x9d2c_5680
+      y ^= (y << 15) & 0xefc6_0000
+      y ^= y >> 18
+      return y
+    }
+    mutating func uniform() -> Float { Float(next()) / Float(4_294_967_296.0) }
+  }
+
+  // GL cube face basis (forward, right, up per face, +X -X +Y -Y +Z -Z).
+  fileprivate static let cubeFaces: [(f: vec3, r: vec3, u: vec3)] = [
+    (vec3(1, 0, 0), vec3(0, 0, -1), vec3(0, -1, 0)), (vec3(-1, 0, 0), vec3(0, 0, 1), vec3(0, -1, 0)),
+    (vec3(0, 1, 0), vec3(1, 0, 0), vec3(0, 0, 1)), (vec3(0, -1, 0), vec3(1, 0, 0), vec3(0, 0, -1)),
+    (vec3(0, 0, 1), vec3(1, 0, 0), vec3(0, -1, 0)), (vec3(0, 0, -1), vec3(-1, 0, 0), vec3(0, -1, 0)),
+  ]
+}
 
 // ---------------------------------------------------------------------------
 final class Renderer {
@@ -188,18 +196,11 @@ final class Renderer {
   var sword = GpuMesh(), cannonball = GpuMesh(), board = GpuMesh()
   var libraryReady = false
 
-  /// The GL build leaks a texture binding: generating the reflection mips rebinds
-  /// texture unit 1 (the raw shadow-map sampler of the PCSS blocker search and the
-  /// SSS thickness) to the reflection texture for the rest of the frame. Its High and
-  /// Medium screenshots therefore show wide, faint shadows, ~25% less key light on
-  /// the board and no back-lit translucency. false renders what the shaders intend
-  /// (identical to the GL Low preset); true reproduces the GL High/Medium look.
-  var emulateGLShadowLeak = false
-
   // Shadow depth bias (GL: glPolygonOffset(1.5, 3.0) on a 24-bit buffer). Metal's
-  // constant unit on depth32Float is 2^(exponent - 23) of the primitive's depth
-  // (~2^-25 here vs GL's fixed 2^-24), so the constant term is scaled up to match.
-  private static let shadowBias: Float = 12.0
+  // constant unit on depth32Float is 2^(exponent - 23) of the primitive's depth: 2^-25
+  // around the board (light-space depth ~0.48) vs GL's fixed 2^-24, hence 2 x 3.
+  // (The shader's normal offset and compare margins dominate anyway: no acne even at 0.)
+  private static let shadowBias: Float = 6.0
   private static let shadowSlopeBias: Float = 1.5
 
   private static let framesInFlight = 3
@@ -211,9 +212,8 @@ final class Renderer {
   private let memoryless: Bool
 
   // pipelines (the MSAA-dependent ones are rebuilt when the sample count changes)
-  private var psShadow: MTLRenderPipelineState!, psShadowDepth: MTLRenderPipelineState!
-  private var psPrepass: MTLRenderPipelineState!, psObjectRefl: MTLRenderPipelineState!
-  private var psObject: MTLRenderPipelineState!, psBoard: MTLRenderPipelineState!
+  private var mpShadow: MeshPipes!, mpPrepass: MeshPipes!, mpObjectRefl: MeshPipes!, mpObject: MeshPipes!
+  private var psBoard: MTLRenderPipelineState!
   private var psBackground: MTLRenderPipelineState!, psParticle: MTLRenderPipelineState!
   private var psEnv: MTLRenderPipelineState!, psIrr: MTLRenderPipelineState!
   private var psPrefilter: MTLRenderPipelineState!, psBrdf: MTLRenderPipelineState!
@@ -275,9 +275,15 @@ final class Renderer {
 
     do {
       library = try device.makeLibrary(source: Shaders.source, options: nil)
+    } catch {
+      // the compiler log ("program_source:LINE:COL: error: ...") is the localized description
+      Renderer.logError("[shader] Metal shader compile error:\n\((error as NSError).localizedDescription)")
+      return nil
+    }
+    do {
       try buildPrograms()
     } catch {
-      FileHandle.standardError.write("[renderer] shader build failed:\n\(error)\n".data(using: .utf8)!)
+      Renderer.logError("[shader] \(error)")
       return nil
     }
     let dsd = MTLDepthStencilDescriptor()
@@ -323,7 +329,7 @@ final class Renderer {
 
     buildIBL()
     applySettings(s)
-    if psObject == nil { return nil }
+    if mpObject == nil { return nil }
   }
 
   // -------------------------------------------------------------------------
@@ -331,14 +337,21 @@ final class Renderer {
   // -------------------------------------------------------------------------
   private func makePipeline(_ label: String, vs: String, fs: String?, color: MTLPixelFormat = .invalid,
                             depth: MTLPixelFormat = .invalid, samples: Int = 1, blend: Blend = .none,
-                            mesh: Bool = false) throws -> MTLRenderPipelineState {
+                            mesh: Bool = false, dissolve: Bool? = nil) throws -> MTLRenderPipelineState {
     let d = MTLRenderPipelineDescriptor()
     d.label = label
     guard let v = library.makeFunction(name: vs) else { throw RendererError(description: "missing function \(vs)") }
     d.vertexFunction = v
     if let fs {
-      guard let f = library.makeFunction(name: fs) else { throw RendererError(description: "missing function \(fs)") }
-      d.fragmentFunction = f
+      if let dissolve {
+        let cv = MTLFunctionConstantValues()
+        var on = dissolve
+        cv.setConstantValue(&on, type: .bool, index: 0)
+        d.fragmentFunction = try library.makeFunction(name: fs, constantValues: cv)
+      } else {
+        guard let f = library.makeFunction(name: fs) else { throw RendererError(description: "missing function \(fs)") }
+        d.fragmentFunction = f
+      }
     }
     if mesh { d.vertexDescriptor = meshLayout }
     d.colorAttachments[0].pixelFormat = color
@@ -364,11 +377,12 @@ final class Renderer {
 
   private func buildPrograms() throws {
     let hdr = MTLPixelFormat.rgba16Float, dep = MTLPixelFormat.depth32Float
-    psShadow = try makePipeline("shadow", vs: "meshVS", fs: "shadowFS", depth: dep, mesh: true)
-    psShadowDepth = try makePipeline("shadow (depth only)", vs: "meshVS", fs: nil, depth: dep, mesh: true)
-    psPrepass = try makePipeline("prepass", vs: "meshVS", fs: "prepassFS", color: hdr, depth: dep, mesh: true)
-    psObjectRefl = try makePipeline("object (reflection)", vs: "meshVS", fs: "objectFS", color: hdr, depth: dep,
-                                    mesh: true)
+    // only dissolving items need a fragment stage in the shadow map
+    mpShadow = MeshPipes(plain: try makePipeline("shadow", vs: "meshVS", fs: nil, depth: dep, mesh: true),
+                         dissolve: try makePipeline("shadow (dissolve)", vs: "meshVS", fs: "shadowFS", depth: dep,
+                                                    mesh: true))
+    mpPrepass = try meshPipes("prepass", fs: "prepassFS", color: hdr, depth: dep)
+    mpObjectRefl = try meshPipes("object (reflection)", fs: "objectFS", color: hdr, depth: dep)
     psEnv = try makePipeline("envgen", vs: "fullscreenVS", fs: "envGenFS", color: hdr)
     psIrr = try makePipeline("irradiance", vs: "fullscreenVS", fs: "irradianceFS", color: hdr)
     psPrefilter = try makePipeline("prefilter", vs: "fullscreenVS", fs: "prefilterFS", color: hdr)
@@ -383,11 +397,18 @@ final class Renderer {
     psComposite = try makePipeline("composite", vs: "fullscreenVS", fs: "compositeFS", color: Renderer.outputPixelFormat)
   }
 
+  private func meshPipes(_ label: String, fs: String, color: MTLPixelFormat, depth: MTLPixelFormat,
+                         samples: Int = 1) throws -> MeshPipes {
+    MeshPipes(plain: try makePipeline(label, vs: "meshVS", fs: fs, color: color, depth: depth, samples: samples,
+                                      mesh: true, dissolve: false),
+              dissolve: try makePipeline(label + " (dissolve)", vs: "meshVS", fs: fs, color: color, depth: depth,
+                                         samples: samples, mesh: true, dissolve: true))
+  }
+
   /// Pipelines of the multisampled main pass.
   private func buildMainPrograms(samples: Int) throws {
     let hdr = MTLPixelFormat.rgba16Float, dep = MTLPixelFormat.depth32Float
-    psObject = try makePipeline("object", vs: "meshVS", fs: "objectFS", color: hdr, depth: dep, samples: samples,
-                                mesh: true)
+    mpObject = try meshPipes("object", fs: "objectFS", color: hdr, depth: dep, samples: samples)
     psBoard = try makePipeline("board", vs: "meshVS", fs: "boardFS", color: hdr, depth: dep, samples: samples,
                                mesh: true)
     psBackground = try makePipeline("background", vs: "fullscreenVS", fs: "backgroundFS", color: hdr, depth: dep,
@@ -487,7 +508,7 @@ final class Renderer {
       do {
         try buildMainPrograms(samples: samples)
       } catch {
-        FileHandle.standardError.write("[renderer] \(error)\n".data(using: .utf8)!)
+        Renderer.logError("[shader] \(error)")
       }
     }
     tw = 0  // force target re-creation
@@ -495,6 +516,10 @@ final class Renderer {
   }
 
   func setRenderScale(_ s: Float) { settings.renderScale = s }
+
+  private static func logError(_ msg: String) {
+    FileHandle.standardError.write((msg + "\n").data(using: .utf8)!)
+  }
 
   // -------------------------------------------------------------------------
   private func buildIBL() {
@@ -511,9 +536,9 @@ final class Renderer {
         rp.colorAttachments[0].storeAction = .store
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rp) else { continue }
         var u = fu
-        u.fwd = kCubeFaces[f].f
-        u.right = kCubeFaces[f].r
-        u.up = kCubeFaces[f].u
+        u.fwd = Renderer.cubeFaces[f].f
+        u.right = Renderer.cubeFaces[f].r
+        u.up = Renderer.cubeFaces[f].u
         enc.setRenderPipelineState(ps)
         enc.setCullMode(.none)
         enc.setFragmentBytes(&u, length: MemoryLayout<FaceUniforms>.stride, index: 0)
@@ -665,7 +690,6 @@ final class Renderer {
     enc.setFragmentTexture(brdfLut, index: 3)
     enc.setFragmentTexture(ssao, index: 4)
     enc.setFragmentTexture(noiseTex, index: 5)
-    enc.setFragmentTexture(pu.glLeak == 1 ? reflTex : white, index: 9)
   }
 
   @inline(__always) private func draw(_ enc: MTLRenderCommandEncoder, _ m: GpuMesh) {
@@ -675,21 +699,18 @@ final class Renderer {
                               indexBufferOffset: 0)
   }
 
-  private func drawItems(_ enc: MTLRenderCommandEncoder, _ sv: SceneView, lowLod: Bool, shadowPass: Bool,
-                         reflectPass: Bool) {
+  private func drawItems(_ enc: MTLRenderCommandEncoder, _ sv: SceneView, _ pipes: MeshPipes, lowLod: Bool,
+                         shadowPass: Bool, reflectPass: Bool) {
     var bound: MTLRenderPipelineState?
     for it in sv.items {
       if shadowPass && !it.castShadow { continue }
       if reflectPass && !it.reflect { continue }
       guard let m = (lowLod && it.meshLow != nil) ? it.meshLow : it.mesh, !m.isEmpty else { continue }
       var du = DrawUniforms(it)
-      if shadowPass {
-        // only dissolving items need the fragment stage in the shadow map
-        let ps: MTLRenderPipelineState = it.dissolve > 0 ? psShadow : psShadowDepth
-        if ps !== bound {
-          enc.setRenderPipelineState(ps)
-          bound = ps
-        }
+      let ps = it.dissolve > 0 ? pipes.dissolve : pipes.plain
+      if ps !== bound {
+        enc.setRenderPipelineState(ps)
+        bound = ps
       }
       enc.setVertexBytes(&du, length: MemoryLayout<DrawUniforms>.stride, index: 1)
       enc.setFragmentBytes(&du, length: MemoryLayout<DrawUniforms>.stride, index: 1)
@@ -755,8 +776,8 @@ final class Renderer {
         pu.viewProj = lightVP
         enc.setVertexBytes(&pu, length: MemoryLayout<PassUniforms>.stride, index: 2)
         enc.setFragmentTexture(noiseTex, index: 5)
-        drawItems(enc, sv, lowLod: true, shadowPass: true, reflectPass: false)
-        enc.setRenderPipelineState(psShadowDepth)
+        drawItems(enc, sv, mpShadow, lowLod: true, shadowPass: true, reflectPass: false)
+        enc.setRenderPipelineState(mpShadow.plain)
         drawBoard(enc)
         enc.endEncoding()
       }
@@ -777,7 +798,6 @@ final class Renderer {
       rp.depthAttachment.storeAction = .dontCare
       if let enc = cb.makeRenderCommandEncoder(descriptor: rp) {
         enc.label = "reflection"
-        enc.setRenderPipelineState(psObjectRefl)
         enc.setDepthStencilState(dsWrite)
         enc.setCullMode(.back)
         enc.setFrontFacing(.clockwise)  // the mirror flips the winding
@@ -785,7 +805,7 @@ final class Renderer {
         pu.viewProj = sv.proj * sv.view * scale(mat4.identity, vec3(1, -1, 1))
         pu.clip = 1
         bindLighting(enc, pu, sv, ssao: white)
-        drawItems(enc, sv, lowLod: true, shadowPass: false, reflectPass: true)
+        drawItems(enc, sv, mpObjectRefl, lowLod: true, shadowPass: false, reflectPass: true)
         enc.endEncoding()
       }
       if let blit = cb.makeBlitCommandEncoder() {
@@ -807,7 +827,6 @@ final class Renderer {
       rp.depthAttachment.storeAction = .store
       if let enc = cb.makeRenderCommandEncoder(descriptor: rp) {
         enc.label = "prepass"
-        enc.setRenderPipelineState(psPrepass)
         enc.setDepthStencilState(dsWrite)
         enc.setCullMode(.back)
         enc.setFrontFacing(.counterClockwise)
@@ -817,7 +836,8 @@ final class Renderer {
         enc.setVertexBytes(&pu, length: MemoryLayout<PassUniforms>.stride, index: 2)
         enc.setFragmentBytes(&pu, length: MemoryLayout<PassUniforms>.stride, index: 2)
         enc.setFragmentTexture(noiseTex, index: 5)
-        drawItems(enc, sv, lowLod: false, shadowPass: false, reflectPass: false)
+        drawItems(enc, sv, mpPrepass, lowLod: false, shadowPass: false, reflectPass: false)
+        enc.setRenderPipelineState(mpPrepass.plain)
         drawBoard(enc)
         enc.endEncoding()
       }
@@ -864,7 +884,6 @@ final class Renderer {
         enc.setFrontFacing(.counterClockwise)
         var pu = lightingUniforms(sv, reflectionPass: false)
         pu.viewProj = viewProj
-        pu.glLeak = emulateGLShadowLeak && reflect && settings.shadows ? 1 : 0
         bindLighting(enc, pu, sv, ssao: settings.ssao ? ssaoBlurTex : white)
 
         // board
@@ -896,8 +915,7 @@ final class Renderer {
         drawBoard(enc)
 
         // pieces, fragments, props
-        enc.setRenderPipelineState(psObject)
-        drawItems(enc, sv, lowLod: false, shadowPass: false, reflectPass: false)
+        drawItems(enc, sv, mpObject, lowLod: false, shadowPass: false, reflectPass: false)
 
         // background
         enc.setRenderPipelineState(psBackground)
