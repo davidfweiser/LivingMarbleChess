@@ -691,18 +691,24 @@ final class KingMothership: ABattle {
           let mid = (A + V) * 0.5
           var s = CamPose()
           var best: Float = 1e9
+          let aim = mid + vec3(0, 1.8, 0)
           for k in -1...1 {
-            for e in 0..<2 {
+            for e in 0..<6 {
               let ang: Float = 2.356 + 0.09 * Float(k)  // between the fill panel and the key light
               let look = vec3(cos(ang), 0, sin(ang))
-              let back: vec3 = mid - look * (4.2 + 0.8 * Float(e))
-              let cam = back + vec3(0, 1.1, 0)
-              var score = abs(dot(look, dir)) + 0.1 * Float(abs(k)) + 0.2 * Float(e)
+              let back: vec3 = mid - look * (3.6 + 0.8 * Float(e % 3))
+              let cam = back + vec3(0, e < 3 ? 1.1 : 1.7, 0)
+              let view = normalize(aim - cam)
+              var score = abs(dot(look, dir)) + 0.1 * Float(abs(k)) + 0.15 * Float(e)
               for o in w.actors {
                 if !o.alive || !o.visible || o.id == plan.mover || o.id == plan.victim { continue }
                 let r = o.radius() + 0.15
+                let c = o.pos + vec3(0, o.height() * 0.5, 0)
+                let d = length(c - cam)
                 if length(flat(o.pos - cam)) < r + 0.6 { score += 10 }
+                // pieces standing in the way, and big ones looming in the foreground
                 if segSegDist(cam, mid + vec3(0, 0.4, 0), o.pos, o.pos + vec3(0, o.height(), 0)) < r { score += 3 }
+                if d < 3.2 && dot((c - cam) / d, view) > 0.75 { score += 2.5 * o.height() / d }
               }
               if score < best {
                 best = score
@@ -710,7 +716,7 @@ final class KingMothership: ABattle {
               }
             }
           }
-          s.target = mid + vec3(0, 1.8, 0)
+          s.target = aim
           s.fov = 46
           s.focus = length(s.pos - V)
           s.aperture = 4
