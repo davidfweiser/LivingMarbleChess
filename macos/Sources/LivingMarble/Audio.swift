@@ -553,7 +553,7 @@ final class Audio {
     ok = true
     control.async { [weak self] in
       guard let self else { return }
-      if !Audio.prepareOutput() || !self.startEngine(m) { print("[audio] could not start the audio engine") }
+      if Audio.prepareOutput() { _ = self.startEngine(m) }
     }
     return true
 #else
@@ -628,6 +628,7 @@ final class Audio {
     do {
       try e.start()
     } catch {
+      print("[audio] could not start the audio engine: \(error)")
       e.detach(src)
       return false
     }
@@ -659,7 +660,11 @@ final class Audio {
     guard hw.sampleRate > 0, hw.channelCount > 0 else { return }
     e.connect(e.mainMixerNode, to: e.outputNode, format: hw)
     e.prepare()
-    try? e.start()
+    do {
+      try e.start()
+    } catch {
+      print("[audio] could not restart the audio engine: \(error)")
+    }
   }
 
 #if os(macOS)
@@ -674,13 +679,14 @@ final class Audio {
     return err == noErr && dev != kAudioObjectUnknown
   }
 #else
-  /// Game sounds: they mix with the player's music and respect the silent switch.
+  /// Game sounds play even in silent mode (most phones live there), mixed with the player's music.
   private static func prepareOutput() -> Bool {
     let session = AVAudioSession.sharedInstance()
     do {
-      try session.setCategory(.ambient)
+      try session.setCategory(.playback, options: [.mixWithOthers])
       try session.setActive(true)
     } catch {
+      print("[audio] could not set up the audio session: \(error)")
       return false
     }
     return true
