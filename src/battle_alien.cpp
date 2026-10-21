@@ -2308,17 +2308,23 @@ class KingMothership : public ABattle {
             vec3 mid = (A + V) * 0.5f;
             CamPose s;
             float best = 1e9f;
+            vec3 aim = mid + vec3(0, 1.8f, 0);
             for (int k = -1; k <= 1; ++k) {
-              for (int e = 0; e < 2; ++e) {
+              for (int e = 0; e < 6; ++e) {
                 float ang = 2.356f + 0.09f * (float)k;  // between the fill panel and the key light
                 vec3 look(std::cos(ang), 0, std::sin(ang));
-                vec3 cam = mid - look * (4.2f + 0.8f * (float)e) + vec3(0, 1.1f, 0);
-                float score = std::fabs(glm::dot(look, dir)) + 0.1f * (float)std::abs(k) + 0.2f * (float)e;
+                vec3 cam = mid - look * (3.6f + 0.8f * (float)(e % 3)) + vec3(0, e < 3 ? 1.1f : 1.7f, 0);
+                vec3 view = glm::normalize(aim - cam);
+                float score = std::fabs(glm::dot(look, dir)) + 0.1f * (float)std::abs(k) + 0.15f * (float)e;
                 for (const Actor& o : w.actors) {
                   if (!o.alive || !o.visible || o.id == plan.mover || o.id == plan.victim) continue;
                   float r = o.radius() + 0.15f;
+                  vec3 c = o.pos + vec3(0, o.height() * 0.5f, 0);
+                  float d = glm::length(c - cam);
                   if (glm::length(flat(o.pos - cam)) < r + 0.6f) score += 10.0f;
+                  // pieces standing in the way, and big ones looming in the foreground
                   if (segSegDist(cam, mid + vec3(0, 0.4f, 0), o.pos, o.pos + vec3(0, o.height(), 0)) < r) score += 3.0f;
+                  if (d < 3.2f && glm::dot((c - cam) / d, view) > 0.75f) score += 2.5f * o.height() / d;
                 }
                 if (score < best) {
                   best = score;
@@ -2326,7 +2332,7 @@ class KingMothership : public ABattle {
                 }
               }
             }
-            s.target = mid + vec3(0, 1.8f, 0);
+            s.target = aim;
             s.fov = 46.0f;
             s.focus = glm::length(s.pos - V);
             s.aperture = 4.0f;
