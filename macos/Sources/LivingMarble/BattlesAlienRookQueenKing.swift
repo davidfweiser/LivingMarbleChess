@@ -692,9 +692,9 @@ final class KingMothership: ABattle {
           var s = CamPose()
           var best: Float = 1e9
           let aim = mid + vec3(0, 1.8, 0)
-          for k in -1...1 {
+          for k in -2...2 {
             for e in 0..<6 {
-              let ang: Float = 2.356 + 0.09 * Float(k)  // between the fill panel and the key light
+              let ang: Float = 2.226 + 0.157 * Float(k)  // between the fill panel and the blue one
               let look = vec3(cos(ang), 0, sin(ang))
               let back: vec3 = mid - look * (3.6 + 0.8 * Float(e % 3))
               let cam = back + vec3(0, e < 3 ? 1.1 : 1.7, 0)
