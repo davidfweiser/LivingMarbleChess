@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "gl.h"
+#include "medieval.h"
 #include "meshgen.h"
 #include "textures.h"
 
@@ -38,7 +39,7 @@ class Shader {
   std::unordered_map<std::string, GLint> locs_;
 };
 
-enum Material { MAT_WHITE = 0, MAT_BLACK = 1, MAT_SWORD = 2, MAT_IRON = 3 };
+enum Material { MAT_WHITE = 0, MAT_BLACK = 1, MAT_SWORD = 2, MAT_IRON = 3, MAT_MEDIEVAL = 4 };
 
 struct DrawItem {
   const GpuMesh* mesh = nullptr;
@@ -54,9 +55,13 @@ struct DrawItem {
   float dissolve = 0;
   glm::vec3 dissolveColor{1.0f, 0.8f, 0.4f};
   float heat = 0;
+  float stone = 0;  // medieval: turned to salt
   bool castShadow = true;
   bool reflect = true;
   bool groundAO = true;
+  const glm::mat4* bones = nullptr;  // skinned meshes (medieval figures)
+  int boneCount = 0;
+  int team = 0;                      // medieval: 0 white army, 1 black army
 };
 
 struct PointLight {
@@ -121,6 +126,9 @@ class Renderer {
   PieceGpu pieces[meshgen::K_COUNT];
   GpuMesh sword, cannonball, board;
   bool libraryReady = false;
+  PieceGpu medieval[medieval::A_COUNT];
+  bool medievalReady = false;
+  void uploadMedieval(const medieval::Library& lib);
 
  private:
   void buildPrograms();

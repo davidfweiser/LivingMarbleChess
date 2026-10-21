@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "audio.h"
+#include "medieval.h"
 #include "meshgen.h"
 #include "particles.h"
 #include "renderer.h"
@@ -29,6 +30,7 @@ struct Spring1 {
 
 struct Actor {
   int id = -1, kind = 0, color = 0, square = -1;
+  int set = 0;  // 0 marble, 1 medieval
   bool alive = true, visible = true;
   glm::vec3 pos{0};
   float yaw = 0, yawTarget = 0, baseYaw = 0, yawRate = 9.0f;
@@ -45,6 +47,7 @@ struct Actor {
   float dissolve = 0;
   glm::vec3 dissolveColor{1.0f, 0.8f, 0.4f};
   glm::vec3 texOffset{0};
+  float stone = 0;  // turned to salt
   // behaviour
   float idleWeight = 1;
   float tremble = 0;
@@ -59,19 +62,30 @@ struct Actor {
   bool first = true;
   Spring1 bx, bz, sq, tw;
   glm::vec4 rig{0, 0, 1, 0};
+  // medieval figures: what the animations ask for, and the resulting skeleton pose
+  medieval::Controls ctl;
+  medieval::Pose pose;
+  float heat = 0;  // scorched by dragon fire
+  // throne (medieval bishop, queen and king): follows the figure unless it got up
+  bool seatFree = false;
+  glm::vec3 seatPos{0};
+  float seatYaw = 0;
+  bool hasSeat() const { return set == 1 && medieval::throned(kind); }
+  void resetControls();  // the figure's resting pose
 
   void update(float dt, float time, Audio* audio);
   void neutralize();  // snap the rig to rest (before shattering)
   glm::mat4 model() const;
   glm::mat4 rigidModel() const;  // without tilt
   glm::quat rotation() const;
-  float height() const { return meshgen::pieceHeight(kind) * scale; }
-  float radius() const { return meshgen::pieceRadius(kind) * scale; }
+  float height() const { return (set == 1 ? medieval::pieceHeight(kind) : meshgen::pieceHeight(kind)) * scale; }
+  float radius() const { return (set == 1 ? medieval::pieceRadius(kind) : meshgen::pieceRadius(kind)) * scale; }
   glm::vec3 forward() const { return glm::vec3(std::sin(yaw), 0, std::cos(yaw)); }
 };
 
 struct Chunk {
   int kind = 0, color = 0, index = 0;
+  int set = 0;  // 1: 'kind' is a medieval asset
   bool half = false;
   glm::vec3 pos{0}, v{0}, w{0};
   glm::quat rot{1, 0, 0, 0};
@@ -94,6 +108,21 @@ struct Prop {
   float heat = 0;
   bool alive = true;
   int id = 0;
+};
+
+// A skinned creature or object that is not a chessman (the dragon).
+struct Puppet {
+  int asset = 0, color = 0, id = 0;
+  glm::vec3 pos{0};
+  float yaw = 0, scale = 1;
+  glm::quat tilt{1, 0, 0, 0};  // applied after the yaw (a flying spear's pitch)
+  medieval::Controls ctl;
+  medieval::Pose pose;
+  float dissolve = 0;
+  glm::vec4 glow{0};
+  glm::vec3 texOffset{0};
+  bool alive = true;
+  glm::mat4 model() const;
 };
 
 struct GroundRing {
@@ -147,6 +176,12 @@ class Anim {
 class World {
  public:
   const meshgen::Library* lib = nullptr;
+  const medieval::Library* mlib = nullptr;
+  int pieceSet = 0;  // 0 Living Marble, 1 medieval
+  std::vector<Puppet> puppets;
+  int nextPuppetId = 1;
+  Puppet* puppet(int id);
+  int addPuppet(int asset, int color);
   Audio* audio = nullptr;
   std::vector<Actor> actors;
   int actorAt[64];
@@ -196,6 +231,12 @@ class World {
                float spin = 6.0f);
   // slice an actor in two along its slice plane
   void slice(Actor& a, float separation);
+  // break a medieval asset (e.g. a throne) drawn with model matrix M
+  void shatterAsset(int asset, int color, const glm::mat4& M, const glm::quat& R, const glm::vec3& vel,
+                    const glm::vec3& texOffset, const glm::vec3& impact, const glm::vec3& impulse, float explode,
+                    float upBias, float spin, float glow, const glm::vec3& glowColor);
+  glm::mat4 seatModel(const Actor& a) const;
+  const meshgen::PieceAssets& assetsOf(const Chunk& c) const;
   float beginFrame(float dtReal);  // slow-motion, decays; returns the scaled dt
   void simulate(float dt);         // physics, particles, lights, actors
   void buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const;

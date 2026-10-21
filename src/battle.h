@@ -19,10 +19,17 @@ struct MovePlan {
 };
 
 constexpr int kBattleStyles = 3;  // per piece type
-const char* battleStyleName(int kind, int style);
+const char* battleStyleName(int kind, int style, int set = 0);  // set: 0 Living Marble, 1 medieval
 
 std::unique_ptr<Anim> makeMoveAnim(World& w, const MovePlan& plan);
 std::unique_ptr<Anim> makeCheckmateAnim(World& w, int kingId, int winnerColor);
 std::unique_ptr<Anim> makeStalemateAnim(World& w);
 // staged demonstration of one attacker type (used by --battle for screenshots)
 std::unique_ptr<Anim> makeDemoBattle(World& w, int attackerId, int victimId);
+
+// the medieval army (battle_medieval.cpp)
+const char* medievalBattleStyleName(int kind, int style);
+std::unique_ptr<Anim> makeMedievalBattle(int kind, int style, const MovePlan& plan);
+std::unique_ptr<Anim> makeMedievalQuiet(const MovePlan& plan);
+std::unique_ptr<Anim> makeMedievalQuickCapture(const MovePlan& plan);
+std::unique_ptr<Anim> makeMedievalCheckmate(int kingId, int winnerColor);

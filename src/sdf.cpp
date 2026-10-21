@@ -299,6 +299,7 @@ MeshData polygonize(const Fn& f, const MeshOptions& o) {
         vt.ao = clamp(1.0f - 1.35f * occ / wsum, 0.0f, 1.0f);
       }
       if (o.aux) vt.aux = o.aux(vt.pos);
+      if (o.skin) o.skin(vt);
     }
   });
 
@@ -360,6 +361,8 @@ MeshData makeUVSphere(float r, int seg, int rings) {
       vt.nrm = n;
       vt.ao = 1;
       vt.aux = 0;
+      vt.bones = 0;
+      vt.mat = 0;
       m.v.push_back(vt);
     }
   }

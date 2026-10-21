@@ -49,4 +49,13 @@ float pieceHeight(int kind);
 float pieceRadius(int kind);
 sdf::Fn pieceField(int kind);
 
+// Fracture of any solid inside [lo, hi] (shared with the medieval set).
+// 'skin' (optional) fills each vertex's material while it is still in piece space.
+std::vector<Fragment> voronoiShatter(const sdf::Fn& F, const glm::vec3& lo, const glm::vec3& hi, int nSeeds,
+                                     uint32_t seedVal, float cell,
+                                     const std::function<void(sdf::Vertex&)>& skin = nullptr);
+std::vector<Fragment> sliceHalves(const sdf::Fn& F, const glm::vec3& lo, const glm::vec3& hi, const glm::vec3& n,
+                                  const glm::vec3& p0, float cell,
+                                  const std::function<void(sdf::Vertex&)>& skin = nullptr);
+
 }  // namespace meshgen

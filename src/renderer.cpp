@@ -32,6 +32,10 @@ void GpuMesh::upload(const sdf::MeshData& m) {
   glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, st, (void*)24);
   glEnableVertexAttribArray(3);
   glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, st, (void*)28);
+  glEnableVertexAttribArray(4);
+  glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, st, (void*)32);
+  glEnableVertexAttribArray(5);
+  glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, st, (void*)36);
   glBindVertexArray(0);
   count = (GLsizei)m.idx.size();
 }
@@ -413,6 +417,20 @@ void Renderer::uploadLibrary(const meshgen::Library& lib) {
   libraryReady = true;
 }
 
+void Renderer::uploadMedieval(const medieval::Library& lib) {
+  for (int k = 0; k < medieval::A_COUNT; ++k) {
+    const meshgen::PieceAssets& A = lib.asset[k];
+    PieceGpu& G = medieval[k];
+    G.lod0.upload(A.lod0);
+    G.lod1.upload(A.lod1);
+    G.shards.resize(A.shards.size());
+    for (size_t i = 0; i < A.shards.size(); ++i) G.shards[i].upload(A.shards[i].mesh);
+    G.halves.resize(A.halves.size());
+    for (size_t i = 0; i < A.halves.size(); ++i) G.halves[i].upload(A.halves[i].mesh);
+  }
+  medievalReady = true;
+}
+
 void Renderer::uploadBoardTextures(const tex::Image& albedo, const tex::Image& detail, float half) {
   delTex(boardAlbedo);
   delTex(boardDetail);
@@ -557,13 +575,18 @@ void Renderer::drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shado
     s.set("uRigH", it.rigH);
     s.set("uTexOffset", it.texOffset);
     s.set("uDissolve", it.dissolve);
+    int nb = it.bones ? std::min(it.boneCount, medieval::kMaxBones) : 0;
+    s.set("uBoneCount", nb);
+    if (nb > 0) glUniformMatrix4fv(s.loc("uBones"), nb, GL_FALSE, glm::value_ptr(it.bones[0]));
     if (!shadowPass) {
       s.set("uMat", it.material);
+      s.set("uTeam", it.team);
       s.set("uGlow", it.glow);
       s.set("uCrack", it.crack);
       s.set("uCrackColor", it.crackColor);
       s.set("uDissolveColor", it.dissolveColor);
       s.set("uHeat", it.heat);
+      s.set("uStone", it.stone);
       s.set("uGroundAO", it.groundAO ? 1.0f : 0.0f);
     }
     m->draw();
@@ -571,6 +594,7 @@ void Renderer::drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shado
 }
 
 void Renderer::drawBoard(Shader& s) {
+  s.set("uBoneCount", 0);
   s.set("uModel", glm::mat4(1.0f));
   s.set("uRig", glm::vec4(0, 0, 1, 0));
   s.set("uRigH", 1.0f);
@@ -628,6 +652,7 @@ void Renderer::render(const SceneView& sv, int fbW, int fbH, GLuint outFbo) {
     shShadow.set("uClip", 0);
     drawItems(shShadow, sv, true, true, false);
     shShadow.set("uModel", glm::mat4(1.0f));
+    shShadow.set("uBoneCount", 0);
     shShadow.set("uRig", glm::vec4(0, 0, 1, 0));
     shShadow.set("uDissolve", 0.0f);
     board.draw();
@@ -671,6 +696,7 @@ void Renderer::render(const SceneView& sv, int fbW, int fbH, GLuint outFbo) {
   shPrepass.set("uClip", 0);
   drawItems(shPrepass, sv, false, false, false);
   shPrepass.set("uModel", glm::mat4(1.0f));
+  shPrepass.set("uBoneCount", 0);
   shPrepass.set("uRig", glm::vec4(0, 0, 1, 0));
   shPrepass.set("uDissolve", 0.0f);
   board.draw();

@@ -61,11 +61,12 @@ App::App(const Options& o) : opt(o) {
   gfxPreset = o.gfxPreset;
   if (o.demo) mode = Mode::Watch;
   if (o.level >= 0) aiLevel = std::min(4, o.level);
-  fixedStep = !o.shotPath.empty() || !o.recordDir.empty() || o.battle >= 0;
+  fixedStep = !o.shotPath.empty() || !o.recordDir.empty() || o.battle >= 0 || !o.shotTimes.empty();
 }
 
 App::~App() {
   if (loader.joinable()) loader.join();
+  if (mloader.joinable()) mloader.join();
   ai.cancel();
   audio.shutdown();
   if (ImGui::GetCurrentContext()) {
@@ -210,8 +211,53 @@ void App::loadAssets() {
     progress.stage = "Inlaying the board";
     int res = opt.quality == 0 ? 1024 : (opt.quality == 1 ? 2048 : 4096);
     tex::bakeBoard(res, lib.boardHalf, boardAlbedo, boardDetail);
+    if (opt.pieces == 1) {
+      // starting with the medieval army: raise it before the game begins
+      progress.stage = "Raising the medieval army";
+      medieval::buildLibrary(mlib, opt.quality, nullptr);
+      mReady = true;
+    }
     assetsReady = true;
   });
+}
+
+void App::startMedievalBuild() {
+  if (mloaderRunning || mReady) return;
+  mloaderRunning = true;
+  mloader = std::thread([this]() {
+    medieval::buildLibrary(mlib, opt.quality, &mprogress);
+    mReady = true;
+  });
+}
+
+float App::medievalProgress() const {
+  int t = std::max(1, mprogress.total.load());
+  return std::min(1.0f, (float)mprogress.done.load() / t);
+}
+
+void App::setPieceSet(int s) {
+  s = s == 1 ? 1 : 0;
+  if (s == pieceSet && pendingSet < 0) return;
+  if (s == 1 && !renderer.medievalReady) startMedievalBuild();
+  pendingSet = s;
+}
+
+// Swaps every piece for its counterpart in the other army; they materialise in place.
+void App::applyPieceSet(int s) {
+  pieceSet = s;
+  pendingSet = -1;
+  world.pieceSet = s;
+  world.stopFidgets();
+  for (Actor& a : world.actors) {
+    if (!a.alive) continue;
+    a.set = s;
+    a.tilt = glm::quat(1, 0, 0, 0);
+    a.resetControls();
+    a.dissolve = 1.0f;
+    a.dissolveVel = -world.fx.rnd(1.1f, 1.6f);
+    a.dissolveColor = s == 1 ? vec3(1.0f, 0.62f, 0.25f) : vec3(1.0f, 0.75f, 0.35f);
+  }
+  world.sound(SFX_CHIME, 0.6f, vec3(0), s == 1 ? 0.75f : 1.0f);
 }
 
 int App::run() {
@@ -236,6 +282,7 @@ int App::run() {
     std::printf("[audio] no audio device - running silent\n");
   }
   world.lib = &lib;
+  world.mlib = &mlib;
   world.reset();
   loadAssets();
   double prev = glfwGetTime();
@@ -713,6 +760,10 @@ void App::frame(float dt) {
       boardAlbedo = tex::Image();
       boardDetail = tex::Image();
       loading = false;
+      if (mReady) {
+        renderer.uploadMedieval(mlib);
+        pieceSet = world.pieceSet = 1;
+      }
       if (opt.hasCam) {
         world.cam.yaw = opt.camYaw;
         world.cam.pitch = opt.camPitch;
@@ -720,7 +771,7 @@ void App::frame(float dt) {
         world.cam.target = glm::vec3(opt.camTX, opt.camTY, opt.camTZ);
       }
       if (opt.battle >= 0) setupBattleDemo();
-      else if (!opt.shotPath.empty() || !opt.recordDir.empty()) {
+      else if (!opt.shotPath.empty() || !opt.recordDir.empty() || !opt.shotTimes.empty()) {
         setupScenario();
         if (opt.demo) mode = Mode::Watch;
         else mode = Mode::TwoPlayer;
@@ -752,6 +803,14 @@ void App::frame(float dt) {
     }
   }
 
+  // the medieval army finished building in the background
+  if (mloaderRunning && mReady) {
+    mloader.join();
+    mloaderRunning = false;
+    renderer.uploadMedieval(mlib);
+  }
+  if (pendingSet >= 0 && anims.empty() && (pendingSet == 0 || renderer.medievalReady)) applyPieceSet(pendingSet);
+
   handleInput();
   float sdt = world.beginFrame(dt);
   // per-frame visual flags (animations override them)
@@ -779,7 +838,7 @@ void App::frame(float dt) {
       }
   }
   updateGame(sdt);
-  world.fidgetAllowed = anims.empty() && !promoPending && opt.battle < 0 && opt.shotPath.empty();
+  world.fidgetAllowed = anims.empty() && !promoPending && opt.battle < 0 && opt.shotPath.empty() && opt.shotTimes.empty();
   world.excludeFidget = selected >= 0 ? world.actorAt[selected] : -1;
   world.simulate(sdt);
   world.cam.evaluate(dt, world.trauma, (float)glfwGetTime());
@@ -797,7 +856,7 @@ void App::frame(float dt) {
   frameCount++;
 
   // ---- capture tools ----
-  if (opt.battle >= 0) {
+  if (opt.battle >= 0 || !opt.shotTimes.empty()) {
     battleTime += sdt;
     while (nextShot < opt.shotTimes.size() && battleTime >= opt.shotTimes[nextShot]) {
       char name[512];
@@ -813,8 +872,9 @@ void App::frame(float dt) {
     bool shotsDone = nextShot >= opt.shotTimes.size();
     static float idleAfter = 0;
     if (anims.empty() && battleTime > 1.0f) idleAfter += sdt;
-    if ((shotsDone && opt.recordDir.empty()) || idleAfter > (opt.recordDir.empty() ? 0.0f : 1.3f) || frameCount > 3000)
-      quitRequested = true;
+    // a staged battle ends with its animation; timed shots of a move wait for every shot
+    bool idleQuit = opt.battle >= 0 && idleAfter > (opt.recordDir.empty() ? 0.0f : 1.3f);
+    if ((shotsDone && opt.recordDir.empty()) || idleQuit || frameCount > 3000) quitRequested = true;
   } else if (!opt.recordDir.empty()) {
     char name[512];
     std::snprintf(name, sizeof(name), "%s/frame_%04d.png", opt.recordDir.c_str(), frameCount);

@@ -404,10 +404,8 @@ static void pieceBounds(int kind, vec3& lo, vec3& hi) {
   }
 }
 
-static std::vector<Fragment> voronoiShatter(int kind, int nSeeds, uint32_t seedVal, float cell) {
-  Fn F = pieceField(kind);
-  vec3 lo, hi;
-  pieceBounds(kind, lo, hi);
+std::vector<Fragment> voronoiShatter(const Fn& F, const vec3& lo, const vec3& hi, int nSeeds, uint32_t seedVal,
+                                     float cell, const std::function<void(Vertex&)>& skin) {
   std::mt19937 rng(seedVal);
   std::uniform_real_distribution<float> U(0, 1);
   std::vector<vec3> seeds;
@@ -468,6 +466,7 @@ static std::vector<Fragment> voronoiShatter(int kind, int nSeeds, uint32_t seedV
     o.computeAO = false;
     o.newtonSteps = 2;
     o.aux = [F](const vec3& p) { return glm::clamp((-F(p) - 0.0015f) / 0.004f, 0.0f, 1.0f); };
+    o.skin = skin;
     MeshData m = polygonize(frag, o);
     if (m.idx.size() < 60) continue;
     Fragment fr = finishFragment(std::move(m));
@@ -477,10 +476,8 @@ static std::vector<Fragment> voronoiShatter(int kind, int nSeeds, uint32_t seedV
   return out;
 }
 
-static std::vector<Fragment> sliceHalves(int kind, const vec3& n, const vec3& p0, float cell) {
-  Fn F = pieceField(kind);
-  vec3 lo, hi;
-  pieceBounds(kind, lo, hi);
+std::vector<Fragment> sliceHalves(const Fn& F, const vec3& lo, const vec3& hi, const vec3& n, const vec3& p0,
+                                  float cell, const std::function<void(Vertex&)>& skin) {
   std::vector<Fragment> out;
   for (int s = -1; s <= 1; s += 2) {
     Fn frag = [F, n, p0, s](const vec3& p) {
@@ -494,6 +491,7 @@ static std::vector<Fragment> sliceHalves(int kind, const vec3& n, const vec3& p0
     o.computeAO = true;
     o.aoRadius = 0.12f;
     o.aux = [F](const vec3& p) { return glm::clamp((-F(p) - 0.0015f) / 0.004f, 0.0f, 1.0f); };
+    o.skin = skin;
     MeshData m = polygonize(frag, o);
     out.push_back(finishFragment(std::move(m)));
   }
@@ -630,11 +628,13 @@ void buildLibrary(Library& lib, int quality, BuildProgress* prog) {
     o.newtonSteps = 3;
     A.lod1 = polygonize(F, o);
     tick("Sculpting marble");
-    A.shards = voronoiShatter(k, seeds[k], 1234u + 77u * k, cs[quality]);
+    vec3 lo, hi;
+    pieceBounds(k, lo, hi);
+    A.shards = voronoiShatter(F, lo, hi, seeds[k], 1234u + 77u * k, cs[quality]);
     tick("Planning fractures");
     A.sliceN = glm::normalize(vec3(0.78f, 0.62f, 0.0f));
     A.slicePoint = vec3(0, A.height * 0.52f, 0);
-    A.halves = sliceHalves(k, A.sliceN, A.slicePoint, cs[quality]);
+    A.halves = sliceHalves(F, lo, hi, A.sliceN, A.slicePoint, cs[quality]);
     tick("Planning fractures");
   }
   {

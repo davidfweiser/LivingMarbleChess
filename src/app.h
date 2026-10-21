@@ -46,6 +46,7 @@ struct Options {
   std::string selectSq;
   std::string loadingShot;        // capture the loading screen           // e.g. e2, pre-select a piece (screenshots)          // e.g. e5d6, played right after setup          // simulate without drawing (stress tests)
   int scenario = 0;               // canned positions for screenshots
+  int pieces = 0;                 // 0 Living Marble, 1 medieval
 };
 
 enum class Mode { HumanWhite = 0, HumanBlack, TwoPlayer, Watch };
@@ -91,6 +92,11 @@ class App {
   void resetView();
   void setMode(Mode m);
   void applyGraphicsPreset(int p);
+  void setPieceSet(int s);  // 0 Living Marble, 1 medieval (built in the background on first use)
+  int pieceSet = 0;
+  int pendingSet = -1;
+  bool medievalBuilding() const { return mloaderRunning; }
+  float medievalProgress() const;
   bool isHumanTurn() const;
   bool animating() const { return !anims.empty(); }
   const char* statusText() const;
@@ -119,6 +125,13 @@ class App {
   std::deque<std::unique_ptr<Anim>> anims;
   meshgen::Library lib;
   meshgen::BuildProgress progress;
+  medieval::Library mlib;
+  meshgen::BuildProgress mprogress;
+  std::thread mloader;
+  std::atomic<bool> mReady{false};
+  bool mloaderRunning = false;
+  void startMedievalBuild();
+  void applyPieceSet(int s);
   tex::Image boardAlbedo, boardDetail;
   std::thread loader;
   std::atomic<bool> assetsReady{false};

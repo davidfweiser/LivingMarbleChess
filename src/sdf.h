@@ -50,6 +50,8 @@ struct Vertex {
   vec3 nrm;
   float ao;   // baked ambient occlusion (1 = open)
   float aux;  // fragment: 1 on fresh fracture faces; sword: material id
+  float bones = 0;  // skinned meshes: bone0 + 64 * bone1
+  float mat = 0;    // medieval pieces: material id + 0.998 * weight of bone0
 };
 
 struct MeshData {
@@ -68,6 +70,7 @@ struct MeshOptions {
   int newtonSteps = 2;
   Fn aux;             // optional per-vertex aux attribute
   Fn normalField;     // optional field used for normals/projection (defaults to f)
+  std::function<void(Vertex&)> skin;  // optional: fills bones/mat from the final position
 };
 
 MeshData polygonize(const Fn& f, const MeshOptions& opt);

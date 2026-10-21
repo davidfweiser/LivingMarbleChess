@@ -82,11 +82,14 @@ add_executable(living_marble
   src/ai.cpp
   src/sdf.cpp
   src/meshgen.cpp
+  src/medieval_mesh.cpp
+  src/medieval_pose.cpp
   src/textures.cpp
   src/renderer.cpp
   src/shaders.cpp
   src/animation.cpp
   src/battle.cpp
+  src/battle_medieval.cpp
   src/particles.cpp
   src/audio.cpp
   src/ui.cpp

@@ -118,6 +118,13 @@ void App::drawUI() {
   ImGui::BeginDisabled(mode == Mode::TwoPlayer);
   ImGui::Combo("Opponent", &aiLevel, levels, 5);
   ImGui::EndDisabled();
+  {
+    const char* sets[] = {"Living Marble", "Medieval"};
+    int ps = pendingSet >= 0 ? pendingSet : pieceSet;
+    ImGui::SetNextItemWidth(-90 * S);
+    if (ImGui::Combo("Pieces", &ps, sets, 2)) setPieceSet(ps);
+    if (medievalBuilding()) ImGui::TextDisabled("Raising the medieval army... %d%%", (int)(medievalProgress() * 100));
+  }
   ImGui::Checkbox("Battle animations", &battles);
   ImGui::Checkbox("Cinematic camera", &world.cinematic);
   if (mode == Mode::TwoPlayer) ImGui::Checkbox("Turn board each move", &autoRotate);
@@ -213,8 +220,8 @@ void App::drawUI() {
     ImGui::TextColored(kGold, "The battles (each capture picks one at random)");
     static const char* const kPieces[6] = {"Pawn", "Knight", "Bishop", "Rook", "Queen", "King"};
     for (int k = 0; k < 6; ++k)
-      ImGui::BulletText("%s: %s, %s, %s", kPieces[k], battleStyleName(k, 0), battleStyleName(k, 1),
-                        battleStyleName(k, 2));
+      ImGui::BulletText("%s: %s, %s, %s", kPieces[k], battleStyleName(k, 0, pieceSet), battleStyleName(k, 1, pieceSet),
+                        battleStyleName(k, 2, pieceSet));
     ImGui::End();
   }
 

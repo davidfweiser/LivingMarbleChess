@@ -18,11 +18,13 @@ static void usage() {
       "  --graphics 0..3         Low / Medium / High / Ultra (default High)\n"
       "  --demo                  watch the AI play itself\n"
       "  --fen \"<fen>\"           start from a position\n"
+      "  --pieces marble|medieval  which army to play with (default marble)\n"
       "  --mute                  no sound\n"
       "  --selftest              verify the move generator (perft)\n"
       "\n capture tools:\n"
       "  --shot file.png [--frames N] [--scenario 0|1|2]\n"
       "  --battle K --shots t1,t2,... [--prefix name]   (K: 0 pawn .. 5 king)\n"
+      "  --fen \"<fen>\" --move e2e4 --shots t1,t2,...   (screenshots of any move)\n"
       "  --style S               force battle style S (0..2) instead of a random one\n"
       "  --record dir [--frames N]\n"
       "  --camera yaw,pitch,dist\n"
@@ -44,6 +46,10 @@ int main(int argc, char** argv) {
     else if (a == "--demo") o.demo = true;
     else if (a == "--fen") o.fen = next();
     else if (a == "--mute") o.noAudio = true;
+    else if (a == "--pieces") {
+      std::string v = next();
+      o.pieces = (v == "medieval" || v == "1") ? 1 : 0;
+    }
     else if (a == "--selftest") o.selftest = true;
     else if (a == "--shot") o.shotPath = next();
     else if (a == "--frames") o.frames = std::atoi(next().c_str());

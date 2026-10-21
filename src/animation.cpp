@@ -103,7 +103,34 @@ void Actor::update(float dt, float t, Audio* audio) {
   }
   vec2 b(bx.x, bz.x);
   rig = vec4(glm::length(b), std::atan2(b.y, b.x), glm::clamp(sq.x, 0.35f, 1.9f), tw.x);
+  if (set == 1) {
+    ctl.idle += dt;
+    medieval::buildPose(kind, ctl, pose);
+    if (!seatFree) {
+      seatPos = pos;
+      seatYaw = yaw;
+    }
+  }
   (void)audio;
+}
+
+void Actor::resetControls() {
+  float idle = ctl.idle;
+  ctl = medieval::Controls();
+  ctl.idle = idle;
+  ctl.sit = medieval::throned(kind) ? 1.0f : 0.0f;
+  seatFree = false;
+  seatPos = pos;
+  seatYaw = yaw;
+  heat = 0;
+  medieval::buildPose(kind, ctl, pose);
+}
+
+glm::mat4 Puppet::model() const {
+  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos);
+  M = glm::rotate(M, yaw, vec3(0, 1, 0));
+  M = M * glm::mat4_cast(tilt);
+  return glm::scale(M, vec3(scale));
 }
 
 void Actor::neutralize() {
@@ -117,13 +144,13 @@ void Actor::neutralize() {
 quat Actor::rotation() const { return glm::angleAxis(yaw, vec3(0, 1, 0)) * tilt; }
 
 glm::mat4 Actor::rigidModel() const {
-  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, bob, 0));
+  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 ? bob * 0.3f : bob, 0));
   M = glm::rotate(M, yaw, vec3(0, 1, 0));
   return glm::scale(M, vec3(scale));
 }
 
 glm::mat4 Actor::model() const {
-  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, bob, 0));
+  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 ? bob * 0.3f : bob, 0));
   M = glm::rotate(M, yaw, vec3(0, 1, 0));
   if (std::fabs(tilt.w) < 0.99999f) {
     M = glm::translate(M, tiltPivot * scale);
@@ -211,8 +238,35 @@ CamPose CameraDirector::evaluate(float dt, float trauma, float time) {
 // ---------------------------------------------------------------------------
 // World
 // ---------------------------------------------------------------------------
+Puppet* World::puppet(int id) {
+  for (Puppet& p : puppets)
+    if (p.id == id) return &p;
+  return nullptr;
+}
+int World::addPuppet(int asset, int color) {
+  Puppet p;
+  p.asset = asset;
+  p.color = color;
+  p.id = nextPuppetId++;
+  p.texOffset = vec3(fx.rnd(-20, 20), fx.rnd(-20, 20), fx.rnd(-20, 20));
+  medieval::buildPose(asset, p.ctl, p.pose);
+  puppets.push_back(p);
+  return p.id;
+}
+
+glm::mat4 World::seatModel(const Actor& a) const {
+  glm::mat4 M = glm::translate(glm::mat4(1.0f), a.seatPos);
+  M = glm::rotate(M, a.seatYaw, vec3(0, 1, 0));
+  return glm::scale(M, vec3(a.scale * medieval::seatScale(a.kind)));
+}
+
+const meshgen::PieceAssets& World::assetsOf(const Chunk& c) const {
+  return c.set == 1 ? mlib->asset[c.kind] : lib->piece[c.kind];
+}
+
 void World::reset() {
   actors.clear();
+  puppets.clear();
   for (int& a : actorAt) a = -1;
   fx.clear();
   chunks.clear();
@@ -237,10 +291,13 @@ void World::spawnFromBoard(const uint8_t sq[64], bool materialize) {
     a.kind = (p & 7) - 1;
     a.color = p >> 3;
     a.square = s;
+    a.set = pieceSet;
     a.pos = squareCenter(s);
     a.baseYaw = a.color == 0 ? kPI : 0.0f;
     a.yaw = a.yawTarget = a.baseYaw;
     a.phase = fx.rnd(0, 100);
+    a.ctl.idle = fx.rnd(0, 100);
+    a.resetControls();
     a.texOffset = vec3(fx.rnd(-20, 20), fx.rnd(-20, 20), fx.rnd(-20, 20));
     if (materialize) {
       a.dissolve = 1.0f;
@@ -274,7 +331,57 @@ int World::addProp(Prop::Type t) {
   return p.id;
 }
 
+void World::shatterAsset(int asset, int color, const glm::mat4& M, const quat& R, const vec3& vel,
+                         const vec3& texOffset, const vec3& impact, const vec3& impulse, float explode, float upBias,
+                         float spin, float glow, const vec3& glowColor) {
+  const meshgen::PieceAssets& A = mlib->asset[asset];
+  float sc = glm::length(vec3(M[0]));
+  vec3 center = vec3(M * vec4(0, A.height * 0.5f, 0, 1));
+  for (size_t i = 0; i < A.shards.size(); ++i) {
+    const meshgen::Fragment& f = A.shards[i];
+    Chunk c;
+    c.set = 1;
+    c.kind = asset;
+    c.color = color;
+    c.index = (int)i;
+    c.pos = vec3(M * vec4(f.centroid, 1));
+    c.rot = R;
+    c.radius = f.radius * sc;
+    c.mass = std::max(f.volume, 1e-4f);
+    c.inertia = 0.4f * c.mass * c.radius * c.radius;
+    vec3 dir = glm::normalize(c.pos - center + fx.rndDir() * 0.05f);
+    float fall = std::exp(-glm::length(c.pos - impact) * 2.2f);
+    c.v = vel * 0.5f + dir * explode * fx.rnd(0.5f, 1.2f) + impulse * fall * fx.rnd(0.7f, 1.3f) +
+          vec3(0, upBias * fx.rnd(0.4f, 1.2f), 0);
+    c.w = fx.rndDir() * spin * fx.rnd(0.3f, 1.0f);
+    c.texOffset = texOffset;
+    c.glow = glow;
+    c.glowColor = glowColor;
+    chunks.push_back(c);
+  }
+}
+
 void World::shatter(Actor& a, const vec3& impact, const vec3& impulse, float explode, float upBias, float spin) {
+  if (a.set == 1) {
+    a.neutralize();
+    glm::mat4 M = a.model();
+    quat R = a.rotation();
+    float glow = a.crack > 0.05f ? 1.0f : 0.0f;
+    shatterAsset(a.kind, a.color, M, R, a.vel, a.texOffset, impact, impulse, explode, upBias, spin, glow, a.crackColor);
+    if (a.hasSeat() && !a.seatFree)
+      shatterAsset(medieval::seatAsset(a.kind), a.color, seatModel(a), glm::angleAxis(a.seatYaw, vec3(0, 1, 0)),
+                   a.vel, a.texOffset + vec3(3.1f), impact, impulse, explode * 0.8f, upBias * 0.7f, spin * 0.7f, glow,
+                   a.crackColor);
+    a.alive = false;
+    a.visible = false;
+    vec3 center = vec3(M * vec4(0, a.height() * 0.5f / std::max(a.scale, 1e-3f), 0, 1));
+    vec3 tint = a.color == 0 ? vec3(0.62f, 0.60f, 0.57f) : vec3(0.22f, 0.21f, 0.2f);
+    fx.dust(vec3(center.x, 0.05f, center.z), 16, 0.3f, 1.2f, tint);
+    fx.smoke(center, 6, 0.2f, 0.3f, a.color == 0 ? 0.1f : 0.6f);
+    fx.chips(center, 45, 3.2f, a.color == 1);
+    sound(SFX_SHATTER, 1.0f, center, fx.rnd(0.92f, 1.08f));
+    return;
+  }
   const meshgen::PieceAssets& A = lib->piece[a.kind];
   a.neutralize();
   glm::mat4 M = a.model();
@@ -311,7 +418,7 @@ void World::shatter(Actor& a, const vec3& impact, const vec3& impulse, float exp
 }
 
 void World::slice(Actor& a, float sep) {
-  const meshgen::PieceAssets& A = lib->piece[a.kind];
+  const meshgen::PieceAssets& A = a.set == 1 ? mlib->asset[a.kind] : lib->piece[a.kind];
   a.neutralize();
   glm::mat4 M = a.model();
   quat R = a.rotation();
@@ -322,6 +429,7 @@ void World::slice(Actor& a, float sep) {
   for (size_t i = 0; i < A.halves.size(); ++i) {
     const meshgen::Fragment& f = A.halves[i];
     Chunk c;
+    c.set = a.set;
     c.kind = a.kind;
     c.color = a.color;
     c.index = (int)i;
@@ -343,6 +451,11 @@ void World::slice(Actor& a, float sep) {
     c.glowColor = vec3(1.0f, 0.75f, 0.35f);
     chunks.push_back(c);
   }
+  // a throne under a figure that is cut in two breaks apart as well
+  if (a.hasSeat() && !a.seatFree)
+    shatterAsset(medieval::seatAsset(a.kind), a.color, seatModel(a), glm::angleAxis(a.seatYaw, vec3(0, 1, 0)), a.vel,
+                 a.texOffset + vec3(3.1f), a.pos + vec3(0, 0.5f, 0), vec3(0, -1.0f, 0), 1.0f, 0.5f, 5.0f, 0.0f,
+                 vec3(1.0f));
   a.alive = false;
   a.visible = false;
 }
@@ -391,8 +504,7 @@ void World::updateChunks(float dt) {
     bool onBoard = std::fabs(c.pos.x) < 4.62f && std::fabs(c.pos.z) < 4.62f && c.pos.y > -0.1f;
     if (!onBoard) continue;
     const float floorY = 0.0f;
-    const meshgen::Fragment& F =
-        c.half ? lib->piece[c.kind].halves[c.index] : lib->piece[c.kind].shards[c.index];
+    const meshgen::Fragment& F = c.half ? assetsOf(c).halves[c.index] : assetsOf(c).shards[c.index];
     float maxPen = 0;
     bool contact = false;
     for (const vec3& hp : F.hull) {
@@ -484,6 +596,10 @@ float World::beginFrame(float dtReal) {
 void World::stopFidgets() {
   for (Actor& a : actors) {
     if (a.fidgetT < 0) continue;
+    if (a.set == 1) {
+      a.ctl.headYaw = a.ctl.headPitch = a.ctl.lean = a.ctl.twist = 0;
+      a.ctl.armL = a.ctl.armR = vec3(0);
+    }
     a.fidgetT = -1;
     a.yawTarget = a.baseYaw;
     a.poseSquash = 1;
@@ -516,6 +632,55 @@ void World::updateFidgets(float dt) {
     if (a.fidgetT < 0 || !a.alive) continue;
     a.fidgetT += dt;
     float t = a.fidgetT, end = 1.0f;
+    if (a.set == 1) {
+      // medieval figures don't hop: they look about, shift their weight, toss their heads
+      medieval::Controls& c = a.ctl;
+      switch (a.fidgetType) {
+        case 0: {  // a glance to one side
+          end = 2.2f;
+          float u = std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI);
+          if (a.kind == meshgen::K_KNIGHT) {
+            c.headYaw = a.fidgetDir * 0.5f * u;
+            c.neck = -0.2f * u;
+          } else if (a.kind == meshgen::K_ROOK) {
+            c.idle += dt * 3.0f;  // the banner catches a gust
+          } else {
+            c.headYaw = a.fidgetDir * 0.6f * u;
+            c.twist = a.fidgetDir * 0.12f * u;
+          }
+          break;
+        }
+        case 1: {  // horse: toss of the head and a pawing hoof; others: shift weight, adjust grip
+          end = 1.3f;
+          float u = glm::clamp(t / end, 0.0f, 1.0f);
+          if (a.kind == meshgen::K_KNIGHT) {
+            c.headPitch = -0.35f * std::sin(u * kPI * 2.0f) * (1.0f - u);
+            c.tail = u * 6.0f;
+          } else if (a.kind == meshgen::K_PAWN) {
+            c.armR = vec3(0.25f * std::sin(u * kPI), 0, 0);
+            c.lean = -0.04f * std::sin(u * kPI);
+          } else {
+            c.lean = 0.05f * std::sin(u * kPI);
+            c.headPitch = 0.12f * std::sin(u * kPI);
+          }
+          break;
+        }
+        default: {  // stretch, look up
+          end = 1.6f;
+          float u = std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI);
+          c.lean = -0.06f * u;
+          c.headPitch = -0.25f * u;
+          if (a.kind == meshgen::K_KNIGHT) c.neck = 0.3f * u;
+          break;
+        }
+      }
+      if (t >= end) {
+        a.fidgetT = -1;
+        c.headYaw = c.headPitch = c.lean = c.twist = c.neck = 0;
+        c.armR = vec3(0);
+      }
+      continue;
+    }
     switch (a.fidgetType) {
       case 0: {  // glance to one side and back
         end = 1.8f;
@@ -575,6 +740,12 @@ void World::simulate(float dt) {
   }
   for (Actor& a : actors)
     if (a.alive) a.update(dt, time, audio);
+  for (Puppet& p : puppets) {
+    p.ctl.idle += dt;
+    medieval::buildPose(p.asset, p.ctl, p.pose);
+  }
+  puppets.erase(std::remove_if(puppets.begin(), puppets.end(), [](const Puppet& p) { return !p.alive; }),
+                puppets.end());
   fx.update(dt);
   updateChunks(dt);
   for (TimedLight& l : lights) l.life -= dt;
@@ -588,6 +759,50 @@ void World::simulate(float dt) {
 void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
   for (const Actor& a : actors) {
     if (!a.alive || !a.visible || a.dissolve >= 0.999f) continue;
+    if (a.set == 1) {
+      if (!r.medievalReady) continue;
+      DrawItem d;
+      d.mesh = &r.medieval[a.kind].lod0;
+      d.meshLow = &r.medieval[a.kind].lod1;
+      d.model = a.model();
+      // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
+      d.rig = glm::vec4(a.rig.x * 0.3f, a.rig.y, 1.0f + (a.rig.z - 1.0f) * 0.12f, a.rig.w * 0.25f);
+      d.rigH = a.height() / std::max(a.scale, 1e-3f);
+      d.material = MAT_MEDIEVAL;
+      d.team = a.color;
+      d.bones = a.pose.bone;
+      d.boneCount = a.pose.count;
+      d.texOffset = a.texOffset;
+      d.glow = a.glow;
+      d.crack = a.crack;
+      d.crackColor = a.crackColor;
+      d.dissolve = a.dissolve;
+      d.dissolveColor = a.dissolveColor;
+      d.heat = a.heat;
+      d.stone = a.stone;
+      out.push_back(d);
+      if (a.kind == meshgen::K_ROOK && a.ctl.legs > 0.001f) {
+        DrawItem l = d;
+        l.mesh = &r.medieval[medieval::A_LEGS].lod0;
+        l.meshLow = &r.medieval[medieval::A_LEGS].lod1;
+        l.rig = glm::vec4(0, 0, 1, 0);
+        out.push_back(l);
+      }
+      if (a.hasSeat()) {
+        int sa = medieval::seatAsset(a.kind);
+        DrawItem t = d;
+        t.mesh = &r.medieval[sa].lod0;
+        t.meshLow = &r.medieval[sa].lod1;
+        t.model = seatModel(a);
+        t.rig = a.seatFree ? glm::vec4(0, 0, 1, 0) : d.rig;
+        t.bones = nullptr;
+        t.boneCount = 0;
+        t.texOffset = a.texOffset + vec3(3.1f);
+        if (a.seatFree) t.glow = glm::vec4(0);
+        out.push_back(t);
+      }
+      continue;
+    }
     DrawItem d;
     d.mesh = &r.pieces[a.kind].lod0;
     d.meshLow = &r.pieces[a.kind].lod1;
@@ -604,18 +819,36 @@ void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
     out.push_back(d);
   }
   for (const Chunk& c : chunks) {
-    const auto& P = r.pieces[c.kind];
+    const auto& P = c.set == 1 ? r.medieval[c.kind] : r.pieces[c.kind];
     const auto& v = c.half ? P.halves : P.shards;
     if (c.index >= (int)v.size()) continue;
     DrawItem d;
     d.mesh = &v[c.index];
     d.meshLow = &v[c.index];
     d.model = glm::translate(glm::mat4(1.0f), c.pos) * glm::mat4_cast(c.rot);
-    d.material = c.color == 0 ? MAT_WHITE : MAT_BLACK;
+    d.material = c.set == 1 ? MAT_MEDIEVAL : (c.color == 0 ? MAT_WHITE : MAT_BLACK);
+    d.team = c.color;
     d.texOffset = c.texOffset;
     d.glow = vec4(c.glowColor, c.glow * 1.2f);
     d.dissolve = c.dissolve;
     d.dissolveColor = c.color == 0 ? vec3(0.9f, 0.85f, 0.75f) : vec3(0.6f, 0.5f, 0.4f);
+    out.push_back(d);
+  }
+  for (const Puppet& p : puppets) {
+    if (!r.medievalReady || p.dissolve >= 0.999f) continue;
+    DrawItem d;
+    d.mesh = &r.medieval[p.asset].lod0;
+    d.meshLow = &r.medieval[p.asset].lod1;
+    d.model = p.model();
+    d.rigH = 1.0f;
+    d.material = MAT_MEDIEVAL;
+    d.team = p.color;
+    d.bones = p.pose.bone;
+    d.boneCount = p.pose.count;
+    d.texOffset = p.texOffset;
+    d.glow = p.glow;
+    d.dissolve = p.dissolve;
+    d.dissolveColor = vec3(1.0f, 0.5f, 0.15f);
     out.push_back(d);
   }
   for (const Prop& p : props) {
@@ -666,6 +899,7 @@ void World::collectOccluders(std::vector<vec4>& out) const {
     if (!a.alive || !a.visible) continue;
     float s = std::exp(-std::max(0.0f, a.pos.y + a.bob) / 0.12f) * (1.0f - a.dissolve);
     out.push_back(vec4(a.pos.x, a.pos.z, a.radius() * 1.05f, s));
+    if (a.hasSeat() && a.seatFree) out.push_back(vec4(a.seatPos.x, a.seatPos.z, 0.3f, 1.0f - a.dissolve));
   }
   for (const Chunk& c : chunks) {
     if (out.size() >= 32) break;

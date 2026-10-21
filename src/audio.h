@@ -19,6 +19,23 @@ enum Sfx {
   SFX_MATE,      // checkmate gong
   SFX_DEBRIS,    // small chunk bounce
   SFX_RUMBLE,    // low rumble
+  // the medieval army
+  SFX_HYMN,      // pipe organ and choir: the Dies irae
+  SFX_ORGAN,     // one dark organ chord
+  SFX_THUNDER,   // lightning crack and rolling thunder
+  SFX_WIND,      // storm wind
+  SFX_ROAR,      // dragon roar
+  SFX_FIRE,      // dragon fire breath
+  SFX_CHAIN,     // drawbridge chains and creaking timber
+  SFX_GRIND,     // stone grinding as the gatehouse slides
+  SFX_STOMP,     // a giant stone footstep
+  SFX_HOOF,      // a hoof on the board
+  SFX_NEIGH,     // a horse's whinny
+  SFX_BELL,      // church bell
+  SFX_SPLINTER,  // a lance shattering
+  SFX_ARMOR,     // armoured footstep
+  SFX_SLIDE,     // a throne sliding over the board
+  SFX_BITE,      // jaws crunching stone
   SFX_COUNT
 };
 
