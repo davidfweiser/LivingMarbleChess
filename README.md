@@ -10,6 +10,11 @@ Everything is procedural. There are **no model, texture or sound files**:
 the pieces are sculpted from signed-distance fields at startup, the board's
 inlaid wood is baked on the fly, and every sound effect is synthesised.
 
+On the Mac the game is a native app written in Swift: Metal graphics, an
+AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
+[`macos/`](macos)). Windows and Linux use the C++/OpenGL version in `src/`.
+Both versions play, look and sound the same.
+
 ## The battles
 
 Every capture picks one of the attacker's three styles at random (never the
@@ -56,22 +61,24 @@ into its new self inside a pillar of light.
 
 ## Building
 
+### macOS (native app)
+
+You need Xcode 16 or later. The app runs on macOS 14 Sonoma or later. There
+are no dependencies to download.
+
+```sh
+./build.sh                      # or: macos/build-app.sh [--universal]
+open "macos/build/Living Marble.app"
+```
+
+`--universal` builds for both Apple silicon and Intel Macs. To work on the
+code in Xcode, open `macos/Package.swift`.
+
+### Windows and Linux (C++)
+
 You need CMake 3.18+, a C++17 compiler and git. The first configure downloads
 GLFW, GLM, Dear ImGui and miniaudio automatically, so an internet connection is
 required once.
-
-### macOS
-
-```sh
-xcode-select --install          # compiler, if you don't have it
-brew install cmake              # or download CMake from cmake.org
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-./build/living_marble
-```
-
-macOS still ships OpenGL 4.1 (deprecated but fully working); you will see
-deprecation warnings while compiling, which are harmless.
 
 ### Windows (Visual Studio 2022)
 
@@ -107,17 +114,20 @@ few seconds (shown on the loading screen).
 |---|---|
 | Left-click | Select a piece, then click a glowing square to move |
 | Drag (any button), arrow keys | Turn the floating board — from above, the side or underneath |
-| Mouse wheel | Zoom |
-| N | New game |
-| U / Ctrl+Z | Undo |
+| Mouse wheel (Mac: also two-finger scroll or pinch) | Zoom |
+| N (Mac: also ⌘N) | New game |
+| U / Ctrl+Z (Mac: ⌘Z) | Undo |
 | F | Flip the view |
 | R | Reset the view |
 | B | Toggle battle animations (quick captures when off) |
 | C | Toggle the cinematic battle camera |
 | H | Hide / show the interface |
-| F1 | Help |
-| F12 | Save a screenshot (PNG) |
-| Ctrl+Q | Quit |
+| F1 (Mac: also ? or ⌘?) | Help |
+| F12 (Mac: also ⇧⌘S) | Save a screenshot (PNG; on the Mac it goes to Pictures › Living Marble) |
+| Ctrl+Q (Mac: ⌘Q) | Quit |
+
+On the Mac every action is also in the menu bar, including the mode, the
+opponent's strength and the graphics quality. ⌃⌘F switches to full screen.
 
 Modes (in the panel): play White or Black against the AI, two players on one
 screen (the board turns each move), or watch the AI play itself. The AI has
@@ -125,6 +135,11 @@ five strengths, from *Squire* (forgiving) to *Grandmaster* (about 6 seconds of
 search per move).
 
 ## Command-line options
+
+The Mac app takes the same options when started from Terminal:
+`"macos/build/Living Marble.app/Contents/MacOS/LivingMarble" --demo`. There,
+`--size` is in points, so screenshots on a Retina screen come out at twice that
+many pixels, and screenshots show the 3D scene without the interface panels.
 
 ```
 --fullscreen            run fullscreen
@@ -164,3 +179,18 @@ shadow map size).
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
 | `audio.*` | Procedural sound synthesis and a small real-time mixer (miniaudio) |
 | `app.*`, `ui.cpp` | Window, game flow, input/picking, Dear ImGui interface |
+
+The native Mac version in `macos/Sources/LivingMarble` is a Swift port of the
+same design:
+
+| File | What it does |
+|---|---|
+| `Chess.swift`, `AI.swift` | Rules and the alpha-beta engine (as `chess.*`, `ai.*`) |
+| `SDF.swift`, `MeshGen.swift`, `Textures.swift` | Procedural sculpting, fracture and the baked board (as `sdf.*`, `meshgen.*`, `textures.*`) |
+| `Shaders.swift` | All Metal Shading Language, compiled at startup |
+| `Renderer.swift` | The same render passes on Metal |
+| `Animation.swift`, `Particles.swift` | The living-piece rig, debris, props, lights, camera and particles |
+| `BattleCore.swift`, `Battles*.swift` | Moves, castling, promotion, checkmate and all 18 battle styles |
+| `Audio.swift` | Procedural sounds mixed in real time through AVAudioEngine |
+| `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, capture tools |
+| `Interface.swift`, `AppDelegate.swift` | Native SwiftUI interface, window and menu bar |
