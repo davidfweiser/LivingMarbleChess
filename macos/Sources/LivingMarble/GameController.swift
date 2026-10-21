@@ -845,7 +845,7 @@ final class GameController: NSObject, MTKViewDelegate {
       quitRequested = true
     }
     if opt.noRender && frameCount % 600 == 0 {
-      print("[sim] frame \(frameCount) ply \(game.plyCount) chunks \(world.chunks.count) particles \(world.fx.count)")
+      print("[sim] frame \(frameCount) ply \(game.plyCount) anims \(anims.count) chunks \(world.chunks.count) particles \(world.fx.count) \(game.result.text)")
     }
     if shots.isEmpty {
       cb.present(drawable)
