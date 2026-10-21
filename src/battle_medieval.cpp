@@ -1093,7 +1093,7 @@ class KnightSweepM : public MBattle {
         break;
       }
       case 4:
-        if (enter()) a.ctl.itemR = 1;
+        a.ctl.itemR = 1;  // (moveInM uses this phase's enter())
         if (moveInM(w, dt, Walker::HORSE, 1.0f)) next();
         break;
       case 5:
@@ -1538,7 +1538,7 @@ class RookDragon : public MBattle {
   int dragon = -1;
   vec3 gate{0}, out{0}, lunge0{0};
   float growl = 0, roarT = 0, burnT = 0;
-  bool bitten = false;
+  bool bitten = false, closing = false;
   float fullScale = 0.68f;
   vec3 mouth(World& w) {
     Puppet* d = w.puppet(dragon);
@@ -1758,7 +1758,8 @@ class RookDragon : public MBattle {
         break;
       }
       case 8: {  // portcullis down and drawbridge up as the gatehouse glides onto the square
-        if (enter()) {
+        if (!closing) {  // (moveInM uses this phase's enter())
+          closing = true;
           w.sound(SFX_CLANG, 0.6f, a.pos, 0.6f);
           w.sound(SFX_CHAIN, 0.9f, a.pos, 1.05f);
         }

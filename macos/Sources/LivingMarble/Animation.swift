@@ -1026,10 +1026,12 @@ final class World {
       out.append(d)
     }
     for c in chunks {
-      var P = pieces[c.kind]
+      let P: PieceGpu
       if c.set == 1 {
         guard let mg = medieval else { continue }
         P = mg[c.kind]
+      } else {
+        P = pieces[c.kind]
       }
       let v = c.half ? P.halves : P.shards
       if c.index >= v.count { continue }
