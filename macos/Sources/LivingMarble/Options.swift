@@ -33,7 +33,7 @@ struct Options {
   var dumpSfx = ""
 
   static let usage = """
-    Living Marble - 3D Battle Chess
+    Living Marble \(kVersion) - 3D Battle Chess
 
       --fullscreen            run fullscreen
       --size WxH              window size in points (default 1600x900)
@@ -45,6 +45,7 @@ struct Options {
       --pieces marble|medieval|alien  which army to play with (default marble)
       --mute                  no sound
       --selftest              verify the move generator (perft)
+      --version               print the version
 
      capture tools:
       --shot file.png [--frames N] [--scenario 0|1|2|4]   (4: a gallery of ghosts)
@@ -72,6 +73,9 @@ struct Options {
       switch a {
       case "--help", "-h":
         print(usage)
+        exit(0)
+      case "--version":
+        print("Living Marble \(kVersion)")
         exit(0)
       case "--fullscreen": o.fullscreen = true
       case "--size":

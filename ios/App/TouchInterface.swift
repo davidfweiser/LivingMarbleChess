@@ -270,6 +270,9 @@ private struct SettingsSheet: View {
         } footer: {
           Text("Screenshots show just the board and go to the Files app, in Living Marble.")
         }
+        Section {
+          LabeledContent("Version", value: kVersion)
+        }
       }
       .navigationTitle("Living Marble")
       .navigationBarTitleDisplayMode(.inline)

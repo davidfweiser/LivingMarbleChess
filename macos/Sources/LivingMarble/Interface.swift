@@ -238,7 +238,13 @@ private struct ControlPanel: View {
     VStack(alignment: .leading, spacing: 9) {
       VStack(alignment: .leading, spacing: 1) {
         Text("Living Marble").font(.serif(30)).foregroundStyle(Palette.gold)
-        Text("3D Battle Chess").font(.system(size: 13)).foregroundStyle(Palette.dim)
+        HStack(alignment: .firstTextBaseline) {
+          Text("3D Battle Chess")
+          Spacer()
+          Text("v\(kVersion)")
+        }
+        .font(.system(size: 13))
+        .foregroundStyle(Palette.dim)
       }
       Divider().overlay(Palette.gold.opacity(0.3))
       HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -404,6 +410,7 @@ private struct HelpPanel: View {
         let s = model.pieceSet
         bullet("\(pieces[k]): \(battleStyleName(k, 0, s)), \(battleStyleName(k, 1, s)), \(battleStyleName(k, 2, s))")
       }
+      Text("Living Marble \(kVersion)").foregroundStyle(Palette.dim).padding(.top, 10)
     }
     .font(.system(size: 13))
     .frame(width: 480)

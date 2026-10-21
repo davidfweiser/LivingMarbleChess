@@ -1,6 +1,10 @@
 // Small declarations shared by several modules.
 import Foundation
 
+/// The app's version, from CFBundleShortVersionString (MARKETING_VERSION on iOS);
+/// "dev" when run outside an app bundle.
+let kVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+
 /// Piece kinds as used by geometry, animation and the battles (chess type - 1).
 enum Kind {
   static let pawn = 0

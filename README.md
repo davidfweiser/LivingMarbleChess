@@ -35,22 +35,28 @@ while the Mac, iPhone and iPad keep lighter defaults.
 
 ## Download
 
-The current version is **1.2**. For Linux (Debian, Ubuntu, Pop!_OS, Mint …)
-there is a ready-made package on the
-[Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest):
+The current version is **1.2**. Ready-made downloads are on the
+[Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest).
+
+**Mac** (macOS 14 or later, Apple silicon and Intel): open
+`LivingMarble-1.2.dmg` and drag *Living Marble* onto Applications. The first
+time you start it, macOS may say it cannot check the app for malicious
+software; then open *System Settings › Privacy & Security* and click
+*Open Anyway*.
+
+**Linux** (Debian, Ubuntu, Pop!_OS, Mint …):
 
 ```sh
 sudo apt install ./living-marble_1.2_amd64.deb   # or double-click it
 ```
 
 Then start *Living Marble* from the app menu (`sudo apt remove living-marble`
-uninstalls it). On the Mac, `macos/build-dmg.sh` makes a signed disk image to
-install from; for Windows, iPhone and iPad, build it from source (see
+uninstalls it). For Windows, iPhone and iPad, build it from source (see
 [Building](#building)).
 
 The game shows its version under the title in the panel and at the bottom of
-the Help window (F1), and `living_marble --version` prints it; on the Mac it is
-in *Living Marble › About Living Marble*.
+the Help window (F1), on iPhone and iPad under *Version* in the settings, and
+`--version` prints it.
 
 ## The battles
 
@@ -361,7 +367,7 @@ search per move).
 ## Command-line options
 
 The Mac app takes the same options when started from Terminal (except
-`--dof`, `--version` and `--quality 3`, which are Windows/Linux only):
+`--dof` and `--quality 3`, which are Windows/Linux only):
 `"macos/build/Living Marble.app/Contents/MacOS/LivingMarble" --demo`. There,
 `--size` is in points, so screenshots on a Retina screen come out at twice that
 many pixels, and screenshots show the 3D scene without the interface panels.
