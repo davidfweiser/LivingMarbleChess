@@ -202,6 +202,20 @@ open "macos/build/Living Marble.app"
 `--universal` builds for both Apple silicon and Intel Macs. To work on the
 code in Xcode, open `macos/Package.swift`.
 
+Or build a disk image to install it from (*Living Marble* and an Applications
+shortcut to drag it onto). It is a universal build signed with your Developer
+ID certificate, so it opens on other Macs:
+
+```sh
+macos/build-dmg.sh                         # -> macos/build/LivingMarble-1.0.dmg
+NOTARY_PROFILE=notary macos/build-dmg.sh   # also notarize it with Apple
+```
+
+Without notarization, other Macs only open it via *System Settings › Privacy &
+Security › Open Anyway*. To notarize, first save your Apple ID with an
+app-specific password once: `xcrun notarytool store-credentials notary
+--apple-id <your Apple ID> --team-id <your team ID>`.
+
 ### iPhone and iPad
 
 You need Xcode 16 or later. The app runs on iOS / iPadOS 17 or later. Open
