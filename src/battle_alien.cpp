@@ -140,7 +140,7 @@ class AQuietMove : public Staged {
   MovePlan plan;
   AWalker walker, rookWalker;
   vec3 A{0}, B{0};
-  float dur = 1;
+  float dur = 1, kingDelay = 0;
 
   // the saucer lifts off, zooms across in an arc (over anything in the way) and settles
   bool saucerFlight(World& w, Actor& a, float dt) {
@@ -208,25 +208,31 @@ class AQuietMove : public Staged {
           }
           A = flat(a.pos);
           B = squareCenter(plan.move.to);
-          if (plan.rook >= 0) rookWalker = AWalker(plan.rook, squareCenter(plan.rookTo), AWalker::TRIPOD, 0.9f);
+          if (plan.rook >= 0) {
+            rookWalker = AWalker(plan.rook, squareCenter(plan.rookTo), AWalker::TRIPOD, 1.1f);
+            // the overlord waits until the tripod is about to clear his square
+            float clear = glm::length(flat(B - w.actors[plan.rook].pos)) + 0.65f;
+            kingDelay = std::max(0.0f, 0.65f + clear / 1.1f - 1.36f);
+          }
         }
         {
           bool d1;
           if (plan.rook >= 0) {
-            // castling: the overlord swings out in an arc while the tripod strides past
-            float u = glm::clamp(pt / 1.6f, 0.0f, 1.0f), e = easeInOut(u);
+            // castling: the tripod strides off first, past the overlord's square, and he
+            // swings out in an arc behind it
+            float u = glm::clamp((pt - kingDelay) / 1.6f, 0.0f, 1.0f), e = easeInOut(u);
             vec3 toCenter = vec3(0, 0, a.color == 0 ? -1.0f : 1.0f);
             vec3 W = (A + B) * 0.5f + toCenter * 1.6f;  // well clear of the tripod's legs
             vec3 p = (1 - e) * (1 - e) * A + 2 * (1 - e) * e * W + e * e * B;
             a.pos = vec3(p.x, 0, p.z);
             a.ctl.hover = 0.08f * std::sin(kPI * u);
-            if (pt <= dt + 1e-6f) w.sound(SFX_WHOOSH, 0.4f, a.pos, 0.6f);
+            if (pt >= kingDelay && pt - dt < kingDelay + 1e-6f) w.sound(SFX_WHOOSH, 0.4f, a.pos, 0.6f);
             d1 = u >= 1.0f;
           } else {
             d1 = walker.update(w, dt);
           }
           bool d2 = true;
-          if (plan.rook >= 0) d2 = pt > 0.2f ? rookWalker.update(w, dt) : false;
+          if (plan.rook >= 0) d2 = rookWalker.update(w, dt);
           if (a.kind == K_QUEEN) a.ctl.tail += dt * 2.0f;
           if (d1 && d2) next();
         }
@@ -2297,21 +2303,30 @@ class KingMothership : public ABattle {
           }
           w.sound(SFX_DRONE, 1.0f, V);
           if (w.cinematic) {
-            // down low, looking up at the sky - towards the dark side of the room, away
-            // from the studio lights, and as side-on to the fighters as that allows
+            // from low down, looking up at the sky - towards the dark side of the room,
+            // away from the studio lights - with nothing standing in the way
             vec3 mid = (A + V) * 0.5f;
             CamPose s;
             float best = 1e9f;
             for (int k = -1; k <= 1; ++k) {
-              float ang = std::atan2(0.8f, -0.6f) + 0.17f * (float)k;
-              vec3 look(std::cos(ang), 0, std::sin(ang));
-              float score = std::fabs(glm::dot(look, dir)) + 0.2f * (float)std::abs(k);
-              if (score < best) {
-                best = score;
-                s.pos = mid - look * 3.6f + vec3(0, 0.45f, 0);
+              for (int e = 0; e < 2; ++e) {
+                float ang = std::atan2(0.8f, -0.6f) + 0.09f * (float)k;
+                vec3 look(std::cos(ang), 0, std::sin(ang));
+                vec3 cam = mid - look * (4.2f + 0.8f * (float)e) + vec3(0, 1.1f, 0);
+                float score = std::fabs(glm::dot(look, dir)) + 0.1f * (float)std::abs(k) + 0.2f * (float)e;
+                for (const Actor& o : w.actors) {
+                  if (!o.alive || !o.visible || o.id == plan.mover || o.id == plan.victim) continue;
+                  float r = o.radius() + 0.15f;
+                  if (glm::length(flat(o.pos - cam)) < r + 0.6f) score += 10.0f;
+                  if (segSegDist(cam, mid + vec3(0, 0.4f, 0), o.pos, o.pos + vec3(0, o.height(), 0)) < r) score += 3.0f;
+                }
+                if (score < best) {
+                  best = score;
+                  s.pos = cam;
+                }
               }
             }
-            s.target = mid + vec3(0, 1.7f, 0);
+            s.target = mid + vec3(0, 1.8f, 0);
             s.fov = 52.0f;
             s.focus = glm::length(s.pos - V);
             s.aperture = 4.0f;
