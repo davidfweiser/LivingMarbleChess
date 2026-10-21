@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Living Marble
+GenericName=3D Battle Chess
+Comment=Chess with living marble pieces that fight for every capture
+Exec=living_marble
+Icon=io.github.davidfweiser.LivingMarble
+Terminal=false
+StartupNotify=true
+StartupWMClass=Living Marble - 3D Battle Chess
+Categories=Game;BoardGame;
+Keywords=chess;3d;battle;marble;

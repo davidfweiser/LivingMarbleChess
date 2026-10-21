@@ -122,6 +122,16 @@ cmake --build build -j
 libXinerama-devel libXcursor-devel libXi-devel mesa-libGL-devel`.)
 Sound uses ALSA/PulseAudio/PipeWire at runtime; no audio dev packages needed.
 
+To install it with a launcher entry and icon (the game is a single
+self-contained binary):
+
+```sh
+cmake --install build --prefix ~/.local   # just for you, no sudo
+sudo cmake --install build                # or for everyone, into /usr/local
+```
+
+Then start *Living Marble* from the app menu, or run `living_marble`.
+
 On startup the pieces are sculpted and fractured procedurally — this takes a
 few seconds (shown on the loading screen).
 

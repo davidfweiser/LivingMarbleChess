@@ -121,3 +121,30 @@ else()
     target_compile_options(living_marble PRIVATE -O2)
   endif()
 endif()
+
+# --- Install -----------------------------------------------------------------
+#   cmake --install build --prefix ~/.local    (just you, no sudo)
+#   sudo cmake --install build                 (everyone, into /usr/local)
+include(GNUInstallDirs)
+install(TARGETS living_marble RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(UNIX AND NOT APPLE)
+  # launcher entry + icon; the window class (= window title) ties the window to them
+  set(LM_APP_ID io.github.davidfweiser.LivingMarble)
+  install(FILES linux/${LM_APP_ID}.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  foreach(size 32 48 64 128 256 512)
+    install(FILES linux/icons/${size}.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps
+            RENAME ${LM_APP_ID}.png)
+  endforeach()
+  # refresh the menu and icon caches so the launcher shows it right away
+  # (skipped when staging a package with DESTDIR)
+  install(CODE "set(LM_DATADIR \"${CMAKE_INSTALL_DATADIR}\")")
+  install(CODE [[
+    if("$ENV{DESTDIR}" STREQUAL "")
+      execute_process(COMMAND gtk-update-icon-cache -q -t -f
+                      "${CMAKE_INSTALL_PREFIX}/${LM_DATADIR}/icons/hicolor" ERROR_QUIET)
+      execute_process(COMMAND update-desktop-database -q
+                      "${CMAKE_INSTALL_PREFIX}/${LM_DATADIR}/applications" ERROR_QUIET)
+    endif()
+  ]])
+endif()
