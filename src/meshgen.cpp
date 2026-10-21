@@ -432,6 +432,7 @@ std::vector<Fragment> voronoiShatter(const Fn& F, const vec3& lo, const vec3& hi
     if (tries % 4000 == 3999) minD *= 0.8f;
   }
   const int n = (int)seeds.size();
+  if (n == 0) return {};  // nothing thick enough to break into chunks
   auto cellDist = [&seeds, n](const vec3& pw, int i) {
     float d = -1e9f;
     for (int j = 0; j < n; ++j) {

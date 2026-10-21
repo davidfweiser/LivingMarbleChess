@@ -2076,7 +2076,7 @@ class PromotionAnim : public Staged {
       Actor n = p;
       n.id = (int)w.actors.size();
       n.kind = kind_;
-      if (n.set == 1) n.resetControls();
+      if (n.set != 0) n.resetControls();
       n.alive = true;
       n.visible = true;
       n.dissolve = 1.0f;
@@ -2290,24 +2290,29 @@ std::unique_ptr<Anim> makeBattle(int kind, int style, const MovePlan& plan) {
 
 const char* battleStyleName(int kind, int style, int set) {
   if (set == 1) return medievalBattleStyleName(kind, style);
+  if (set == 2) return alienBattleStyleName(kind, style);
   if (kind < 0 || kind >= meshgen::K_COUNT || style < 0 || style >= kBattleStyles) return "";
   return kStyleNames[kind][style];
 }
 
 std::unique_ptr<Anim> makeMoveAnim(World& w, const MovePlan& plan) {
   auto seq = std::make_unique<SeqAnim>();
-  bool med = w.actors[plan.mover].set == 1;
+  int set = w.actors[plan.mover].set;
+  bool med = set == 1, ali = set == 2;
   if (plan.victim >= 0) {
     if (plan.fast) {
       if (med) seq->add(makeMedievalQuickCapture(plan));
+      else if (ali) seq->add(makeAlienQuickCapture(plan));
       else seq->add(std::make_unique<QuickCapture>(plan));
     } else {
       int kind = w.actors[plan.mover].kind;
       int style = pickStyle(kind, plan.style);
-      seq->add(med ? makeMedievalBattle(kind, style, plan) : makeBattle(kind, style, plan));
+      seq->add(med ? makeMedievalBattle(kind, style, plan)
+                   : (ali ? makeAlienBattle(kind, style, plan) : makeBattle(kind, style, plan)));
     }
   } else {
     if (med) seq->add(makeMedievalQuiet(plan));
+    else if (ali) seq->add(makeAlienQuiet(plan));
     else seq->add(std::make_unique<QuietMove>(plan));
   }
   if (plan.promoKind >= 0) seq->add(std::make_unique<PromotionAnim>(plan.mover, plan.promoSquare, plan.promoKind));
@@ -2316,6 +2321,7 @@ std::unique_ptr<Anim> makeMoveAnim(World& w, const MovePlan& plan) {
 
 std::unique_ptr<Anim> makeCheckmateAnim(World& w, int kingId, int winnerColor) {
   if (w.actors[kingId].set == 1) return makeMedievalCheckmate(kingId, winnerColor);
+  if (w.actors[kingId].set == 2) return makeAlienCheckmate(kingId, winnerColor);
   return std::make_unique<CheckmateAnim>(kingId, winnerColor);
 }
 std::unique_ptr<Anim> makeStalemateAnim(World& w) { return std::make_unique<StalemateAnim>(); }

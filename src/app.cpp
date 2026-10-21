@@ -66,7 +66,8 @@ App::App(const Options& o) : opt(o) {
 
 App::~App() {
   if (loader.joinable()) loader.join();
-  if (mloader.joinable()) mloader.join();
+  for (ArmyBuild& b : army)
+    if (b.thread.joinable()) b.thread.join();
   ai.cancel();
   audio.shutdown();
   if (ImGui::GetCurrentContext()) {
@@ -211,34 +212,47 @@ void App::loadAssets() {
     progress.stage = "Inlaying the board";
     int res = opt.quality == 0 ? 1024 : (opt.quality == 1 ? 2048 : 4096);
     tex::bakeBoard(res, lib.boardHalf, boardAlbedo, boardDetail);
-    if (opt.pieces == 1) {
-      // starting with the medieval army: raise it before the game begins
-      progress.stage = "Raising the medieval army";
-      medieval::buildLibrary(mlib, opt.quality, nullptr);
-      mReady = true;
+    if (opt.pieces == 1 || opt.pieces == 2) {
+      // starting with another army: make it before the game begins
+      progress.stage = opt.pieces == 1 ? "Raising the medieval army" : "Landing the aliens";
+      buildArmy(opt.pieces, nullptr);
+      army[opt.pieces].ready = true;
     }
     assetsReady = true;
   });
 }
 
-void App::startMedievalBuild() {
-  if (mloaderRunning || mReady) return;
-  mloaderRunning = true;
-  mloader = std::thread([this]() {
-    medieval::buildLibrary(mlib, opt.quality, &mprogress);
-    mReady = true;
+void App::buildArmy(int set, meshgen::BuildProgress* prog) {
+  if (set == 1) medieval::buildLibrary(mlib, opt.quality, prog);
+  else alien::buildLibrary(alib, opt.quality, prog);
+}
+
+void App::uploadArmy(int set) {
+  if (set == 1) renderer.uploadMedieval(mlib);
+  else renderer.uploadAlien(alib);
+  army[set].uploaded = true;
+}
+
+void App::startArmyBuild(int set) {
+  ArmyBuild& b = army[set];
+  if (b.running || b.ready) return;
+  b.running = true;
+  b.thread = std::thread([this, set]() {
+    buildArmy(set, &army[set].progress);
+    army[set].ready = true;
   });
 }
 
-float App::medievalProgress() const {
-  int t = std::max(1, mprogress.total.load());
-  return std::min(1.0f, (float)mprogress.done.load() / t);
+float App::armyProgress(int set) const {
+  const meshgen::BuildProgress& p = army[set].progress;
+  int t = std::max(1, p.total.load());
+  return std::min(1.0f, (float)p.done.load() / t);
 }
 
 void App::setPieceSet(int s) {
-  s = s == 1 ? 1 : 0;
+  s = (s == 1 || s == 2) ? s : 0;
   if (s == pieceSet && pendingSet < 0) return;
-  if (s == 1 && !renderer.medievalReady) startMedievalBuild();
+  if (s != 0 && !army[s].uploaded) startArmyBuild(s);
   pendingSet = s;
 }
 
@@ -255,9 +269,9 @@ void App::applyPieceSet(int s) {
     a.resetControls();
     a.dissolve = 1.0f;
     a.dissolveVel = -world.fx.rnd(1.1f, 1.6f);
-    a.dissolveColor = s == 1 ? vec3(1.0f, 0.62f, 0.25f) : vec3(1.0f, 0.75f, 0.35f);
+    a.dissolveColor = s == 1 ? vec3(1.0f, 0.62f, 0.25f) : (s == 2 ? vec3(0.4f, 1.0f, 0.5f) : vec3(1.0f, 0.75f, 0.35f));
   }
-  world.sound(SFX_CHIME, 0.6f, vec3(0), s == 1 ? 0.75f : 1.0f);
+  world.sound(SFX_CHIME, 0.6f, vec3(0), s == 1 ? 0.75f : (s == 2 ? 1.4f : 1.0f));
 }
 
 int App::run() {
@@ -283,6 +297,7 @@ int App::run() {
   }
   world.lib = &lib;
   world.mlib = &mlib;
+  world.alib = &alib;
   world.reset();
   loadAssets();
   double prev = glfwGetTime();
@@ -760,9 +775,9 @@ void App::frame(float dt) {
       boardAlbedo = tex::Image();
       boardDetail = tex::Image();
       loading = false;
-      if (mReady) {
-        renderer.uploadMedieval(mlib);
-        pieceSet = world.pieceSet = 1;
+      if (opt.pieces != 0 && army[opt.pieces].ready) {
+        uploadArmy(opt.pieces);
+        pieceSet = world.pieceSet = opt.pieces;
       }
       if (opt.hasCam) {
         world.cam.yaw = opt.camYaw;
@@ -804,12 +819,15 @@ void App::frame(float dt) {
   }
 
   // the medieval army finished building in the background
-  if (mloaderRunning && mReady) {
-    mloader.join();
-    mloaderRunning = false;
-    renderer.uploadMedieval(mlib);
+  for (int s = 1; s < 3; ++s) {
+    ArmyBuild& b = army[s];
+    if (b.running && b.ready) {
+      b.thread.join();
+      b.running = false;
+      uploadArmy(s);
+    }
   }
-  if (pendingSet >= 0 && anims.empty() && (pendingSet == 0 || renderer.medievalReady)) applyPieceSet(pendingSet);
+  if (pendingSet >= 0 && anims.empty() && (pendingSet == 0 || army[pendingSet].uploaded)) applyPieceSet(pendingSet);
 
   handleInput();
   float sdt = world.beginFrame(dt);

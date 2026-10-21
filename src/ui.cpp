@@ -119,11 +119,12 @@ void App::drawUI() {
   ImGui::Combo("Opponent", &aiLevel, levels, 5);
   ImGui::EndDisabled();
   {
-    const char* sets[] = {"Living Marble", "Medieval"};
+    const char* sets[] = {"Living Marble", "Medieval", "Aliens"};
     int ps = pendingSet >= 0 ? pendingSet : pieceSet;
     ImGui::SetNextItemWidth(-90 * S);
-    if (ImGui::Combo("Pieces", &ps, sets, 2)) setPieceSet(ps);
-    if (medievalBuilding()) ImGui::TextDisabled("Raising the medieval army... %d%%", (int)(medievalProgress() * 100));
+    if (ImGui::Combo("Pieces", &ps, sets, 3)) setPieceSet(ps);
+    if (armyBuilding(1)) ImGui::TextDisabled("Raising the medieval army... %d%%", (int)(armyProgress(1) * 100));
+    if (armyBuilding(2)) ImGui::TextDisabled("The aliens are landing... %d%%", (int)(armyProgress(2) * 100));
   }
   ImGui::Checkbox("Battle animations", &battles);
   ImGui::Checkbox("Cinematic camera", &world.cinematic);

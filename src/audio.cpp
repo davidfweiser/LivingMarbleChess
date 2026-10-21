@@ -808,17 +808,375 @@ void synthMedieval(std::vector<Buf>& S) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The aliens' sounds
+// ---------------------------------------------------------------------------
+// a sine whose frequency follows freq(t), with envelope env(t), added at t0
+template <class FreqF, class EnvF>
+void addSweep(Buf& b, float t0, float dur, FreqF freq, EnvF env) {
+  size_t s0 = (size_t)(t0 * SR), n = (size_t)(dur * SR);
+  double ph = 0;
+  for (size_t i = 0; i < n && s0 + i < b.size(); ++i) {
+    float t = (float)i / SR;
+    ph += TAU * freq(t) / SR;
+    b[s0 + i] += (float)std::sin(ph) * env(t);
+  }
+}
+
+// a band-limited sawtooth (PolyBLEP) following freq(t)
+template <class FreqF, class EnvF>
+void addSaw(Buf& b, float t0, float dur, FreqF freq, EnvF env) {
+  size_t s0 = (size_t)(t0 * SR), n = (size_t)(dur * SR);
+  double ph = 0;
+  for (size_t i = 0; i < n && s0 + i < b.size(); ++i) {
+    float t = (float)i / SR;
+    double dt = freq(t) / SR;
+    ph += dt;
+    if (ph >= 1.0) ph -= 1.0;
+    b[s0 + i] += ((float)(2.0 * ph - 1.0) - polyblep(ph, dt)) * env(t);
+  }
+}
+
+void synthAlien(std::vector<Buf>& S) {
+  Rng r;
+  r.s = 4242;
+  {  // PEW: a falling laser chirp with a click
+    Buf b = make(0.4f);
+    addSweep(b, 0, 0.4f, [](float t) { return 320.0f + 1650.0f * std::exp(-t * 13.0f); },
+             [](float t) { return std::exp(-t * 8.0f) * std::min(1.0f, t / 0.003f); });
+    addSweep(b, 0, 0.4f, [](float t) { return 2.0f * (320.0f + 1650.0f * std::exp(-t * 13.0f)); },
+             [](float t) { return 0.35f * std::exp(-t * 11.0f) * std::min(1.0f, t / 0.003f); });
+    Biquad hp;
+    hp.highpass(3000);
+    addNoise(b, r, 0, 0.4f, 120, hp);
+    normalize(b, 0.7f);
+    S[SFX_PEW] = b;
+  }
+  {  // UFO: the classic theremin warble, with a hum underneath
+    Buf b = make(2.4f);
+    auto env = [](float t) { return envAR(t, 0.3f, 1.6f, 0.5f); };
+    addSweep(b, 0, 2.4f, [](float t) { return 520.0f + 140.0f * std::sin(t * 6.2831f * 5.5f) + 60.0f * std::sin(t * 2.2f); }, env);
+    addSweep(b, 0, 2.4f, [](float t) { return 1.5f * (520.0f + 140.0f * std::sin(t * 6.2831f * 5.5f + 0.4f)); },
+             [env](float t) { return 0.3f * env(t); });
+    addSweep(b, 0, 2.4f, [](float) { return 62.0f; },
+             [env](float t) { return 0.5f * env(t) * (0.7f + 0.3f * std::sin(t * 6.2831f * 9.0f)); });
+    reverb(b, 0.25f, 0.8f, 0.3f, 0.8f);
+    normalize(b, 0.6f);
+    S[SFX_UFO] = b;
+  }
+  {  // THEREMIN: an eerie little tune, sliding from note to note
+    Buf b = make(4.6f);
+    const float notes[8] = {440.0f, 659.25f, 587.33f, 523.25f, 440.0f, 349.23f, 329.63f, 440.0f};
+    const float times[8] = {0.0f, 0.55f, 1.1f, 1.45f, 1.8f, 2.4f, 2.8f, 3.3f};
+    auto freq = [&](float t) {
+      int k = 0;
+      while (k < 7 && t >= times[k + 1]) ++k;
+      float f = notes[k];
+      if (k > 0) {  // portamento from the previous note
+        float u = std::min(1.0f, (t - times[k]) / 0.12f);
+        f = notes[k - 1] + (notes[k] - notes[k - 1]) * (u * u * (3 - 2 * u));
+      }
+      return f * (1.0f + 0.016f * std::sin(t * 6.2831f * 6.3f) * std::min(1.0f, t / 0.3f));
+    };
+    auto env = [](float t) { return envAR(t, 0.15f, 3.65f, 0.7f); };
+    addSweep(b, 0, 4.6f, freq, env);
+    addSweep(b, 0, 4.6f, [&](float t) { return 2.0f * freq(t); }, [&](float t) { return 0.12f * env(t); });
+    reverb(b, 0.45f, 0.84f, 0.3f, 1.0f);
+    normalize(b, 0.6f);
+    S[SFX_THEREMIN] = b;
+  }
+  {  // BEAM: a shimmering chord climbing as the beam lifts its catch, with sparkles
+    Buf b = make(2.8f);
+    const float ratios[4] = {1.0f, 1.5f, 2.0f, 3.0f};
+    for (int k = 0; k < 4; ++k) {
+      float rt = ratios[k];
+      addSweep(b, 0, 2.8f, [rt](float t) { return rt * 220.0f * std::pow(2.0f, t / 2.6f); },
+               [k](float t) { return envAR(t, 0.35f, 1.9f, 0.5f) * (0.75f + 0.25f * std::sin(t * 6.2831f * 12.0f + k)) / (1.0f + k); });
+    }
+    for (int i = 0; i < 40; ++i) {
+      float t = r.next() * 2.5f;
+      float f = 3000.0f + r.next() * 4000.0f;
+      addDampedSine(b, t, f, 0.08f, 60);
+    }
+    normalize(b, 0.6f);
+    S[SFX_BEAM] = b;
+  }
+  {  // GIBBER: "blip blorp zib-zib" - fast formant syllables at random pitches
+    Buf b = make(1.4f);
+    float t = 0.02f;
+    for (int i = 0; i < 9 && t < 1.25f; ++i) {
+      float len = 0.06f + r.next() * 0.09f;
+      float f0 = 260.0f + r.next() * 420.0f;
+      float glide = (r.next() - 0.4f) * 1.2f;
+      float vowel = r.next();
+      Buf syl = make(len + 0.02f);
+      addSaw(syl, 0, len, [f0, glide, len](float u) { return f0 * (1.0f + glide * u / len) * (1.0f + 0.04f * std::sin(u * 6.2831f * 30.0f)); },
+             [len](float u) { return envAR(u, 0.008f, len - 0.03f, 0.022f); });
+      Biquad f1, f2;
+      f1.bandpass(400.0f + 500.0f * vowel, 6.0f);
+      f2.bandpass(1200.0f + 1400.0f * (1.0f - vowel), 8.0f);
+      size_t s0 = (size_t)(t * SR);
+      for (size_t k = 0; k < syl.size() && s0 + k < b.size(); ++k) b[s0 + k] += f1.run(syl[k]) + 0.6f * f2.run(syl[k]);
+      t += len + (r.next() < 0.3f ? 0.07f : 0.015f);
+    }
+    normalize(b, 0.7f);
+    S[SFX_GIBBER] = b;
+  }
+  {  // SLURP: wet noise with a rising resonance and bubbles, a pop at the end
+    Buf b = make(0.75f);
+    Biquad bp;
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      if (i % 64 == 0) bp.bandpass(350.0f + 2600.0f * t / 0.7f, 4.0f);
+      float flutter = 0.6f + 0.4f * std::sin(t * 6.2831f * 23.0f) * std::sin(t * 6.2831f * 7.0f);
+      b[i] += bp.run(r.bi()) * envAR(t, 0.05f, 0.5f, 0.15f) * flutter * 2.0f;
+    }
+    for (int i = 0; i < 6; ++i) {
+      float t = 0.05f + r.next() * 0.55f;
+      float f = 500.0f + r.next() * 900.0f;
+      addDampedSine(b, t, f, 0.25f, 50, -3.0f);
+    }
+    addDampedSine(b, 0.66f, 700.0f, 0.6f, 40, 6.0f);
+    normalize(b, 0.7f);
+    S[SFX_SLURP] = b;
+  }
+  {  // BURP: a low, jittery pulse through an "uh" formant
+    Buf b = make(1.0f);
+    Buf src = make(1.0f);
+    double ph = 0;
+    float jit = 0;
+    for (size_t i = 0; i < src.size(); ++i) {
+      float t = (float)i / SR;
+      jit += (r.bi() * 0.4f - jit * 0.02f);
+      float f = 92.0f * (1.0f - 0.15f * t) * (1.0f + 0.01f * jit);
+      double dt = f / SR;
+      ph += dt;
+      if (ph >= 1.0) ph -= 1.0;
+      float env = envAR(t, 0.04f, 0.55f, 0.3f) * (0.8f + 0.2f * std::sin(t * 6.2831f * 7.0f));
+      src[i] = ((float)(2.0 * ph - 1.0) - polyblep(ph, dt)) * env;
+    }
+    Biquad f1, f2, lp;
+    f1.bandpass(520, 4.0f);
+    f2.bandpass(1050, 6.0f);
+    lp.lowpass(1600);
+    for (size_t i = 0; i < b.size(); ++i) b[i] = lp.run(f1.run(src[i]) * 1.2f + f2.run(src[i]) * 0.5f + src[i] * 0.15f);
+    normalize(b, 0.8f);
+    S[SFX_BURP] = b;
+  }
+  {  // BOING: a spring
+    Buf b = make(0.9f);
+    addSweep(b, 0, 0.9f, [](float t) { return 210.0f * (1.0f + 0.45f * std::exp(-t * 3.5f) * std::sin(t * 6.2831f * 13.0f)) * (1.0f + 0.3f * t); },
+             [](float t) { return std::exp(-t * 3.2f) * std::min(1.0f, t / 0.004f); });
+    addSweep(b, 0, 0.9f, [](float t) { return 420.0f * (1.0f + 0.45f * std::exp(-t * 3.5f) * std::sin(t * 6.2831f * 13.0f)); },
+             [](float t) { return 0.25f * std::exp(-t * 5.0f); });
+    normalize(b, 0.7f);
+    S[SFX_BOING] = b;
+  }
+  {  // WHISTLE: a slide whistle, up and up (blasting off)
+    Buf b = make(1.5f);
+    addSweep(b, 0, 1.5f, [](float t) { return 600.0f * std::pow(3.6f, t / 1.3f) * (1.0f + 0.012f * std::sin(t * 6.2831f * 6.0f)); },
+             [](float t) { return envAR(t, 0.04f, 1.2f, 0.25f); });
+    Biquad bp;
+    bp.bandpass(2500, 1.0f);
+    noiseShaped(b, r, 0, 1.5f, bp, 0.05f, [](float t) { return envAR(t, 0.04f, 1.2f, 0.25f); });
+    normalize(b, 0.6f);
+    S[SFX_WHISTLE] = b;
+  }
+  {  // SPLAT: a wet thump and squelches
+    Buf b = make(0.7f);
+    addDampedSine(b, 0, 85, 1.0f, 14, 1.0f);
+    Biquad lp;
+    lp.lowpass(1400);
+    addNoise(b, r, 0, 1.2f, 16, lp);
+    for (int i = 0; i < 7; ++i) {
+      float t = 0.02f + r.next() * 0.4f;
+      float f = 300.0f + r.next() * 700.0f;
+      Biquad bp;
+      bp.bandpass(f, 5.0f);
+      addNoise(b, r, t, 0.6f, 45, bp);
+    }
+    normalize(b, 0.85f);
+    S[SFX_SPLAT] = b;
+  }
+  {  // MOO
+    Buf b = make(1.7f);
+    Buf src = make(1.7f);
+    addSaw(src, 0, 1.6f, [](float t) { return 128.0f - 22.0f * t / 1.6f + 3.0f * std::sin(t * 6.2831f * 5.0f) * std::min(1.0f, t / 0.5f); },
+           [](float t) { return envAR(t, 0.18f, 1.05f, 0.35f); });
+    Biquad f1, f2, f3;
+    f1.bandpass(330, 5.0f);
+    f2.bandpass(820, 7.0f);
+    f3.lowpass(2500);
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      float open = std::min(1.0f, t / 0.35f);  // "mm" opening into "oo"
+      b[i] = f3.run(f1.run(src[i]) * 1.3f + f2.run(src[i]) * 0.5f * open + src[i] * 0.05f);
+    }
+    reverb(b, 0.15f, 0.7f, 0.4f, 0.6f);
+    normalize(b, 0.8f);
+    S[SFX_MOO] = b;
+  }
+  {  // POP
+    Buf b = make(0.25f);
+    addSweep(b, 0, 0.2f, [](float t) { return 1100.0f * std::exp(-t * 25.0f) + 180.0f; },
+             [](float t) { return std::exp(-t * 28.0f); });
+    Biquad hp;
+    hp.highpass(2000);
+    addNoise(b, r, 0, 0.8f, 200, hp);
+    normalize(b, 0.8f);
+    S[SFX_POP] = b;
+  }
+  {  // SHRINK: "wee-oo-wee-oo" all the way down, with sparkles
+    Buf b = make(1.2f);
+    addSweep(b, 0, 1.2f, [](float t) { return 1700.0f * std::pow(0.12f, t / 1.1f) * (1.0f + 0.12f * std::sin(t * 6.2831f * 16.0f)); },
+             [](float t) { return envAR(t, 0.02f, 0.95f, 0.2f); });
+    for (int i = 0; i < 18; ++i) {
+      float t = r.next() * 1.0f;
+      float f = 4000.0f + r.next() * 3000.0f;
+      addDampedSine(b, t, f, 0.1f, 70);
+    }
+    normalize(b, 0.6f);
+    S[SFX_SHRINK] = b;
+  }
+  {  // HEATRAY: an electric scream - a rising whine over a ring-modulated buzz, crackling
+    Buf b = make(2.3f);
+    double p1 = 0, p2 = 0, p3 = 0;
+    Biquad hp;
+    hp.highpass(4000);
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      float env = envAR(t, 0.25f, 1.7f, 0.3f);
+      float whine = 950.0f + 700.0f * std::min(1.0f, t / 1.2f);
+      p1 += TAU * whine / SR;
+      p2 += TAU * 118.0 / SR;
+      p3 += TAU * 1370.0 / SR;
+      float buzz = (float)(std::sin(p2) + 0.5 * std::sin(2 * p2) + 0.33 * std::sin(3 * p2)) * (float)std::sin(p3);
+      b[i] = ((float)std::sin(p1 + 0.8 * std::sin(p2 * 3.0)) * 0.6f + buzz * 0.5f + hp.run(r.bi()) * 0.5f) * env;
+    }
+    normalize(b, 0.75f);
+    S[SFX_HEATRAY] = b;
+  }
+  {  // HORN: the tripod's two-note moan
+    Buf b = make(2.9f);
+    auto freq = [](float t) { return t < 1.0f ? 110.0f : 110.0f - 18.0f * std::min(1.0f, (t - 1.0f) / 0.25f); };
+    auto env = [](float t) { return envAR(t, 0.12f, 2.1f, 0.5f) * (t > 0.95f && t < 1.05f ? 0.75f : 1.0f); };
+    Buf src = make(2.9f);
+    addSaw(src, 0, 2.8f, freq, env);
+    addSaw(src, 0, 2.8f, [freq](float t) { return freq(t) * 1.006f; }, env);
+    addSaw(src, 0, 2.8f, [freq](float t) { return freq(t) * 0.5f; }, [env](float t) { return 0.7f * env(t); });
+    Biquad lp;
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      if (i % 64 == 0) lp.lowpass(500.0f + 1400.0f * std::exp(-std::fmod(t, 1.0f) * 2.0f), 1.4f);
+      b[i] = lp.run(src[i]);
+    }
+    reverb(b, 0.55f, 0.88f, 0.35f, 1.3f);
+    normalize(b, 0.85f);
+    S[SFX_HORN] = b;
+  }
+  {  // TWINKLE: a star in the sky
+    Buf b = make(1.0f);
+    addRing(b, 0, 2637.0f, 0.6f, 5.0f);
+    addRing(b, 0, 3951.0f, 0.3f, 7.0f);
+    addRing(b, 0.07f, 5274.0f, 0.25f, 9.0f);
+    addRing(b, 0.12f, 3136.0f, 0.2f, 8.0f);
+    normalize(b, 0.55f);
+    S[SFX_TWINKLE] = b;
+  }
+  {  // SIZZLE: frying acid with bubbles
+    Buf b = make(1.7f);
+    Biquad hp;
+    hp.highpass(2500);
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      float crack = r.next() < 0.004f ? 1.0f : 0.15f;
+      b[i] += hp.run(r.bi()) * crack * envAR(t, 0.08f, 1.1f, 0.45f);
+    }
+    for (int i = 0; i < 14; ++i) {
+      float t = r.next() * 1.4f;
+      float f = 600.0f + r.next() * 1000.0f;
+      addDampedSine(b, t, f, 0.12f, 40, -2.0f);
+    }
+    normalize(b, 0.6f);
+    S[SFX_SIZZLE] = b;
+  }
+  {  // HATCH: the shell cracks, then little chirps
+    Buf b = make(1.2f);
+    for (int i = 0; i < 5; ++i) {
+      float t = 0.03f * i + r.next() * 0.02f;
+      float f = 2200.0f + r.next() * 2200.0f;
+      addDampedSine(b, t, f, 0.5f, 140);
+      Biquad hp;
+      hp.highpass(1800);
+      addNoise(b, r, t, 0.5f, 120, hp);
+    }
+    for (int i = 0; i < 4; ++i) {
+      float t = 0.35f + 0.17f * i + r.next() * 0.05f;
+      float f0 = 1500.0f + r.next() * 700.0f;
+      addSweep(b, t, 0.1f, [f0](float u) { return f0 * (1.0f + 6.0f * u); }, [](float u) { return 0.5f * std::sin(u / 0.1f * 3.14159f); });
+    }
+    normalize(b, 0.7f);
+    S[SFX_HATCH] = b;
+  }
+  {  // DRONE: the mothership - deep detuned throbbing chord swelling up
+    Buf b = make(4.8f);
+    Buf src = make(4.8f);
+    auto env = [](float t) { return envAR(t, 1.2f, 2.6f, 1.0f) * (0.75f + 0.25f * std::sin(t * 6.2831f * 0.9f)); };
+    const float fr[4] = {41.2f, 41.5f, 61.7f, 82.4f};
+    for (float f : fr) addSaw(src, 0, 4.8f, [f](float) { return f; }, env);
+    Biquad lp;
+    lp.lowpass(420, 1.2f);
+    for (size_t i = 0; i < b.size(); ++i) b[i] = lp.run(src[i]) * 0.5f;
+    addSweep(b, 0, 4.8f, [](float t) { return 880.0f + 30.0f * std::sin(t * 6.2831f * 4.0f); },
+             [env](float t) { return 0.04f * env(t); });
+    reverb(b, 0.4f, 0.86f, 0.4f, 1.2f);
+    normalize(b, 0.85f);
+    S[SFX_DRONE] = b;
+  }
+  {  // SPUTTER: a machine coughing and dying
+    Buf b = make(1.7f);
+    double ph = 0;
+    bool on = true;
+    float next = 0;
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      if (t >= next) {
+        float u = r.next();
+        on = u > 0.25f + 0.4f * t / 1.6f;
+        float len = r.next();
+        next = t + 0.03f + 0.08f * len;
+      }
+      float f = 70.0f + 560.0f * std::exp(-t * 2.2f);
+      ph += TAU * f / SR;
+      float sq = std::sin(ph) > 0 ? 1.0f : -1.0f;
+      b[i] = (on ? sq * 0.45f + (float)std::sin(ph) * 0.4f : 0.0f) * envAR(t, 0.01f, 1.3f, 0.3f);
+    }
+    Biquad lp;
+    lp.lowpass(2500);
+    for (float& v : b) v = lp.run(v);
+    Biquad hp;
+    hp.highpass(3000);
+    for (int i = 0; i < 10; ++i) {
+      float t = r.next() * 1.5f;
+      addNoise(b, r, t, 0.4f, 90, hp);
+    }
+    normalize(b, 0.7f);
+    S[SFX_SPUTTER] = b;
+  }
+}
+
 }  // namespace
 
 std::vector<Buf> synthEverything() {
   std::vector<Buf> S = synthAll();
   synthMedieval(S);
+  synthAlien(S);
   return S;
 }
 
 struct Audio::Impl {
   std::vector<Buf> sounds;
-  std::thread medievalSynth;  // the medieval army's sounds are made in the background
+  std::thread medievalSynth;  // the medieval and alien armies' sounds are made in the background
   struct Voice {
     int sfx = -1;
     double pos = 0;
@@ -873,6 +1231,7 @@ bool Audio::init() {
   impl_->medievalSynth = std::thread([impl]() {
     std::vector<Buf> med(SFX_COUNT);
     synthMedieval(med);
+    synthAlien(med);
     std::lock_guard<std::mutex> lk(impl->mtx);
     for (int i = SFX_HYMN; i < SFX_COUNT; ++i) impl->sounds[i] = std::move(med[i]);
   });
@@ -941,7 +1300,10 @@ bool Audio::dumpWav(const char* dir) {
                                          "explode", "charge",  "zap",     "crackle", "chime",  "select", "check",
                                          "mate",    "debris",  "rumble",  "hymn",    "organ",  "thunder", "wind",
                                          "roar",    "fire",    "chain",   "grind",   "stomp",  "hoof",   "neigh",
-                                         "bell",    "splinter", "armor",  "slide",   "bite"};
+                                         "bell",    "splinter", "armor",  "slide",   "bite",   "pew",
+                                         "ufo",     "theremin", "beam",   "gibber",  "slurp",  "burp",   "boing",
+                                         "whistle", "splat",   "moo",     "pop",     "shrink", "heatray", "horn",
+                                         "twinkle", "sizzle",  "hatch",   "drone",   "sputter"};
   std::vector<Buf> S = synthEverything();
   for (int i = 0; i < SFX_COUNT; ++i) {
     std::string path = std::string(dir) + "/" + names[i] + ".wav";

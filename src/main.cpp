@@ -18,7 +18,7 @@ static void usage() {
       "  --graphics 0..3         Low / Medium / High / Ultra (default High)\n"
       "  --demo                  watch the AI play itself\n"
       "  --fen \"<fen>\"           start from a position\n"
-      "  --pieces marble|medieval  which army to play with (default marble)\n"
+      "  --pieces marble|medieval|alien  which army to play with (default marble)\n"
       "  --mute                  no sound\n"
       "  --selftest              verify the move generator (perft)\n"
       "\n capture tools:\n"
@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
     else if (a == "--mute") o.noAudio = true;
     else if (a == "--pieces") {
       std::string v = next();
-      o.pieces = (v == "medieval" || v == "1") ? 1 : 0;
+      o.pieces = (v == "medieval" || v == "1") ? 1 : ((v == "alien" || v == "aliens" || v == "2") ? 2 : 0);
     }
     else if (a == "--selftest") o.selftest = true;
     else if (a == "--shot") o.shotPath = next();

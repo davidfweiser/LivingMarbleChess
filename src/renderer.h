@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "alien.h"
 #include "gl.h"
 #include "medieval.h"
 #include "meshgen.h"
@@ -39,7 +40,7 @@ class Shader {
   std::unordered_map<std::string, GLint> locs_;
 };
 
-enum Material { MAT_WHITE = 0, MAT_BLACK = 1, MAT_SWORD = 2, MAT_IRON = 3, MAT_MEDIEVAL = 4 };
+enum Material { MAT_WHITE = 0, MAT_BLACK = 1, MAT_SWORD = 2, MAT_IRON = 3, MAT_MEDIEVAL = 4, MAT_ALIEN = 5, MAT_GLASS = 6 };
 
 struct DrawItem {
   const GpuMesh* mesh = nullptr;
@@ -59,6 +60,7 @@ struct DrawItem {
   bool castShadow = true;
   bool reflect = true;
   bool groundAO = true;
+  bool glass = false;                // see-through (drawn blended after everything solid)
   const glm::mat4* bones = nullptr;  // skinned meshes (medieval figures)
   int boneCount = 0;
   int team = 0;                      // medieval: 0 white army, 1 black army
@@ -129,6 +131,14 @@ class Renderer {
   PieceGpu medieval[medieval::A_COUNT];
   bool medievalReady = false;
   void uploadMedieval(const medieval::Library& lib);
+  PieceGpu alien[alien::AL_COUNT];
+  bool alienReady = false;
+  void uploadAlien(const alien::Library& lib);
+  // the GPU meshes of a skinned set (1 medieval, 2 aliens) once uploaded, else null
+  const PieceGpu* figures(int set) const {
+    if (set == 2) return alienReady ? alien : nullptr;
+    return medievalReady ? medieval : nullptr;
+  }
 
  private:
   void buildPrograms();
@@ -136,7 +146,9 @@ class Renderer {
   void createTargets(int w, int h);
   void destroyTargets();
   void setLighting(Shader& s, const SceneView& sv, bool reflectionPass);
-  void drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shadowPass, bool reflectPass);
+  void drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shadowPass, bool reflectPass, bool glass = false);
+  // cull: whether face culling stays enabled afterwards
+  void drawGlass(Shader& s, const SceneView& sv, bool lowLod, bool reflectPass, bool cull);
   void drawBoard(Shader& s);
   void fullscreen();
   void bindTex(int unit, GLenum target, GLuint tex);

@@ -46,7 +46,7 @@ struct Options {
   std::string selectSq;
   std::string loadingShot;        // capture the loading screen           // e.g. e2, pre-select a piece (screenshots)          // e.g. e5d6, played right after setup          // simulate without drawing (stress tests)
   int scenario = 0;               // canned positions for screenshots
-  int pieces = 0;                 // 0 Living Marble, 1 medieval
+  int pieces = 0;                 // 0 Living Marble, 1 medieval, 2 aliens
 };
 
 enum class Mode { HumanWhite = 0, HumanBlack, TwoPlayer, Watch };
@@ -92,11 +92,12 @@ class App {
   void resetView();
   void setMode(Mode m);
   void applyGraphicsPreset(int p);
-  void setPieceSet(int s);  // 0 Living Marble, 1 medieval (built in the background on first use)
+  // 0 Living Marble, 1 medieval, 2 aliens (the figure sets are built in the background on first use)
+  void setPieceSet(int s);
   int pieceSet = 0;
   int pendingSet = -1;
-  bool medievalBuilding() const { return mloaderRunning; }
-  float medievalProgress() const;
+  bool armyBuilding(int set) const { return set > 0 && set < 3 && army[set].running; }
+  float armyProgress(int set) const;
   bool isHumanTurn() const;
   bool animating() const { return !anims.empty(); }
   const char* statusText() const;
@@ -126,11 +127,17 @@ class App {
   meshgen::Library lib;
   meshgen::BuildProgress progress;
   medieval::Library mlib;
-  meshgen::BuildProgress mprogress;
-  std::thread mloader;
-  std::atomic<bool> mReady{false};
-  bool mloaderRunning = false;
-  void startMedievalBuild();
+  alien::Library alib;
+  struct ArmyBuild {  // background build of a figure set (index 1 medieval, 2 aliens)
+    meshgen::BuildProgress progress;
+    std::thread thread;
+    std::atomic<bool> ready{false};
+    bool running = false;
+    bool uploaded = false;
+  } army[3];
+  void startArmyBuild(int set);
+  void buildArmy(int set, meshgen::BuildProgress* progress);
+  void uploadArmy(int set);
   void applyPieceSet(int s);
   tex::Image boardAlbedo, boardDetail;
   std::thread loader;

@@ -133,6 +133,12 @@ struct Controls {
   float neck = 0;          // dragon: rear the neck back (+) or lunge (-)
   float tail = 0;          // tail swish phase
   float idle = 0;          // breathing / idle phase (radians)
+  // the aliens (alien.h)
+  float tongue = 0;        // tongue / inner jaw out (model units)
+  float perk = 0;          // antennae up (+) or droop (-)
+  float hover = 0;         // the base floats this much higher than at rest
+  float spin = 0;          // saucer light ring, throne fans (radians)
+  float hatch = 0;         // saucer belly hatch / tripod eye opening (0..1)
 };
 
 struct Pose {

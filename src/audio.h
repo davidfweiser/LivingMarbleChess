@@ -36,6 +36,27 @@ enum Sfx {
   SFX_ARMOR,     // armoured footstep
   SFX_SLIDE,     // a throne sliding over the board
   SFX_BITE,      // jaws crunching stone
+  // the aliens
+  SFX_PEW,       // ray-gun shot
+  SFX_UFO,       // flying-saucer warble
+  SFX_THEREMIN,  // an eerie theremin tune
+  SFX_BEAM,      // tractor beam
+  SFX_GIBBER,    // alien chatter
+  SFX_SLURP,     // a tongue slurping something in
+  SFX_BURP,      // and the burp afterwards
+  SFX_BOING,     // a spring
+  SFX_WHISTLE,   // slide whistle (blasting off)
+  SFX_SPLAT,     // a blob of goo landing
+  SFX_MOO,       // a cow
+  SFX_POP,       // pop!
+  SFX_SHRINK,    // shrink ray
+  SFX_HEATRAY,   // the tripod's heat ray
+  SFX_HORN,      // the tripod's horn
+  SFX_TWINKLE,   // a twinkle in the sky
+  SFX_SIZZLE,    // acid
+  SFX_HATCH,     // an egg cracking open, chirps
+  SFX_DRONE,     // the mothership
+  SFX_SPUTTER,   // a machine sputtering and dying
   SFX_COUNT
 };
 

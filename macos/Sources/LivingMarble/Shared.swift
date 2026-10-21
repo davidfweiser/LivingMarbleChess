@@ -49,6 +49,27 @@ enum Sfx: Int, CaseIterable {
   case armor     // armoured footstep
   case slide     // a throne sliding over the board
   case bite      // jaws crunching stone
+  // the aliens
+  case pew       // ray-gun shot
+  case ufo       // flying-saucer warble
+  case theremin  // an eerie theremin tune
+  case beam      // tractor beam
+  case gibber    // alien chatter
+  case slurp     // a tongue slurping something in
+  case burp      // and the burp afterwards
+  case boing     // a spring
+  case whistle   // slide whistle (blasting off)
+  case splat     // a blob of goo landing
+  case moo       // a cow
+  case pop       // pop!
+  case shrink    // shrink ray
+  case heatray   // the tripod's heat ray
+  case horn      // the tripod's horn
+  case twinkle   // a twinkle in the sky
+  case sizzle    // acid
+  case hatch     // an egg cracking open, chirps
+  case drone     // the mothership
+  case sputter   // a machine sputtering and dying
 }
 
 /// CPU-side image (2D or 3D), 8 bits per channel.

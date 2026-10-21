@@ -417,10 +417,10 @@ void Renderer::uploadLibrary(const meshgen::Library& lib) {
   libraryReady = true;
 }
 
-void Renderer::uploadMedieval(const medieval::Library& lib) {
-  for (int k = 0; k < medieval::A_COUNT; ++k) {
-    const meshgen::PieceAssets& A = lib.asset[k];
-    PieceGpu& G = medieval[k];
+static void uploadFigures(Renderer::PieceGpu* gpu, const meshgen::PieceAssets* assets, int n) {
+  for (int k = 0; k < n; ++k) {
+    const meshgen::PieceAssets& A = assets[k];
+    Renderer::PieceGpu& G = gpu[k];
     G.lod0.upload(A.lod0);
     G.lod1.upload(A.lod1);
     G.shards.resize(A.shards.size());
@@ -428,7 +428,16 @@ void Renderer::uploadMedieval(const medieval::Library& lib) {
     G.halves.resize(A.halves.size());
     for (size_t i = 0; i < A.halves.size(); ++i) G.halves[i].upload(A.halves[i].mesh);
   }
+}
+
+void Renderer::uploadMedieval(const medieval::Library& lib) {
+  uploadFigures(medieval, lib.asset, medieval::A_COUNT);
   medievalReady = true;
+}
+
+void Renderer::uploadAlien(const alien::Library& lib) {
+  uploadFigures(alien, lib.asset, alien::AL_COUNT);
+  alienReady = true;
 }
 
 void Renderer::uploadBoardTextures(const tex::Image& albedo, const tex::Image& detail, float half) {
@@ -564,8 +573,9 @@ void Renderer::setLighting(Shader& s, const SceneView& sv, bool reflectionPass) 
   s.set("uBoardHalf", boardHalf);
 }
 
-void Renderer::drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shadowPass, bool reflectPass) {
+void Renderer::drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shadowPass, bool reflectPass, bool glass) {
   for (const DrawItem& it : sv.items) {
+    if (it.glass != glass) continue;
     if (shadowPass && !it.castShadow) continue;
     if (reflectPass && !it.reflect) continue;
     const GpuMesh* m = (lowLod && it.meshLow) ? it.meshLow : it.mesh;
@@ -591,6 +601,25 @@ void Renderer::drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shado
     }
     m->draw();
   }
+}
+
+// See-through items (glass canopies): blended over everything solid, without
+// writing depth, inner (back) faces first.
+void Renderer::drawGlass(Shader& s, const SceneView& sv, bool lowLod, bool reflectPass, bool cull) {
+  bool any = false;
+  for (const DrawItem& it : sv.items) any = any || it.glass;
+  if (!any) return;
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+  glDepthMask(GL_FALSE);
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_FRONT);
+  drawItems(s, sv, lowLod, false, reflectPass, true);
+  glCullFace(GL_BACK);
+  drawItems(s, sv, lowLod, false, reflectPass, true);
+  glDepthMask(GL_TRUE);
+  glDisable(GL_BLEND);
+  if (!cull) glDisable(GL_CULL_FACE);
 }
 
 void Renderer::drawBoard(Shader& s) {
@@ -677,6 +706,7 @@ void Renderer::render(const SceneView& sv, int fbW, int fbH, GLuint outFbo) {
     shObject.set("uViewProj", sv.proj * sv.view * mirror);
     shObject.set("uClip", 1);
     drawItems(shObject, sv, true, false, true);
+    drawGlass(shObject, sv, true, true, true);
     shObject.set("uClip", 0);
     glFrontFace(GL_CCW);
     glDisable(GL_CLIP_DISTANCE0);
@@ -764,6 +794,11 @@ void Renderer::render(const SceneView& sv, int fbW, int fbH, GLuint outFbo) {
   shBackground.set("uBgLod", 3.2f);
   shBackground.set("uBgIntensity", 0.35f);
   fullscreen();
+
+  // glass
+  shObject.use();
+  drawGlass(shObject, sv, false, false, false);
+  glDepthMask(GL_FALSE);
 
   // particles
   if (!sv.particles.empty()) {

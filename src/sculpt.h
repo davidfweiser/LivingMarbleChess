@@ -128,6 +128,22 @@ struct Model {
     paint(mat, mirrorX(s), only);
   }
 
+  // Scales the whole model about the origin (its skeleton must be scaled to match).
+  void scaleAll(float s) {
+    for (Part& q : parts) {
+      Fn f = q.s.f;
+      q.s.f = [f, s](const vec3& p) { return f(p / s) * s; };
+      q.s.c *= s;
+      if (q.s.r > 0) q.s.r *= s;
+      q.k *= s;
+      if (q.w) {
+        Fn w = q.w;
+        q.w = [w, s](const vec3& p) { return w(p / s); };
+      }
+    }
+    skinBlend *= s;
+  }
+
   // Grows any bounding sphere that does not contain its whole shape (cheap safety net:
   // a sphere that is too small would cull the part where it should still show).
   void fitBounds() {
@@ -256,6 +272,10 @@ inline Skeleton makeSkeleton(std::initializer_list<BoneDef> bones) {
   return s;
 }
 inline vec3 mx(const vec3& v) { return vec3(-v.x, v.y, v.z); }
+inline Skeleton scaledSkeleton(Skeleton s, float k) {
+  for (int b = 0; b < s.count; ++b) s.joint[b] *= k;
+  return s;
+}
 
 inline float dot2(const vec3& v) { return glm::dot(v, v); }
 inline float triangleDist(const vec3& p, const vec3& a, const vec3& b, const vec3& c) {

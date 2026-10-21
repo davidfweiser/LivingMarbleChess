@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 
+#include "alien.h"
 #include "audio.h"
 #include "medieval.h"
 #include "meshgen.h"
@@ -28,9 +29,12 @@ struct Spring1 {
   void step(float target, float k, float zeta, float dt);
 };
 
+// Bone matrices of a skinned figure (set 1 medieval, 2 aliens).
+void figurePose(int set, int asset, const medieval::Controls& c, medieval::Pose& out);
+
 struct Actor {
   int id = -1, kind = 0, color = 0, square = -1;
-  int set = 0;  // 0 marble, 1 medieval
+  int set = 0;  // 0 marble, 1 medieval, 2 aliens
   bool alive = true, visible = true;
   glm::vec3 pos{0};
   float yaw = 0, yawTarget = 0, baseYaw = 0, yawRate = 9.0f;
@@ -78,17 +82,19 @@ struct Actor {
   glm::mat4 model() const;
   glm::mat4 rigidModel() const;  // without tilt
   glm::quat rotation() const;
-  float height() const { return (set == 1 ? medieval::pieceHeight(kind) : meshgen::pieceHeight(kind)) * scale; }
-  float radius() const { return (set == 1 ? medieval::pieceRadius(kind) : meshgen::pieceRadius(kind)) * scale; }
+  float height() const;
+  float radius() const;
+  bool skinned() const { return set != 0; }  // a medieval or alien figure (ctl / pose)
   glm::vec3 forward() const { return glm::vec3(std::sin(yaw), 0, std::cos(yaw)); }
 };
 
 struct Chunk {
   int kind = 0, color = 0, index = 0;
-  int set = 0;  // 1: 'kind' is a medieval asset
+  int set = 0;  // 1: 'kind' is a medieval asset, 2: an alien one
   bool half = false;
   glm::vec3 pos{0}, v{0}, w{0};
   glm::quat rot{1, 0, 0, 0};
+  float scale = 1;  // of the piece it broke off (a shrunken victim leaves small pieces)
   float radius = 0.1f, mass = 1, inertia = 1;
   float age = 0, still = 0, dissolve = 0;
   bool sleeping = false;
@@ -110,9 +116,10 @@ struct Prop {
   int id = 0;
 };
 
-// A skinned creature or object that is not a chessman (the dragon).
+// A skinned creature or object that is not a chessman (the dragon, a cow, the mothership).
 struct Puppet {
   int asset = 0, color = 0, id = 0;
+  int set = 1;  // 1 medieval asset, 2 alien asset
   glm::vec3 pos{0};
   float yaw = 0, scale = 1;
   glm::quat tilt{1, 0, 0, 0};  // applied after the yaw (a flying spear's pitch)
@@ -177,11 +184,12 @@ class World {
  public:
   const meshgen::Library* lib = nullptr;
   const medieval::Library* mlib = nullptr;
-  int pieceSet = 0;  // 0 Living Marble, 1 medieval
+  const alien::Library* alib = nullptr;
+  int pieceSet = 0;  // 0 Living Marble, 1 medieval, 2 aliens
   std::vector<Puppet> puppets;
   int nextPuppetId = 1;
   Puppet* puppet(int id);
-  int addPuppet(int asset, int color);
+  int addPuppet(int asset, int color, int set = 1);
   Audio* audio = nullptr;
   std::vector<Actor> actors;
   int actorAt[64];
@@ -234,7 +242,10 @@ class World {
   // break a medieval asset (e.g. a throne) drawn with model matrix M
   void shatterAsset(int asset, int color, const glm::mat4& M, const glm::quat& R, const glm::vec3& vel,
                     const glm::vec3& texOffset, const glm::vec3& impact, const glm::vec3& impulse, float explode,
-                    float upBias, float spin, float glow, const glm::vec3& glowColor);
+                    float upBias, float spin, float glow, const glm::vec3& glowColor, int set = 1);
+  void glassBurst(const Actor& a);  // an alien's canopy / jar shattering
+  // the meshes of a skinned set's asset (set 1 medieval, 2 aliens)
+  const meshgen::PieceAssets& figureAssets(int set, int asset) const;
   glm::mat4 seatModel(const Actor& a) const;
   const meshgen::PieceAssets& assetsOf(const Chunk& c) const;
   float beginFrame(float dtReal);  // slow-motion, decays; returns the scaled dt

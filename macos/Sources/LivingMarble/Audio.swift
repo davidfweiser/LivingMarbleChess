@@ -1,7 +1,7 @@
 // Procedurally synthesised sound effects (no audio files), mixed in real time.
 // Every effect is built once at start-up from damped sines, filtered noise and
-// a few oscillators (the medieval army's organ, choir, thunder and the rest are
-// made on a background thread right after). An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
+// a few oscillators (the medieval army's organ, choir, thunder and the rest, and
+// the aliens' ray guns, saucers and cows, are made on a background thread right after). An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
 // resampling, volume) at 44.1 kHz and AVAudioEngine converts to the device rate.
 import AVFoundation
 #if os(macOS)
@@ -342,10 +342,11 @@ extension Audio {
       return S
     }
 
-    /// Every effect, the medieval army's included (for the .wav dump).
+    /// Every effect, the medieval army's and the aliens' included (for the .wav dump).
     static func synthEverything() -> [Buf] {
       var S = synthAll()
       synthMedieval(&S)
+      synthAlien(&S)
       return S
     }
 
@@ -908,6 +909,394 @@ extension Audio {
         S[Sfx.bite.rawValue] = b
       }
     }
+
+    // MARK: The aliens' sounds
+
+    /// A sine whose frequency follows freq(t), with envelope env(t), added at t0.
+    static func addSweep(_ b: inout Buf, _ t0: Float, _ dur: Float, _ freq: (Float) -> Float,
+                         _ env: (Float) -> Float) {
+      let s0 = Int(t0 * Float(SR)), n = Int(dur * Float(SR))
+      var ph = 0.0
+      b.withUnsafeMutableBufferPointer { p in
+        var i = 0
+        while i < n && s0 + i < p.count {
+          let t = Float(i) / Float(SR)
+          ph += TAU * Double(freq(t)) / Double(SR)
+          p[s0 + i] += Float(sin(ph)) * env(t)
+          i += 1
+        }
+      }
+    }
+
+    /// A band-limited sawtooth (PolyBLEP) following freq(t).
+    static func addSaw(_ b: inout Buf, _ t0: Float, _ dur: Float, _ freq: (Float) -> Float,
+                       _ env: (Float) -> Float) {
+      let s0 = Int(t0 * Float(SR)), n = Int(dur * Float(SR))
+      var ph = 0.0
+      b.withUnsafeMutableBufferPointer { p in
+        var i = 0
+        while i < n && s0 + i < p.count {
+          let t = Float(i) / Float(SR)
+          let dt = Double(freq(t) / Float(SR))
+          ph += dt
+          if ph >= 1 { ph -= 1 }
+          p[s0 + i] += (Float(2 * ph - 1) - polyblep(ph, dt)) * env(t)
+          i += 1
+        }
+      }
+    }
+
+    /// The aliens' effects (Sfx.pew ... Sfx.sputter) into S, which holds every Sfx.
+    /// Made on the background thread right after the medieval army's.
+    static func synthAlien(_ S: inout [Buf]) {
+      var r = XorShift32(s: 4242)
+      do {  // PEW: a falling laser chirp with a click
+        var b = make(0.4)
+        addSweep(&b, 0, 0.4, { (t: Float) -> Float in 320 + 1650 * exp(-t * 13) },
+                 { (t: Float) -> Float in exp(-t * 8) * min(1, t / 0.003) })
+        addSweep(&b, 0, 0.4, { (t: Float) -> Float in 2 * (320 + 1650 * exp(-t * 13)) },
+                 { (t: Float) -> Float in 0.35 * exp(-t * 11) * min(1, t / 0.003) })
+        var hp = Biquad()
+        hp.highpass(3000)
+        addNoise(&b, &r, 0, 0.4, 120, hp)
+        normalize(&b, 0.7)
+        S[Sfx.pew.rawValue] = b
+      }
+      do {  // UFO: the classic theremin warble, with a hum underneath
+        var b = make(2.4)
+        let env = { (t: Float) -> Float in envAR(t, 0.3, 1.6, 0.5) }
+        addSweep(&b, 0, 2.4, { (t: Float) -> Float in
+          let w: Float = 140 * sin(t * 6.2831 * 5.5)
+          return 520 + w + 60 * sin(t * 2.2)
+        }, env)
+        addSweep(&b, 0, 2.4, { (t: Float) -> Float in 1.5 * (520 + 140 * sin(t * 6.2831 * 5.5 + 0.4)) },
+                 { (t: Float) -> Float in 0.3 * env(t) })
+        addSweep(&b, 0, 2.4, { (_: Float) -> Float in 62 },
+                 { (t: Float) -> Float in 0.5 * env(t) * (0.7 + 0.3 * sin(t * 6.2831 * 9)) })
+        reverb(&b, 0.25, 0.8, 0.3, 0.8)
+        normalize(&b, 0.6)
+        S[Sfx.ufo.rawValue] = b
+      }
+      do {  // THEREMIN: an eerie little tune, sliding from note to note
+        var b = make(4.6)
+        let notes: [Float] = [440.0, 659.25, 587.33, 523.25, 440.0, 349.23, 329.63, 440.0]
+        let times: [Float] = [0.0, 0.55, 1.1, 1.45, 1.8, 2.4, 2.8, 3.3]
+        let freq = { (t: Float) -> Float in
+          var k = 0
+          while k < 7 && t >= times[k + 1] { k += 1 }
+          var f = notes[k]
+          if k > 0 {  // portamento from the previous note
+            let u = min(1, (t - times[k]) / 0.12)
+            f = notes[k - 1] + (notes[k] - notes[k - 1]) * (u * u * (3 - 2 * u))
+          }
+          let vib: Float = 0.016 * sin(t * 6.2831 * 6.3) * min(1, t / 0.3)
+          return f * (1 + vib)
+        }
+        let env = { (t: Float) -> Float in envAR(t, 0.15, 3.65, 0.7) }
+        addSweep(&b, 0, 4.6, freq, env)
+        addSweep(&b, 0, 4.6, { (t: Float) -> Float in 2 * freq(t) }, { (t: Float) -> Float in 0.12 * env(t) })
+        reverb(&b, 0.45, 0.84, 0.3, 1.0)
+        normalize(&b, 0.6)
+        S[Sfx.theremin.rawValue] = b
+      }
+      do {  // BEAM: a shimmering chord climbing as the beam lifts its catch, with sparkles
+        var b = make(2.8)
+        let ratios: [Float] = [1.0, 1.5, 2.0, 3.0]
+        for k in 0..<4 {
+          let rt = ratios[k], kf = Float(k)
+          addSweep(&b, 0, 2.8, { (t: Float) -> Float in rt * 220 * pow(Float(2), t / 2.6) },
+                   { (t: Float) -> Float in
+                     let shimmer: Float = 0.75 + 0.25 * sin(t * 6.2831 * 12 + kf)
+                     return envAR(t, 0.35, 1.9, 0.5) * shimmer / (1 + kf)
+                   })
+        }
+        for _ in 0..<40 {
+          let t = r.next() * 2.5
+          let f = 3000 + r.next() * 4000
+          addDampedSine(&b, t, f, 0.08, 60)
+        }
+        normalize(&b, 0.6)
+        S[Sfx.beam.rawValue] = b
+      }
+      do {  // GIBBER: "blip blorp zib-zib" - fast formant syllables at random pitches
+        var b = make(1.4)
+        var t: Float = 0.02
+        var i = 0
+        while i < 9 && t < 1.25 {
+          let len = 0.06 + r.next() * 0.09
+          let f0 = 260 + r.next() * 420
+          let glide = (r.next() - 0.4) * 1.2
+          let vowel = r.next()
+          var syl = make(len + 0.02)
+          addSaw(&syl, 0, len, { (u: Float) -> Float in
+            let wobble: Float = 1 + 0.04 * sin(u * 6.2831 * 30)
+            return f0 * (1 + glide * u / len) * wobble
+          }, { (u: Float) -> Float in envAR(u, 0.008, len - 0.03, 0.022) })
+          var f1 = Biquad(), f2 = Biquad()
+          f1.bandpass(400 + 500 * vowel, 6)
+          f2.bandpass(1200 + 1400 * (1 - vowel), 8)
+          let s0 = Int(t * Float(SR))
+          var k = 0
+          while k < syl.count && s0 + k < b.count {
+            b[s0 + k] += f1.run(syl[k]) + 0.6 * f2.run(syl[k])
+            k += 1
+          }
+          t += len + (r.next() < 0.3 ? 0.07 : 0.015)
+          i += 1
+        }
+        normalize(&b, 0.7)
+        S[Sfx.gibber.rawValue] = b
+      }
+      do {  // SLURP: wet noise with a rising resonance and bubbles, a pop at the end
+        var b = make(0.75)
+        var bp = Biquad()
+        for i in 0..<b.count {
+          let t = Float(i) / Float(SR)
+          if i % 64 == 0 { bp.bandpass(350 + 2600 * t / 0.7, 4) }
+          let flutter: Float = 0.6 + 0.4 * sin(t * 6.2831 * 23) * sin(t * 6.2831 * 7)
+          b[i] += bp.run(r.bi()) * envAR(t, 0.05, 0.5, 0.15) * flutter * 2
+        }
+        for _ in 0..<6 {
+          let t = 0.05 + r.next() * 0.55
+          let f = 500 + r.next() * 900
+          addDampedSine(&b, t, f, 0.25, 50, -3)
+        }
+        addDampedSine(&b, 0.66, 700, 0.6, 40, 6)
+        normalize(&b, 0.7)
+        S[Sfx.slurp.rawValue] = b
+      }
+      do {  // BURP: a low, jittery pulse through an "uh" formant
+        var b = make(1.0)
+        var src = make(1.0)
+        var ph = 0.0
+        var jit: Float = 0
+        for i in 0..<src.count {
+          let t = Float(i) / Float(SR)
+          jit += (r.bi() * 0.4 - jit * 0.02)
+          let f: Float = 92 * (1 - 0.15 * t) * (1 + 0.01 * jit)
+          let dt = Double(f / Float(SR))
+          ph += dt
+          if ph >= 1 { ph -= 1 }
+          let env: Float = envAR(t, 0.04, 0.55, 0.3) * (0.8 + 0.2 * sin(t * 6.2831 * 7))
+          src[i] = (Float(2 * ph - 1) - polyblep(ph, dt)) * env
+        }
+        var f1 = Biquad(), f2 = Biquad(), lp = Biquad()
+        f1.bandpass(520, 4)
+        f2.bandpass(1050, 6)
+        lp.lowpass(1600)
+        for i in 0..<b.count { b[i] = lp.run(f1.run(src[i]) * 1.2 + f2.run(src[i]) * 0.5 + src[i] * 0.15) }
+        normalize(&b, 0.8)
+        S[Sfx.burp.rawValue] = b
+      }
+      do {  // BOING: a spring
+        var b = make(0.9)
+        addSweep(&b, 0, 0.9, { (t: Float) -> Float in
+          let wob: Float = 1 + 0.45 * exp(-t * 3.5) * sin(t * 6.2831 * 13)
+          return 210 * wob * (1 + 0.3 * t)
+        }, { (t: Float) -> Float in exp(-t * 3.2) * min(1, t / 0.004) })
+        addSweep(&b, 0, 0.9, { (t: Float) -> Float in 420 * (1 + 0.45 * exp(-t * 3.5) * sin(t * 6.2831 * 13)) },
+                 { (t: Float) -> Float in 0.25 * exp(-t * 5) })
+        normalize(&b, 0.7)
+        S[Sfx.boing.rawValue] = b
+      }
+      do {  // WHISTLE: a slide whistle, up and up (blasting off)
+        var b = make(1.5)
+        addSweep(&b, 0, 1.5, { (t: Float) -> Float in
+          600 * pow(Float(3.6), t / 1.3) * (1 + 0.012 * sin(t * 6.2831 * 6))
+        }, { (t: Float) -> Float in envAR(t, 0.04, 1.2, 0.25) })
+        var bp = Biquad()
+        bp.bandpass(2500, 1)
+        noiseShaped(&b, &r, 0, 1.5, bp, 0.05) { envAR($0, 0.04, 1.2, 0.25) }
+        normalize(&b, 0.6)
+        S[Sfx.whistle.rawValue] = b
+      }
+      do {  // SPLAT: a wet thump and squelches
+        var b = make(0.7)
+        addDampedSine(&b, 0, 85, 1.0, 14, 1.0)
+        var lp = Biquad()
+        lp.lowpass(1400)
+        addNoise(&b, &r, 0, 1.2, 16, lp)
+        for _ in 0..<7 {
+          let t = 0.02 + r.next() * 0.4
+          let f = 300 + r.next() * 700
+          var bp = Biquad()
+          bp.bandpass(f, 5)
+          addNoise(&b, &r, t, 0.6, 45, bp)
+        }
+        normalize(&b, 0.85)
+        S[Sfx.splat.rawValue] = b
+      }
+      do {  // MOO
+        var b = make(1.7)
+        var src = make(1.7)
+        addSaw(&src, 0, 1.6, { (t: Float) -> Float in
+          let low: Float = 3 * sin(t * 6.2831 * 5) * min(1, t / 0.5)
+          return 128 - 22 * t / 1.6 + low
+        }, { (t: Float) -> Float in envAR(t, 0.18, 1.05, 0.35) })
+        var f1 = Biquad(), f2 = Biquad(), f3 = Biquad()
+        f1.bandpass(330, 5)
+        f2.bandpass(820, 7)
+        f3.lowpass(2500)
+        for i in 0..<b.count {
+          let t = Float(i) / Float(SR)
+          let open = min(1, t / 0.35)  // "mm" opening into "oo"
+          b[i] = f3.run(f1.run(src[i]) * 1.3 + f2.run(src[i]) * 0.5 * open + src[i] * 0.05)
+        }
+        reverb(&b, 0.15, 0.7, 0.4, 0.6)
+        normalize(&b, 0.8)
+        S[Sfx.moo.rawValue] = b
+      }
+      do {  // POP
+        var b = make(0.25)
+        addSweep(&b, 0, 0.2, { (t: Float) -> Float in 1100 * exp(-t * 25) + 180 },
+                 { (t: Float) -> Float in exp(-t * 28) })
+        var hp = Biquad()
+        hp.highpass(2000)
+        addNoise(&b, &r, 0, 0.8, 200, hp)
+        normalize(&b, 0.8)
+        S[Sfx.pop.rawValue] = b
+      }
+      do {  // SHRINK: "wee-oo-wee-oo" all the way down, with sparkles
+        var b = make(1.2)
+        addSweep(&b, 0, 1.2, { (t: Float) -> Float in
+          1700 * pow(Float(0.12), t / 1.1) * (1 + 0.12 * sin(t * 6.2831 * 16))
+        }, { (t: Float) -> Float in envAR(t, 0.02, 0.95, 0.2) })
+        for _ in 0..<18 {
+          let t = r.next() * 1.0
+          let f = 4000 + r.next() * 3000
+          addDampedSine(&b, t, f, 0.1, 70)
+        }
+        normalize(&b, 0.6)
+        S[Sfx.shrink.rawValue] = b
+      }
+      do {  // HEATRAY: an electric scream - a rising whine over a ring-modulated buzz, crackling
+        var b = make(2.3)
+        var p1 = 0.0, p2 = 0.0, p3 = 0.0
+        var hp = Biquad()
+        hp.highpass(4000)
+        for i in 0..<b.count {
+          let t = Float(i) / Float(SR)
+          let env = envAR(t, 0.25, 1.7, 0.3)
+          let whine: Float = 950 + 700 * min(1, t / 1.2)
+          p1 += TAU * Double(whine) / Double(SR)
+          p2 += TAU * 118.0 / Double(SR)
+          p3 += TAU * 1370.0 / Double(SR)
+          let harm: Double = sin(p2) + 0.5 * sin(2 * p2) + 0.33 * sin(3 * p2)
+          let buzz = Float(harm) * Float(sin(p3))
+          let scream = Float(sin(p1 + 0.8 * sin(p2 * 3.0))) * 0.6
+          b[i] = (scream + buzz * 0.5 + hp.run(r.bi()) * 0.5) * env
+        }
+        normalize(&b, 0.75)
+        S[Sfx.heatray.rawValue] = b
+      }
+      do {  // HORN: the tripod's two-note moan
+        var b = make(2.9)
+        let freq = { (t: Float) -> Float in t < 1 ? 110 : 110 - 18 * min(1, (t - 1) / 0.25) }
+        let env = { (t: Float) -> Float in envAR(t, 0.12, 2.1, 0.5) * (t > 0.95 && t < 1.05 ? 0.75 : 1) }
+        var src = make(2.9)
+        addSaw(&src, 0, 2.8, freq, env)
+        addSaw(&src, 0, 2.8, { (t: Float) -> Float in freq(t) * 1.006 }, env)
+        addSaw(&src, 0, 2.8, { (t: Float) -> Float in freq(t) * 0.5 }, { (t: Float) -> Float in 0.7 * env(t) })
+        var lp = Biquad()
+        for i in 0..<b.count {
+          let t = Float(i) / Float(SR)
+          if i % 64 == 0 { lp.lowpass(500 + 1400 * exp(-fmod(t, Float(1)) * 2), 1.4) }
+          b[i] = lp.run(src[i])
+        }
+        reverb(&b, 0.55, 0.88, 0.35, 1.3)
+        normalize(&b, 0.85)
+        S[Sfx.horn.rawValue] = b
+      }
+      do {  // TWINKLE: a star in the sky
+        var b = make(1.0)
+        addRing(&b, 0, 2637, 0.6, 5)
+        addRing(&b, 0, 3951, 0.3, 7)
+        addRing(&b, 0.07, 5274, 0.25, 9)
+        addRing(&b, 0.12, 3136, 0.2, 8)
+        normalize(&b, 0.55)
+        S[Sfx.twinkle.rawValue] = b
+      }
+      do {  // SIZZLE: frying acid with bubbles
+        var b = make(1.7)
+        var hp = Biquad()
+        hp.highpass(2500)
+        for i in 0..<b.count {
+          let t = Float(i) / Float(SR)
+          let crack: Float = r.next() < 0.004 ? 1 : 0.15
+          b[i] += hp.run(r.bi()) * crack * envAR(t, 0.08, 1.1, 0.45)
+        }
+        for _ in 0..<14 {
+          let t = r.next() * 1.4
+          let f = 600 + r.next() * 1000
+          addDampedSine(&b, t, f, 0.12, 40, -2)
+        }
+        normalize(&b, 0.6)
+        S[Sfx.sizzle.rawValue] = b
+      }
+      do {  // HATCH: the shell cracks, then little chirps
+        var b = make(1.2)
+        for i in 0..<5 {
+          let t = 0.03 * Float(i) + r.next() * 0.02
+          let f = 2200 + r.next() * 2200
+          addDampedSine(&b, t, f, 0.5, 140)
+          var hp = Biquad()
+          hp.highpass(1800)
+          addNoise(&b, &r, t, 0.5, 120, hp)
+        }
+        for i in 0..<4 {
+          let t = 0.35 + 0.17 * Float(i) + r.next() * 0.05
+          let f0 = 1500 + r.next() * 700
+          addSweep(&b, t, 0.1, { (u: Float) -> Float in f0 * (1 + 6 * u) },
+                   { (u: Float) -> Float in 0.5 * sin(u / 0.1 * 3.14159) })
+        }
+        normalize(&b, 0.7)
+        S[Sfx.hatch.rawValue] = b
+      }
+      do {  // DRONE: the mothership - deep detuned throbbing chord swelling up
+        var b = make(4.8)
+        var src = make(4.8)
+        let env = { (t: Float) -> Float in envAR(t, 1.2, 2.6, 1.0) * (0.75 + 0.25 * sin(t * 6.2831 * 0.9)) }
+        for f: Float in [41.2, 41.5, 61.7, 82.4] { addSaw(&src, 0, 4.8, { _ in f }, env) }
+        var lp = Biquad()
+        lp.lowpass(420, 1.2)
+        for i in 0..<b.count { b[i] = lp.run(src[i]) * 0.5 }
+        addSweep(&b, 0, 4.8, { (t: Float) -> Float in 880 + 30 * sin(t * 6.2831 * 4) },
+                 { (t: Float) -> Float in 0.04 * env(t) })
+        reverb(&b, 0.4, 0.86, 0.4, 1.2)
+        normalize(&b, 0.85)
+        S[Sfx.drone.rawValue] = b
+      }
+      do {  // SPUTTER: a machine coughing and dying
+        var b = make(1.7)
+        var ph = 0.0
+        var on = true
+        var next: Float = 0
+        for i in 0..<b.count {
+          let t = Float(i) / Float(SR)
+          if t >= next {
+            let u = r.next()
+            on = u > 0.25 + 0.4 * t / 1.6
+            let len = r.next()
+            next = t + 0.03 + 0.08 * len
+          }
+          let f: Float = 70 + 560 * exp(-t * 2.2)
+          ph += TAU * Double(f) / Double(SR)
+          let sq: Float = sin(ph) > 0 ? 1 : -1
+          b[i] = (on ? sq * 0.45 + Float(sin(ph)) * 0.4 : 0) * envAR(t, 0.01, 1.3, 0.3)
+        }
+        var lp = Biquad()
+        lp.lowpass(2500)
+        for i in 0..<b.count { b[i] = lp.run(b[i]) }
+        var hp = Biquad()
+        hp.highpass(3000)
+        for _ in 0..<10 {
+          let t = r.next() * 1.5
+          addNoise(&b, &r, t, 0.4, 90, hp)
+        }
+        normalize(&b, 0.7)
+        S[Sfx.sputter.rawValue] = b
+      }
+    }
   }
 
   // MARK: - Real-time mixer
@@ -944,7 +1333,7 @@ extension Audio {
     let queueCap = 256  // power of two
     let buffersOffset = MemoryLayout<AudioBufferList>.offset(of: \AudioBufferList.mBuffers) ?? 8
     // The effects back to back: the start-up ones in `arena`, the medieval army's
-    // in a second block added by publish(). Neither moves until free().
+    // and the aliens' in a second block added by publish(). Neither moves until free().
     let soundCount: Int
     let arena: UnsafeMutablePointer<Float>
     let lateArena: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>
@@ -1163,7 +1552,7 @@ final class Audio {
   private var engine: AVAudioEngine?
   private var source: AVAudioSourceNode?
   private var observers: [NSObjectProtocol] = []
-  // the medieval army's sounds, made in the background after start()
+  // the medieval army's and the aliens' sounds, made in the background after start()
   private let lateSynth = DispatchGroup()
 
   init() {}
@@ -1199,12 +1588,13 @@ final class Audio {
 #endif
   }
 
-  /// Makes the medieval army's sounds on another thread; until they are ready,
-  /// playing one of them does nothing.
+  /// Makes the medieval army's and the aliens' sounds on another thread; until
+  /// they are ready, playing one of them does nothing.
   private func synthesiseLate(_ m: Mixer) {
     DispatchQueue.global(qos: .userInitiated).async(group: lateSynth) {
       var S = [[Float]](repeating: [], count: Sfx.allCases.count)
       Synth.synthMedieval(&S)
+      Synth.synthAlien(&S)
       m.publish(S)
     }
   }
@@ -1338,7 +1728,9 @@ final class Audio {
     let names = ["step", "thud", "clack", "shatter", "whoosh", "clang", "boom", "explode", "charge",
                  "zap", "crackle", "chime", "select", "check", "mate", "debris", "rumble",
                  "hymn", "organ", "thunder", "wind", "roar", "fire", "chain", "grind", "stomp", "hoof",
-                 "neigh", "bell", "splinter", "armor", "slide", "bite"]
+                 "neigh", "bell", "splinter", "armor", "slide", "bite", "pew", "ufo", "theremin", "beam",
+                 "gibber", "slurp", "burp", "boing", "whistle", "splat", "moo", "pop", "shrink", "heatray",
+                 "horn", "twinkle", "sizzle", "hatch", "drone", "sputter"]
     let S = Synth.synthEverything()
     for (i, buf) in S.enumerated() {
       let n = UInt32(buf.count), bytes = n * 2

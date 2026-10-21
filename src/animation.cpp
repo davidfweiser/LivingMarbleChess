@@ -103,9 +103,9 @@ void Actor::update(float dt, float t, Audio* audio) {
   }
   vec2 b(bx.x, bz.x);
   rig = vec4(glm::length(b), std::atan2(b.y, b.x), glm::clamp(sq.x, 0.35f, 1.9f), tw.x);
-  if (set == 1) {
+  if (set != 0) {
     ctl.idle += dt;
-    medieval::buildPose(kind, ctl, pose);
+    figurePose(set, kind, ctl, pose);
     if (!seatFree) {
       seatPos = pos;
       seatYaw = yaw;
@@ -114,16 +114,30 @@ void Actor::update(float dt, float t, Audio* audio) {
   (void)audio;
 }
 
+void figurePose(int set, int asset, const medieval::Controls& c, medieval::Pose& out) {
+  if (set == 2) alien::buildPose(asset, c, out);
+  else medieval::buildPose(asset, c, out);
+}
+
 void Actor::resetControls() {
   float idle = ctl.idle;
   ctl = medieval::Controls();
   ctl.idle = idle;
-  ctl.sit = medieval::throned(kind) ? 1.0f : 0.0f;
+  ctl.sit = set == 1 && medieval::throned(kind) ? 1.0f : 0.0f;
   seatFree = false;
   seatPos = pos;
   seatYaw = yaw;
   heat = 0;
-  medieval::buildPose(kind, ctl, pose);
+  figurePose(set, kind, ctl, pose);
+}
+
+float Actor::height() const {
+  float h = set == 1 ? medieval::pieceHeight(kind) : (set == 2 ? alien::pieceHeight(kind) : meshgen::pieceHeight(kind));
+  return h * scale;
+}
+float Actor::radius() const {
+  float r = set == 1 ? medieval::pieceRadius(kind) : (set == 2 ? alien::pieceRadius(kind) : meshgen::pieceRadius(kind));
+  return r * scale;
 }
 
 glm::mat4 Puppet::model() const {
@@ -243,13 +257,14 @@ Puppet* World::puppet(int id) {
     if (p.id == id) return &p;
   return nullptr;
 }
-int World::addPuppet(int asset, int color) {
+int World::addPuppet(int asset, int color, int set) {
   Puppet p;
   p.asset = asset;
   p.color = color;
+  p.set = set;
   p.id = nextPuppetId++;
   p.texOffset = vec3(fx.rnd(-20, 20), fx.rnd(-20, 20), fx.rnd(-20, 20));
-  medieval::buildPose(asset, p.ctl, p.pose);
+  figurePose(set, asset, p.ctl, p.pose);
   puppets.push_back(p);
   return p.id;
 }
@@ -260,8 +275,12 @@ glm::mat4 World::seatModel(const Actor& a) const {
   return glm::scale(M, vec3(a.scale * medieval::seatScale(a.kind)));
 }
 
+const meshgen::PieceAssets& World::figureAssets(int set, int asset) const {
+  return set == 2 ? alib->asset[asset] : mlib->asset[asset];
+}
+
 const meshgen::PieceAssets& World::assetsOf(const Chunk& c) const {
-  return c.set == 1 ? mlib->asset[c.kind] : lib->piece[c.kind];
+  return c.set != 0 ? figureAssets(c.set, c.kind) : lib->piece[c.kind];
 }
 
 void World::reset() {
@@ -333,20 +352,21 @@ int World::addProp(Prop::Type t) {
 
 void World::shatterAsset(int asset, int color, const glm::mat4& M, const quat& R, const vec3& vel,
                          const vec3& texOffset, const vec3& impact, const vec3& impulse, float explode, float upBias,
-                         float spin, float glow, const vec3& glowColor) {
-  const meshgen::PieceAssets& A = mlib->asset[asset];
+                         float spin, float glow, const vec3& glowColor, int set) {
+  const meshgen::PieceAssets& A = figureAssets(set, asset);
   float sc = glm::length(vec3(M[0]));
   vec3 center = vec3(M * vec4(0, A.height * 0.5f, 0, 1));
   for (size_t i = 0; i < A.shards.size(); ++i) {
     const meshgen::Fragment& f = A.shards[i];
     Chunk c;
-    c.set = 1;
+    c.set = set;
     c.kind = asset;
     c.color = color;
     c.index = (int)i;
     c.pos = vec3(M * vec4(f.centroid, 1));
     c.rot = R;
     c.radius = f.radius * sc;
+    c.scale = sc;
     c.mass = std::max(f.volume, 1e-4f);
     c.inertia = 0.4f * c.mass * c.radius * c.radius;
     vec3 dir = glm::normalize(c.pos - center + fx.rndDir() * 0.05f);
@@ -361,13 +381,41 @@ void World::shatterAsset(int asset, int color, const glm::mat4& M, const quat& R
   }
 }
 
+// glittering glass shards flying from an alien's canopy or jar
+void World::glassBurst(const Actor& a) {
+  vec3 c = vec3(a.model() * glm::vec4(alien::headPoint(a.kind), 1.0f));
+  for (int i = 0; i < 70; ++i) {
+    Particle p;
+    vec3 d = fx.rndDir();
+    p.pos = c + d * 0.12f * a.scale;
+    p.vel = d * fx.rnd(1.0f, 3.2f) + vec3(0, fx.rnd(0.5f, 2.0f), 0);
+    p.size = fx.rnd(0.006f, 0.014f);
+    p.color = vec3(1.4f, 1.6f, 1.8f) * fx.rnd(0.6f, 1.4f);
+    p.colorEnd = p.color * 0.4f;
+    p.opacity = 0;
+    p.maxLife = fx.rnd(0.7f, 1.6f);
+    p.type = PT_SPARK;
+    p.stretch = 0.012f;
+    p.gravity = 9.0f;
+    p.drag = 0.5f;
+    p.bounce = true;
+    p.fadeIn = 0.0f;
+    fx.add(p);
+  }
+  sound(SFX_CHIME, 0.5f, c, 2.4f);
+  sound(SFX_SHATTER, 0.5f, c, 1.6f);
+}
+
 void World::shatter(Actor& a, const vec3& impact, const vec3& impulse, float explode, float upBias, float spin) {
-  if (a.set == 1) {
+  if (a.set != 0) {
     a.neutralize();
     glm::mat4 M = a.model();
     quat R = a.rotation();
     float glow = a.crack > 0.05f ? 1.0f : 0.0f;
-    shatterAsset(a.kind, a.color, M, R, a.vel, a.texOffset, impact, impulse, explode, upBias, spin, glow, a.crackColor);
+    shatterAsset(a.kind, a.color, M, R, a.vel, a.texOffset, impact, impulse, explode, upBias, spin, glow, a.crackColor,
+                 a.set);
+    // the saucer's canopy and the psychic's jar burst into glass
+    if (a.set == 2 && alien::glassAsset(a.kind) >= 0) glassBurst(a);
     if (a.hasSeat() && !a.seatFree)
       shatterAsset(medieval::seatAsset(a.kind), a.color, seatModel(a), glm::angleAxis(a.seatYaw, vec3(0, 1, 0)),
                    a.vel, a.texOffset + vec3(3.1f), impact, impulse, explode * 0.8f, upBias * 0.7f, spin * 0.7f, glow,
@@ -396,6 +444,7 @@ void World::shatter(Actor& a, const vec3& impact, const vec3& impulse, float exp
     c.pos = vec3(M * vec4(f.centroid, 1));
     c.rot = R;
     c.radius = f.radius * a.scale;
+    c.scale = a.scale;
     c.mass = std::max(f.volume, 1e-4f);
     c.inertia = 0.4f * c.mass * c.radius * c.radius;
     vec3 dir = glm::normalize(c.pos - center + fx.rndDir() * 0.05f);
@@ -418,7 +467,7 @@ void World::shatter(Actor& a, const vec3& impact, const vec3& impulse, float exp
 }
 
 void World::slice(Actor& a, float sep) {
-  const meshgen::PieceAssets& A = a.set == 1 ? mlib->asset[a.kind] : lib->piece[a.kind];
+  const meshgen::PieceAssets& A = a.set != 0 ? figureAssets(a.set, a.kind) : lib->piece[a.kind];
   a.neutralize();
   glm::mat4 M = a.model();
   quat R = a.rotation();
@@ -437,6 +486,7 @@ void World::slice(Actor& a, float sep) {
     c.pos = vec3(M * vec4(f.centroid, 1));
     c.rot = R;
     c.radius = f.radius * a.scale;
+    c.scale = a.scale;
     c.mass = std::max(f.volume, 1e-4f);
     c.inertia = 0.4f * c.mass * c.radius * c.radius;
     if (i == 0) {
@@ -456,6 +506,8 @@ void World::slice(Actor& a, float sep) {
     shatterAsset(medieval::seatAsset(a.kind), a.color, seatModel(a), glm::angleAxis(a.seatYaw, vec3(0, 1, 0)), a.vel,
                  a.texOffset + vec3(3.1f), a.pos + vec3(0, 0.5f, 0), vec3(0, -1.0f, 0), 1.0f, 0.5f, 5.0f, 0.0f,
                  vec3(1.0f));
+  // ... and a glass canopy or jar bursts
+  if (a.set == 2 && alien::glassAsset(a.kind) >= 0) glassBurst(a);
   a.alive = false;
   a.visible = false;
 }
@@ -508,7 +560,7 @@ void World::updateChunks(float dt) {
     float maxPen = 0;
     bool contact = false;
     for (const vec3& hp : F.hull) {
-      vec3 r = c.rot * hp;
+      vec3 r = c.rot * (hp * c.scale);
       vec3 p = c.pos + r;
       float pen = floorY - p.y;
       if (pen <= 0) continue;
@@ -596,9 +648,10 @@ float World::beginFrame(float dtReal) {
 void World::stopFidgets() {
   for (Actor& a : actors) {
     if (a.fidgetT < 0) continue;
-    if (a.set == 1) {
+    if (a.set != 0) {
       a.ctl.headYaw = a.ctl.headPitch = a.ctl.lean = a.ctl.twist = 0;
       a.ctl.armL = a.ctl.armR = vec3(0);
+      a.ctl.perk = a.ctl.jaw = a.ctl.tongue = a.ctl.hover = a.ctl.crouch = a.ctl.hatch = 0;
     }
     a.fidgetT = -1;
     a.yawTarget = a.baseYaw;
@@ -681,6 +734,52 @@ void World::updateFidgets(float dt) {
       }
       continue;
     }
+    if (a.set == 2) {
+      // aliens: antennae twitch, a look round with a blink of the lights, a nervous hop
+      medieval::Controls& c = a.ctl;
+      switch (a.fidgetType) {
+        case 0: {  // look about, antennae swivel
+          end = 2.0f;
+          float u = std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI);
+          c.headYaw = a.fidgetDir * 0.7f * u;
+          c.perk = 0.6f * u;
+          if (a.kind == meshgen::K_KNIGHT) c.spin += dt * 6.0f * u;  // the light ring whirls
+          if (a.kind == meshgen::K_ROOK) c.hatch = 0.5f * u;        // the eye peers about
+          break;
+        }
+        case 1: {  // a quick hop (the saucer bobs, the tripod shifts its weight)
+          end = 0.7f;
+          float u = glm::clamp(t / 0.4f, 0.0f, 1.0f);
+          if (a.kind == meshgen::K_ROOK) {
+            c.crouch = 0.3f * std::sin(u * kPI);
+          } else if (a.kind == meshgen::K_KNIGHT || a.kind == meshgen::K_BISHOP || a.kind == meshgen::K_KING) {
+            c.hover = 0.06f * std::sin(u * kPI);
+          } else {
+            a.pos.y = 0.08f * std::sin(u * kPI);
+            a.poseSquash = t < 0.07f ? 0.85f : 1.0f;
+            c.perk = -0.8f * std::sin(u * kPI);
+          }
+          break;
+        }
+        default: {  // stretch, a big blink of the eyes / a scratch of the head
+          end = 1.5f;
+          float u = std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI);
+          c.lean = -0.08f * u;
+          c.headPitch = -0.3f * u;
+          c.armL = vec3(0.6f * u, 0.2f * u, 0.4f * u);
+          if (a.kind == meshgen::K_PAWN) c.jaw = 0.5f * u;  // a yawn
+          break;
+        }
+      }
+      if (t >= end) {
+        a.fidgetT = -1;
+        c.headYaw = c.headPitch = c.lean = c.twist = c.perk = c.jaw = c.hover = c.crouch = c.hatch = 0;
+        c.armL = c.armR = vec3(0);
+        a.poseSquash = 1;
+        if (a.fidgetType == 1) a.pos.y = 0;
+      }
+      continue;
+    }
     switch (a.fidgetType) {
       case 0: {  // glance to one side and back
         end = 1.8f;
@@ -742,7 +841,7 @@ void World::simulate(float dt) {
     if (a.alive) a.update(dt, time, audio);
   for (Puppet& p : puppets) {
     p.ctl.idle += dt;
-    medieval::buildPose(p.asset, p.ctl, p.pose);
+    figurePose(p.set, p.asset, p.ctl, p.pose);
   }
   puppets.erase(std::remove_if(puppets.begin(), puppets.end(), [](const Puppet& p) { return !p.alive; }),
                 puppets.end());
@@ -759,16 +858,23 @@ void World::simulate(float dt) {
 void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
   for (const Actor& a : actors) {
     if (!a.alive || !a.visible || a.dissolve >= 0.999f) continue;
-    if (a.set == 1) {
-      if (!r.medievalReady) continue;
+    if (a.set != 0) {
+      const Renderer::PieceGpu* G = r.figures(a.set);
+      if (!G) continue;
       DrawItem d;
-      d.mesh = &r.medieval[a.kind].lod0;
-      d.meshLow = &r.medieval[a.kind].lod1;
+      d.mesh = &G[a.kind].lod0;
+      d.meshLow = &G[a.kind].lod1;
       d.model = a.model();
-      // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
-      d.rig = glm::vec4(a.rig.x * 0.3f, a.rig.y, 1.0f + (a.rig.z - 1.0f) * 0.12f, a.rig.w * 0.25f);
+      if (a.set == 1) {
+        // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
+        d.rig = glm::vec4(a.rig.x * 0.3f, a.rig.y, 1.0f + (a.rig.z - 1.0f) * 0.12f, a.rig.w * 0.25f);
+      } else {
+        // aliens are a bit rubbery (the saucer and the tripod less so)
+        float k = (a.kind == meshgen::K_KNIGHT || a.kind == meshgen::K_ROOK) ? 0.4f : 0.8f;
+        d.rig = glm::vec4(a.rig.x * k, a.rig.y, 1.0f + (a.rig.z - 1.0f) * k, a.rig.w * k);
+      }
       d.rigH = a.height() / std::max(a.scale, 1e-3f);
-      d.material = MAT_MEDIEVAL;
+      d.material = a.set == 2 ? MAT_ALIEN : MAT_MEDIEVAL;
       d.team = a.color;
       d.bones = a.pose.bone;
       d.boneCount = a.pose.count;
@@ -781,7 +887,17 @@ void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
       d.heat = a.heat;
       d.stone = a.stone;
       out.push_back(d);
-      if (a.kind == meshgen::K_ROOK && a.ctl.legs > 0.001f) {
+      int ga = a.set == 2 ? alien::glassAsset(a.kind) : -1;
+      if (ga >= 0) {  // the saucer's canopy, the psychic's jar
+        DrawItem g = d;
+        g.mesh = &G[ga].lod0;
+        g.meshLow = &G[ga].lod1;
+        g.material = MAT_GLASS;
+        g.glass = true;
+        g.castShadow = false;
+        out.push_back(g);
+      }
+      if (a.set == 1 && a.kind == meshgen::K_ROOK && a.ctl.legs > 0.001f) {
         DrawItem l = d;
         l.mesh = &r.medieval[medieval::A_LEGS].lod0;
         l.meshLow = &r.medieval[medieval::A_LEGS].lod1;
@@ -819,14 +935,20 @@ void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
     out.push_back(d);
   }
   for (const Chunk& c : chunks) {
-    const auto& P = c.set == 1 ? r.medieval[c.kind] : r.pieces[c.kind];
-    const auto& v = c.half ? P.halves : P.shards;
+    const Renderer::PieceGpu* G = c.set != 0 ? r.figures(c.set) : r.pieces;
+    if (!G) continue;
+    const auto& v = c.half ? G[c.kind].halves : G[c.kind].shards;
     if (c.index >= (int)v.size()) continue;
     DrawItem d;
     d.mesh = &v[c.index];
     d.meshLow = &v[c.index];
-    d.model = glm::translate(glm::mat4(1.0f), c.pos) * glm::mat4_cast(c.rot);
-    d.material = c.set == 1 ? MAT_MEDIEVAL : (c.color == 0 ? MAT_WHITE : MAT_BLACK);
+    d.model = glm::translate(glm::mat4(1.0f), c.pos) * glm::mat4_cast(c.rot) * glm::scale(glm::mat4(1.0f), vec3(c.scale));
+    d.material = c.set == 1 ? MAT_MEDIEVAL : (c.set == 2 ? MAT_ALIEN : (c.color == 0 ? MAT_WHITE : MAT_BLACK));
+    if (c.set == 2 && (c.kind == alien::AL_CANOPY || c.kind == alien::AL_JAR)) {
+      d.material = MAT_GLASS;
+      d.glass = true;
+      d.castShadow = false;
+    }
     d.team = c.color;
     d.texOffset = c.texOffset;
     d.glow = vec4(c.glowColor, c.glow * 1.2f);
@@ -835,13 +957,14 @@ void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
     out.push_back(d);
   }
   for (const Puppet& p : puppets) {
-    if (!r.medievalReady || p.dissolve >= 0.999f) continue;
+    const Renderer::PieceGpu* G = r.figures(p.set);
+    if (!G || p.dissolve >= 0.999f) continue;
     DrawItem d;
-    d.mesh = &r.medieval[p.asset].lod0;
-    d.meshLow = &r.medieval[p.asset].lod1;
+    d.mesh = &G[p.asset].lod0;
+    d.meshLow = &G[p.asset].lod1;
     d.model = p.model();
     d.rigH = 1.0f;
-    d.material = MAT_MEDIEVAL;
+    d.material = p.set == 2 ? MAT_ALIEN : MAT_MEDIEVAL;
     d.team = p.color;
     d.bones = p.pose.bone;
     d.boneCount = p.pose.count;

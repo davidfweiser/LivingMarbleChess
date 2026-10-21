@@ -479,6 +479,7 @@ enum MeshGen {
       if tries % 4000 == 3999 { minD *= 0.8 }
     }
     let n = seeds.count
+    if n == 0 { return [] }  // nothing thick enough to break into chunks
     // bounding boxes of each cell
     var bl = [vec3](repeating: vec3(1e9), count: n), bh = [vec3](repeating: vec3(-1e9), count: n)
     let g: Float = 0.02

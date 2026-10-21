@@ -296,8 +296,9 @@ in vec3 vObjN;
 in float vAO;
 in float vAux;
 flat in float vMat;
-uniform int uMat;        // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure
-uniform int uTeam;       // medieval: 0 white army, 1 black army
+uniform int uMat;        // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass
+uniform int uTeam;       // medieval / aliens: 0 white army, 1 black army
+uniform float uTime;
 uniform vec4 uGlow;      // rgb + strength
 uniform float uCrack;
 uniform vec3 uCrackColor;
@@ -468,6 +469,145 @@ void medievalSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, ino
   }
 }
 
+// The aliens. The white army is green-skinned in silver and pearl with cyan
+// lights, the black army violet-skinned in black and gunmetal with magenta lights.
+vec3 alienLight(bool black) { return black ? vec3(1.0, 0.18, 0.62) : vec3(0.25, 1.0, 0.92); }
+void alienSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout float rough, inout float metal,
+                  inout float wrap, inout vec3 sss, inout vec3 N, inout vec3 emissive, inout float specOcc) {
+  float n1 = texture(uNoise, o * 3.3 + uTexOffset * 0.13).r;
+  float n2 = texture(uNoise, o * 12.0 + uTexOffset * 0.07).g;
+  float n3 = texture(uNoise, o * 41.0).b;
+  vec3 V = normalize(uCamPos - vWorld);
+  float NoV = saturate(dot(N, V));
+  if (id == 0 || id == 1) {  // skin: wet, mottled, translucent
+    vec3 base = id == 0 ? (black ? vec3(0.30, 0.13, 0.42) : vec3(0.25, 0.52, 0.17))
+                        : (black ? vec3(0.62, 0.45, 0.72) : vec3(0.60, 0.80, 0.42));
+    float mottle = smoothstep(0.45, 0.75, texture(uNoise, o * 9.0 + uTexOffset * 0.2).g);
+    albedo = base * (0.82 + 0.3 * n1) * (1.0 - 0.25 * mottle * float(id == 0));
+    rough = 0.3 + 0.18 * n2;
+    wrap = 0.5;
+    sss = (black ? vec3(1.0, 0.35, 0.75) : vec3(0.7, 1.0, 0.35)) * 1.3;
+    N = normalize(N + (vec3(n2, n3, n1) - 0.5) * 0.12);
+  } else if (id == 2) {  // big glossy eyes
+    albedo = black ? vec3(0.012, 0.004, 0.008) : vec3(0.004, 0.008, 0.012);
+    rough = 0.04;
+    emissive += alienLight(black) * 0.05 * pow(1.0 - NoV, 3.0);  // a sheen deep in the eye
+  } else if (id == 3) {  // jumpsuit: satin
+    albedo = black ? vec3(0.03, 0.026, 0.04) : vec3(0.72, 0.74, 0.78);
+    albedo *= 0.9 + 0.15 * n1;
+    rough = 0.38 + 0.1 * n2;
+    metal = 0.25;
+    emissive += (black ? vec3(0.25, 0.05, 0.35) : vec3(0.2)) * pow(1.0 - NoV, 3.0) * 0.4;
+  } else if (id == 4) {  // chrome
+    albedo = black ? vec3(0.26, 0.25, 0.29) : vec3(0.93, 0.94, 0.96);
+    metal = 1.0;
+    rough = (black ? 0.16 : 0.07) + 0.06 * n2;
+  } else if (id == 5) {  // painted hull with panel seams and rivets
+    float a = atan(o.x, o.z);
+    float r = length(o.xz);
+    float seamA = abs(fract(a * 12.0 / 6.2831853) - 0.5) * 2.0;
+    float seamR = abs(fract(r / 0.055 + o.y / 0.07) - 0.5) * 2.0;
+    float seam = (1.0 - smoothstep(0.0, 0.04, 1.0 - seamA)) + (1.0 - smoothstep(0.0, 0.05, 1.0 - seamR));
+    albedo = (black ? vec3(0.045, 0.045, 0.055) : vec3(0.84, 0.85, 0.87)) * (0.93 + 0.12 * n1);
+    albedo *= 1.0 - 0.55 * saturate(seam);
+    rough = (black ? 0.32 : 0.22) + 0.1 * n2;
+    metal = 0.15;
+  } else if (id == 6 || id == 18) {  // running lights (chasing round) and plasma
+    vec3 c = alienLight(black);
+    float chase = id == 6 ? 0.35 + 0.65 * pow(0.5 + 0.5 * sin(atan(o.x, o.z) * 6.0 - uTime * 7.0), 3.0)
+                          : 0.7 + 0.3 * sin(uTime * 9.0 + n1 * 6.0);
+    albedo = c * 0.3;
+    rough = 0.15;
+    emissive += c * chase * (id == 6 ? 5.0 : 3.5);
+  } else if (id == 7) {  // brain: pink folds, glistening
+    float f = texture(uNoise, o * 24.0 + uTexOffset * 0.05).r;
+    float sulcus = 1.0 - smoothstep(0.0, 0.12, abs(f - 0.5));
+    albedo = vec3(0.86, 0.50, 0.55) * (0.85 + 0.2 * n1) * (1.0 - 0.45 * sulcus);
+    rough = 0.25 + 0.2 * sulcus;
+    wrap = 0.5;
+    sss = vec3(1.0, 0.35, 0.35) * 1.5;
+    N = normalize(N + (vec3(texture(uNoise, o * 24.0 + 0.3).r, 0.0, texture(uNoise, o * 24.0 + 0.6).r) - 0.5) * 0.5);
+  } else if (id == 8) {  // gold
+    albedo = vec3(1.0, 0.76, 0.33) * (0.9 + 0.15 * n1);
+    metal = 1.0;
+    rough = 0.18 + 0.1 * n2;
+  } else if (id == 9) {  // cape and gown: velvet
+    vec3 base = black ? vec3(0.42, 0.03, 0.07) : vec3(0.03, 0.30, 0.36);
+    albedo = base * (0.8 + 0.3 * n1);
+    rough = 0.65;
+    wrap = 0.3;
+    emissive += base * pow(1.0 - NoV, 3.0) * 0.6;  // velvet sheen
+    specOcc = 0.5;
+  } else if (id == 10) {  // glowing crystal
+    vec3 c = alienLight(black);
+    albedo = c * 0.4;
+    rough = 0.05;
+    emissive += c * (1.2 + 0.6 * sin(uTime * 3.0 + n1 * 4.0));
+  } else if (id == 11) {  // slime
+    vec3 c = black ? vec3(0.55, 0.12, 0.8) : vec3(0.35, 0.9, 0.08);
+    albedo = c * (0.7 + 0.3 * n1);
+    rough = 0.04;
+    wrap = 0.6;
+    sss = c * 2.0;
+    emissive += c * 0.25;
+  } else if (id == 12) {  // rubber
+    albedo = vec3(0.035, 0.035, 0.04) * (0.8 + 0.3 * n1);
+    rough = 0.65;
+  } else if (id == 13) {  // cowhide: black patches on white
+    float patchy = smoothstep(0.52, 0.56, texture(uNoise, o * 4.5 + vec3(1.7)).r);
+    albedo = mix(vec3(0.86, 0.84, 0.8), vec3(0.03, 0.028, 0.026), patchy) * (0.9 + 0.12 * n2);
+    rough = 0.65;
+    wrap = 0.3;
+  } else if (id == 14) {  // tongue, gums, cow's nose: wet pink
+    albedo = vec3(0.82, 0.42, 0.48) * (0.85 + 0.2 * n1);
+    rough = 0.22;
+    wrap = 0.4;
+    sss = vec3(1.0, 0.3, 0.3);
+  } else if (id == 15) {  // teeth
+    albedo = vec3(0.9, 0.88, 0.8);
+    rough = 0.25;
+  } else if (id == 16) {  // the dark inside
+    albedo = vec3(0.01, 0.008, 0.01);
+    rough = 0.9;
+    specOcc = 0.0;
+  } else if (id == 17) {  // carapace: glossy, iridescent
+    vec3 base = black ? vec3(0.07, 0.02, 0.1) : vec3(0.04, 0.26, 0.24);
+    vec3 film = black ? vec3(0.5, 0.1, 0.9) : vec3(0.2, 0.9, 0.6);
+    albedo = mix(base, film * 0.4, pow(1.0 - NoV, 2.0)) * (0.85 + 0.25 * n1);
+    rough = 0.12 + 0.08 * n2;
+    metal = 0.35;
+  } else if (id == 19) {  // horn, hooves, claws
+    albedo = vec3(0.72, 0.66, 0.55) * (0.8 + 0.25 * n1);
+    rough = 0.4;
+  } else if (id == 20) {  // leathery egg with veins
+    float vein = 1.0 - smoothstep(0.0, 0.05, abs(texture(uNoise, o * 7.0).g - 0.5));
+    albedo = mix(vec3(0.62, 0.55, 0.36), black ? vec3(0.45, 0.1, 0.4) : vec3(0.3, 0.55, 0.1), vein * 0.7) *
+             (0.85 + 0.2 * n1);
+    rough = 0.35;
+    wrap = 0.5;
+    sss = vec3(1.0, 0.8, 0.4);
+  }
+  // fresh fracture faces: alien goo inside
+  if (vAux > 0.0) {
+    vec3 goo = black ? vec3(0.5, 0.1, 0.75) : vec3(0.35, 0.85, 0.1);
+    albedo = mix(albedo, goo * (0.8 + 0.3 * n3), vAux);
+    rough = mix(rough, 0.08, vAux);
+    metal = mix(metal, 0.0, vAux);
+    emissive += goo * 0.3 * vAux;
+  }
+}
+
+// Glass: reflections and a faint tint, more opaque at grazing angles (premultiplied alpha).
+vec4 glassColor(vec3 N, vec3 V, bool black) {
+  float NoV = max(dot(N, V), 1e-4);
+  vec3 R = reflect(-V, N);
+  float F = 0.04 + 0.96 * pow(1.0 - NoV, 5.0);
+  vec3 env = textureLod(uPrefilter, R, 0.04 * uPrefilterMaxLod).rgb * uAmbient * lightPool(vWorld);
+  vec3 tint = black ? vec3(0.5, 0.2, 0.45) : vec3(0.3, 0.55, 0.6);
+  float a = saturate(F + 0.07);
+  return vec4(env * F * 1.6 + tint * 0.025, a);
+}
+
 void main() {
   vec3 N = normalize(vNrm);
   if (!gl_FrontFacing) N = -N;
@@ -478,6 +618,11 @@ void main() {
     float edge = dissolveField(vObj) - uDissolve;
     if (edge < 0.0) discard;
     emissive += uDissolveColor * (1.0 - smoothstep(0.0, 0.06, edge)) * 7.0;
+  }
+  if (uMat == 6) {
+    vec4 g = glassColor(N, V, uTeam == 1);
+    oColor = vec4(g.rgb + emissive * g.a, g.a);
+    return;
   }
   vec3 albedo = vec3(0.5);
   float rough = 0.5, metal = 0.0, wrap = 0.0;
@@ -537,8 +682,12 @@ void main() {
     rough = 0.42 + 0.2 * g;
     emissive += vec3(1.0, 0.33, 0.07) * uHeat * (0.6 + 0.8 * g) * 4.0;
   } else {
-    medievalSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
-                    specOcc);
+    if (uMat == 5)
+      alienSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
+                   specOcc);
+    else
+      medievalSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
+                      specOcc);
     if (uStone > 0.0) {  // turning to salt: pale, crystalline, glittering
       float g = texture(uNoise, vObj * 18.0 + uTexOffset * 0.3).r;
       float front = smoothstep(0.0, 0.15, uStone * 1.3 - (1.0 - saturate(vObj.y / 1.3)) * 0.3 - g * 0.15);
