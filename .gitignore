@@ -3,3 +3,5 @@ build/
 .build/
 .swiftpm/
 !ios/App/Assets.xcassets/**/*.png
+.DS_Store
+xcuserdata/
