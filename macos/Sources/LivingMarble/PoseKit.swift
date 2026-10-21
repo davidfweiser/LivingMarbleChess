@@ -54,6 +54,6 @@ enum PoseKit {
     }
     let c = cross(a, b)
     let s = ((1 + d) * 2).squareRoot()
-    return normalize(quat(s * 0.5, c.x / s, c.y / s, c.z / s))
+    return quat(s * 0.5, c.x / s, c.y / s, c.z / s).normalized
   }
 }
