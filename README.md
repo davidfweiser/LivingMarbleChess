@@ -17,6 +17,10 @@ guns, flying saucers, big-brained psychics floating in glass jars, tripod war
 machines, an alien queen and an overlord on a hovering egg-chair throne — with
 their own (slightly ridiculous) battles and B-movie sound effects.
 
+In every army, **the fallen come back as ghosts**: a captured piece slowly
+takes shape again, translucent, beside the board, and watches the rest of the
+game — cheering its side on.
+
 Everything is procedural. There are **no model, texture or sound files**:
 the pieces are sculpted from signed-distance fields at startup, the board's
 inlaid wood is baked on the fly, and every sound effect is synthesised.
@@ -47,6 +51,25 @@ king walks with dignity. Selected pieces bounce impatiently, threatened pieces
 tremble, a king in check shakes and glows red, and a mated king cracks and
 falls. Castling makes the rook vault over the king; promotion turns the pawn
 into its new self inside a pillar of light.
+
+## The ghosts
+
+A captured piece doesn't stay gone. A moment after it dies, its ghost slowly
+takes shape out of rising wisps (with a ghostly "oooOOOooo") and joins its
+army's row of ghosts floating at the side of the board — White's along the
+a-file, Black's along the h-file, each row starting from its own end. They are
+the pieces themselves, smaller and see-through, glowing pale cyan (White) or
+lavender (Black) at the edges and fading away towards their feet. This works
+the same for the marble, medieval and alien armies (switching armies switches
+the ghosts too).
+
+The ghosts bob in the air and turn to watch whoever is on the move. When their
+side captures a piece, gives check or mates, they jump for joy with a far-off
+ghostly cheer: arms and spears in the air, mouths open, antennae up, the
+knight's horse rears, the saucer's lights whirl, marble ghosts hop and wiggle.
+When their side loses a piece they hang their heads, and now and then one
+gives a little wave to urge the others on. Taking a move back brings the
+captured piece back to life and its ghost disappears.
 
 ## The medieval army
 
@@ -308,8 +331,9 @@ Capture tools (handy for making videos): `--shot file.png [--frames N]`,
 `--battle K` (stages one battle: 0 pawn … 5 king), `--style S` (forces battle
 style 0–2 instead of a random one), `--shots t1,t2,...` (screenshots at those
 times, with `--battle K` or with `--fen "<FEN>" --move e2e4` for any move),
-`--camera yaw,pitch,dist`, `--no-ui`. All of them work with `--pieces medieval`
-and `--pieces alien`.
+`--camera yaw,pitch,dist[,tx,ty,tz]`, `--no-cinematic` (keeps that camera still
+through the battles), `--scenario 4` (a gallery of ghosts on both sides),
+`--no-ui`. All of them work with `--pieces medieval` and `--pieces alien`.
 
 If the frame rate is low, open *Graphics* in the panel and pick *Medium* or
 *Low* (turns off depth of field, reflections and SSAO and lowers MSAA and the
@@ -330,7 +354,7 @@ shadow map size).
 | `textures.*` | Bakes the inlaid wooden board (grain, pores, seams, brass, lettering) and 3D noise |
 | `shaders.cpp` | All GLSL: PBR, PCSS, marble, lacquer, IBL generation, SSAO, DoF, bloom, tone mapping |
 | `renderer.*` | Render passes: shadow → reflection → prepass → SSAO → MSAA HDR → DoF → bloom → composite |
-| `animation.*` | The living-piece rig, rigid-body debris, props, lights, cinematic camera |
+| `animation.*` | The living-piece rig, rigid-body debris, props, lights, cinematic camera, the ghosts |
 | `battle.*`, `battle_kit.h` | Choreography for moves, castling, promotion, checkmate and the marble battles |
 | `battle_medieval.cpp` | The medieval army's moves, castling, checkmate and its 18 battles |
 | `battle_alien.cpp` | The aliens' moves, castling, checkmate and their 18 battles |
@@ -350,7 +374,7 @@ same design:
 | `Sculpt.swift`, `PoseKit.swift` | The shared sculpting and posing kit (as `sculpt.h`, `pose_kit.h`) |
 | `Shaders.swift` | All Metal Shading Language, compiled at startup |
 | `Renderer.swift` | The same render passes on Metal |
-| `Animation.swift`, `Particles.swift` | The living-piece rig, debris, props, lights, camera and particles |
+| `Animation.swift`, `Particles.swift` | The living-piece rig, debris, props, lights, camera, particles and the ghosts |
 | `BattleCore.swift`, `Battles*.swift` | Moves, castling, promotion, checkmate and all 18 battle styles |
 | `BattlesMedieval*.swift` | The medieval army's choreography and battles (as `battle_medieval.cpp`) |
 | `BattlesAlien*.swift` | The aliens' choreography and battles (as `battle_alien.cpp`) |
