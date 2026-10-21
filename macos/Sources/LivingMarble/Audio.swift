@@ -1,6 +1,7 @@
 // Procedurally synthesised sound effects (no audio files), mixed in real time.
 // Every effect is built once at start-up from damped sines, filtered noise and
-// a few oscillators. An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
+// a few oscillators (the medieval army's organ, choir, thunder and the rest are
+// made on a background thread right after). An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
 // resampling, volume) at 44.1 kHz and AVAudioEngine converts to the device rate.
 import AVFoundation
 #if os(macOS)
@@ -340,6 +341,573 @@ extension Audio {
       }
       return S
     }
+
+    /// Every effect, the medieval army's included (for the .wav dump).
+    static func synthEverything() -> [Buf] {
+      var S = synthAll()
+      synthMedieval(&S)
+      return S
+    }
+
+    // MARK: The medieval army's sounds
+    // Float/double mixing follows the C++ exactly (a float literal in a double
+    // expression is promoted, hence fd(0.6) for 0.6f).
+
+    @inline(__always) static func fd(_ x: Float) -> Double { Double(x) }
+
+    /// -1..1 ramp of a phase in radians.
+    @inline(__always) static func sawtooth(_ ph: Double) -> Float {
+      let c: Double = ph / TAU
+      return Float(2.0 * (c - floor(c)) - 1.0)
+    }
+
+    /// A large stone hall: Freeverb-style parallel combs and series allpasses.
+    static func reverb(_ b: inout Buf, _ wet: Float, _ feedback: Float, _ damp: Float, _ size: Float) {
+      let combLen = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617]
+      let apLen = [556, 441, 341, 225]
+      // delay lines (8 combs then 4 allpasses) in one block, plus their state
+      let len = UnsafeMutablePointer<Int>.allocate(capacity: 12)
+      let pos = UnsafeMutablePointer<Int>.allocate(capacity: 12)
+      let line = UnsafeMutablePointer<UnsafeMutablePointer<Float>>.allocate(capacity: 12)
+      let store = UnsafeMutablePointer<Float>.allocate(capacity: 8)
+      store.initialize(repeating: 0, count: 8)
+      var total = 0
+      for k in 0..<12 {
+        len[k] = Int(Float(k < 8 ? combLen[k] : apLen[k - 8]) * size)
+        pos[k] = 0
+        total += len[k]
+      }
+      let mem = UnsafeMutablePointer<Float>.allocate(capacity: total)
+      mem.initialize(repeating: 0, count: total)
+      var o = 0
+      for k in 0..<12 {
+        line[k] = mem + o
+        o += len[k]
+      }
+      defer {
+        mem.deallocate()
+        len.deallocate()
+        pos.deallocate()
+        line.deallocate()
+        store.deallocate()
+      }
+      b.withUnsafeMutableBufferPointer { p in
+        for i in 0..<p.count {
+          let x = p[i] * 0.015
+          var y: Float = 0
+          for k in 0..<8 {
+            let c = line[k] + pos[k]
+            let o = c.pointee
+            store[k] = o * (1 - damp) + store[k] * damp
+            c.pointee = x + store[k] * feedback
+            pos[k] += 1
+            if pos[k] >= len[k] { pos[k] = 0 }
+            y += o
+          }
+          for k in 8..<12 {
+            let a = line[k] + pos[k]
+            let o = a.pointee
+            a.pointee = y + o * 0.5
+            y = o - y
+            pos[k] += 1
+            if pos[k] >= len[k] { pos[k] = 0 }
+          }
+          p[i] = p[i] * (1 - wet * 0.5) + y * wet * 3
+        }
+      }
+    }
+
+    /// A long ringing partial (exponential decay), computed with a rotating phasor.
+    static func addRing(_ b: inout Buf, _ t0: Float, _ f: Float, _ amp: Float, _ decay: Float) {
+      let s0 = Int(t0 * Float(SR))
+      let c = cos(TAU * Double(f) / Double(SR)), sn = sin(TAU * Double(f) / Double(SR))
+      var x = 0.0, y = 1.0  // phasor (sin, cos)
+      var env = Double(amp)
+      let k = exp(Double(-decay) / Double(SR))
+      b.withUnsafeMutableBufferPointer { p in
+        var i = s0
+        while i < p.count {
+          p[i] += Float(env * x)
+          let nx = x * c + y * sn, ny = y * c - x * sn
+          x = nx
+          y = ny
+          env *= k
+          if env < 1e-5 { break }
+          i += 1
+        }
+      }
+    }
+
+    static func envAR(_ t: Float, _ a: Float, _ hold: Float, _ r: Float) -> Float {
+      if t < 0 { return 0 }
+      if t < a { return t / a }
+      if t < a + hold { return 1 }
+      return max(0, 1 - (t - a - hold) / r)
+    }
+
+    static let organH: [Float] = [1.0, 0.75, 0.42, 0.5, 0.22, 0.3, 0.1, 0.22, 0.08, 0.12, 0.05, 0.09]
+
+    /// A pipe organ note: principal + octave + mixture ranks, a breath of wind
+    /// noise and the "chiff" of the pipe speaking. 'reed' adds a trumpet stop.
+    static func organNote(_ b: inout Buf, _ r: inout XorShift32, _ t0: Float, _ dur: Float, _ f: Float, _ amp: Float,
+                          _ reed: Float) {
+      // one period of the registration as a wavetable, played twice (slightly detuned) for the chorus of ranks
+      let N = 2048
+      var table = [Float](repeating: 0, count: N + 1)
+      table.withUnsafeMutableBufferPointer { tb in
+        for k in 0..<12 {
+          if f * Float(k + 1) > 9000 { break }
+          let a = organH[k] * (1 + reed * (k % 2 == 0 ? 0.6 : 1.4) * (k > 0 ? 1 : 0))
+          for i in 0..<N {
+            let w: Double = TAU * Double(k + 1) * Double(i) / Double(N)
+            tb[i] += a * Float(sin(w))
+          }
+        }
+        tb[N] = tb[0]
+      }
+      let s0 = Int(t0 * Float(SR)), n = Int((dur + 0.25) * Float(SR))
+      var p0 = 0.0, p1 = 0.37
+      let d0 = Double(f) / Double(SR), d1 = Double(f) * 1.0007 / Double(SR)
+      var chiff = Biquad()
+      chiff.bandpass(min(6000, f * 3), 3)
+      var windF = Biquad()
+      windF.bandpass(min(5000, f * 2), 1.2)
+      table.withUnsafeBufferPointer { tb in
+        @inline(__always) func look(_ ph: Double) -> Float {
+          let x = ph * Double(N)
+          let i = Int(x)
+          let fr = Float(x - Double(i))
+          return tb[i] + (tb[i + 1] - tb[i]) * fr
+        }
+        b.withUnsafeMutableBufferPointer { p in
+          var i = 0
+          while i < n && s0 + i < p.count {
+            let t = Float(i) / Float(SR)
+            let env = envAR(t, 0.045, dur - 0.045, 0.18)
+            if env <= 0 && t > dur { break }
+            p0 += d0
+            if p0 >= 1 { p0 -= 1 }
+            p1 += d1
+            if p1 >= 1 { p1 -= 1 }
+            let v = look(p0) + 0.6 * look(p1)
+            let wind = windF.run(r.bi()) * 0.012
+            let ch: Float = t < 0.06 ? chiff.run(r.bi()) * 0.5 * (1 - t / 0.06) : 0
+            p[s0 + i] += (v * 0.2 + wind + ch) * env * amp
+            i += 1
+          }
+        }
+      }
+    }
+
+    static func polyblep(_ tIn: Double, _ dt: Double) -> Float {
+      var t = tIn
+      if t < dt {
+        t /= dt
+        return Float(t + t - t * t - 1)
+      }
+      if t > 1 - dt {
+        t = (t - 1) / dt
+        return Float(t * t + t + t + 1)
+      }
+      return 0
+    }
+
+    /// A men's choir singing "ah": detuned PolyBLEP sawtooth voices with vibrato
+    /// through vowel formants. A note may start a little before the buffer (t0 < 0):
+    /// that part is cut off.
+    static func choirNote(_ b: inout Buf, _ r: inout XorShift32, _ t0: Float, _ dur: Float, _ f: Float, _ amp: Float,
+                          _ voices: Int) {
+      let s0 = Int(t0 * Float(SR)), n = Int((dur + 0.4) * Float(SR))
+      var tmp = [Float](repeating: 0, count: n)
+      tmp.withUnsafeMutableBufferPointer { tp in
+        for _ in 0..<voices {
+          var ph = Double(r.next())
+          let detune = pow(Float(2), (r.next() - 0.5) * 18 / 1200)
+          let vibPh = r.next() * 6.28, vibRate = 5 + r.next() * 1.2
+          var drift: Float = 0
+          for i in 0..<n {
+            let t = Float(i) / Float(SR)
+            drift += (r.bi() * 0.02 - drift * 0.001)
+            let vib: Float = 1 + 0.006 * sin(t * vibRate * 6.2831 + vibPh) * min(1, t / 0.4)
+            let fr: Float = f * detune * (1 + drift * 0.000578) * vib
+            let dt = Double(fr / Float(SR))
+            ph += dt
+            if ph >= 1 { ph -= 1 }
+            let saw = Float(2 * ph - 1) - polyblep(ph, dt)
+            tp[i] += saw * envAR(t, 0.14 + 0.04 * r.next(), dur - 0.14, 0.35)
+          }
+        }
+      }
+      var f1 = Biquad(), f2 = Biquad(), f3 = Biquad(), f4 = Biquad()
+      f1.bandpass(730, 7)
+      f2.bandpass(1090, 9)
+      f3.bandpass(2440, 14)
+      f4.lowpass(3500)
+      tmp.withUnsafeBufferPointer { tp in
+        b.withUnsafeMutableBufferPointer { p in
+          for i in 0..<n {
+            let o = s0 + i
+            if o >= p.count { break }
+            let x = tp[i]
+            let y = f1.run(x) * 1.0 + f2.run(x) * 0.55 + f3.run(x) * 0.22
+            let v = f4.run(y) * amp / Float(voices)
+            if o >= 0 { p[o] += v }
+          }
+        }
+      }
+    }
+
+    /// Filtered noise with an envelope given by a function.
+    static func noiseShaped(_ b: inout Buf, _ r: inout XorShift32, _ t0: Float, _ dur: Float, _ flt: Biquad,
+                            _ amp: Float, _ env: (Float) -> Float) {
+      var flt = flt  // by value, like the C++
+      let s0 = Int(t0 * Float(SR)), n = Int(dur * Float(SR))
+      b.withUnsafeMutableBufferPointer { p in
+        var i = 0
+        while i < n && s0 + i < p.count {
+          p[s0 + i] += flt.run(r.bi()) * env(Float(i) / Float(SR)) * amp
+          i += 1
+        }
+      }
+    }
+
+    /// The medieval army's effects (Sfx.hymn ... Sfx.bite) into S, which holds every Sfx.
+    /// Made on a background thread after start-up (about half a second of work).
+    static func synthMedieval(_ S: inout [Buf]) {
+      var r = XorShift32(s: 777)
+      do {  // HYMN: Dies irae - "Di-es i-rae, di-es il-la" - organ over a drone, a men's choir, a cathedral
+        var b = make(7.6)
+        let D3: Float = 146.83, C3: Float = 130.81, E3: Float = 164.81, F3: Float = 174.61
+        let mel: [Float] = [F3, E3, F3, D3, E3, C3, D3, D3]
+        let step: Float = 0.5
+        // open-fifth drone (D and A) swelling underneath
+        organNote(&b, &r, 0, 4.9, 73.42, 0.55, 0)
+        organNote(&b, &r, 0.25, 4.65, 110, 0.35, 0)
+        for i in 0..<8 {
+          var t0 = Float(i) * step
+          var dur: Float = i == 7 ? 1.4 : step * 0.92
+          if i == 7 { t0 = 7 * step }
+          if i == 6 { dur = step * 0.95 }
+          organNote(&b, &r, t0, dur, mel[i] * 2, 0.75, 0)
+          organNote(&b, &r, t0, dur, mel[i], 0.5, 0)
+          choirNote(&b, &r, t0 - 0.02, dur + 0.05, mel[i], 2.2, 6)
+        }
+        // the final D: full organ with reeds and a deep pedal
+        let tf = 7 * step
+        for f: Float in [36.71, 73.42, 146.83, 220.0, 293.66, 349.23, 440.0] {
+          organNote(&b, &r, tf, 1.4, f, f < 80 ? 0.4 : 0.15, 0.8)
+        }
+        choirNote(&b, &r, tf, 1.45, 110, 0.9, 5)
+        reverb(&b, 0.55, 0.9, 0.25, 1.6)
+        normalize(&b, 0.9)
+        S[Sfx.hymn.rawValue] = b
+      }
+      do {  // ORGAN: one dark chord with reeds (D minor with a menacing flat sixth)
+        var b = make(5.0)
+        for f: Float in [36.71, 73.42, 146.83, 174.61, 220.0, 233.08, 293.66] {
+          organNote(&b, &r, 0, 2.8, f, f < 80 ? 0.8 : 0.4, 1.0)
+        }
+        choirNote(&b, &r, 0.05, 2.7, 146.83, 1.0, 5)
+        choirNote(&b, &r, 0.05, 2.7, 220.0, 0.7, 5)
+        reverb(&b, 0.55, 0.9, 0.25, 1.6)
+        normalize(&b, 0.85)
+        S[Sfx.organ.rawValue] = b
+      }
+      do {  // THUNDER: a splitting crack, a boom, then the long roll
+        var b = make(5.0)
+        var hp = Biquad()
+        hp.highpass(1800)
+        for k in 0..<7 {  // the crack: a few ragged bursts
+          let t0 = r.next() * 0.09
+          noiseShaped(&b, &r, t0, 0.06, hp, 0.9 * (1 - Float(k) * 0.1)) { exp(-$0 * 60) }
+        }
+        var bp = Biquad()
+        bp.bandpass(900, 0.8)
+        noiseShaped(&b, &r, 0, 0.4, bp, 1.4) { exp(-$0 * 9) }
+        var lp = Biquad()
+        lp.lowpass(170)
+        noiseShaped(&b, &r, 0.02, 1.5, lp, 6.0) { min(1, $0 / 0.02) * exp(-$0 * 2.2) }
+        addDampedSine(&b, 0.02, 52, 0.9, 2.5, 0.3)
+        // the roll: rumbling swells that die away
+        var lp2 = Biquad()
+        lp2.lowpass(260)
+        let rolls: [Float] = [0.5, 1.1, 1.6, 2.4, 3.1]
+        for k in 0..<5 {
+          let a = 4.8 * exp(-Float(k) * 0.4)
+          noiseShaped(&b, &r, rolls[k], 1.8, lp2, a) { t in
+            sin(min(1, t / 1.8) * 3.14159) * (0.7 + 0.3 * sin(t * 17))
+          }
+        }
+        reverb(&b, 0.3, 0.86, 0.4, 1.3)
+        normalize(&b, 1.0)
+        S[Sfx.thunder.rawValue] = b
+      }
+      do {  // WIND: gusting, whistling storm wind
+        var b = make(3.6)
+        var f = Biquad(), w = Biquad()
+        b.withUnsafeMutableBufferPointer { p in
+          for i in 0..<p.count {
+            let t = Float(i) / Float(SR)
+            if i % 64 == 0 {
+              let fc: Float = 380 + 420 * (0.5 + 0.5 * sin(t * 1.7)) + 150 * sin(t * 4.3)
+              f.bandpass(fc, 1.4)
+              w.bandpass(1200 + 500 * sin(t * 0.9 + 1), 22)
+            }
+            let gust: Float = 0.55 + 0.45 * sin(t * 2.3) * sin(t * 0.7 + 0.4)
+            let env = sin(min(1, t / 3.6) * 3.14159)
+            let x = r.bi()
+            p[i] = (f.run(x) * 1.0 + w.run(x) * 0.6) * gust * env
+          }
+        }
+        normalize(&b, 0.7)
+        S[Sfx.wind.rawValue] = b
+      }
+      do {  // ROAR: a growling throat through a shifting vowel, breath and a sub-bass rumble
+        var b = make(2.4)
+        var ph = 0.0
+        var jitter: Float = 0
+        var fA = Biquad(), fB = Biquad(), fC = Biquad(), br = Biquad(), sub = Biquad()
+        sub.lowpass(90)
+        br.bandpass(1300, 0.7)
+        b.withUnsafeMutableBufferPointer { p in
+          for i in 0..<p.count {
+            let t = Float(i) / Float(SR)
+            let u = t / 2.2
+            let pitch: Float = 75 + 45 * sin(min(1, u * 1.6) * 3.14159) - 20 * u
+            jitter += (r.bi() * 0.6 - jitter * 0.02)
+            ph += TAU * Double(pitch) * Double(1 + 0.012 * jitter) / Double(SR)
+            let rattle = Float(fd(0.6) + fd(0.4) * sin(Double(t) * TAU * 28 + Double(sin(t * 13))))
+            let saw = sawtooth(ph)
+            let x = saw * rattle
+            if i % 64 == 0 {
+              let open = sin(min(1, u * 1.3) * 3.14159)
+              fA.bandpass(450 + 350 * open, 5)
+              fB.bandpass(900 + 400 * open, 6)
+              fC.bandpass(2300, 8)
+            }
+            let voice = fA.run(x) * 1.0 + fB.run(x) * 0.7 + fC.run(x) * 0.25
+            let breath = br.run(r.bi()) * 0.6
+            let env = envAR(t, 0.15, 1.3, 0.75)
+            let throat: Float = tanh((voice * 2.5 + breath) * 1.5) + sub.run(r.bi()) * 2
+            let s2 = Float(Double(throat) + fd(0.4) * sin(Double(t) * TAU * 42))
+            p[i] = s2 * env
+          }
+        }
+        var dark1 = Biquad(), dark2 = Biquad()  // a throat this big has no hiss
+        dark1.lowpass(2600)
+        dark2.lowpass(2600)
+        for i in b.indices { b[i] = dark2.run(dark1.run(b[i])) }
+        reverb(&b, 0.2, 0.82, 0.4, 1.0)
+        normalize(&b, 0.95)
+        S[Sfx.roar.rawValue] = b
+      }
+      do {  // FIRE: the roar of a jet of flame, crackling
+        var b = make(2.8)
+        var lp = Biquad(), bp = Biquad(), low = Biquad()
+        lp.lowpass(2400)
+        bp.bandpass(700, 0.6)
+        low.lowpass(160)
+        b.withUnsafeMutableBufferPointer { p in
+          for i in 0..<p.count {
+            let t = Float(i) / Float(SR)
+            let env = envAR(t, 0.08, 1.8, 0.9)
+            let flutter: Float = 0.7 + 0.3 * sin(t * 61 + sin(t * 7) * 3)
+            let x = r.bi()
+            let crack: Float = r.next() < 0.0015 ? r.bi() * 6 : 0
+            let body: Float = lp.run(x) * 0.7 + bp.run(x) * 1.2 + low.run(x) * 2.5
+            p[i] = body * flutter * env + crack * env
+          }
+        }
+        normalize(&b, 0.85)
+        S[Sfx.fire.rawValue] = b
+      }
+      do {  // CHAIN: a creak of timber, then the chain running out link by link
+        var b = make(1.9)
+        var ph = 0.0
+        var cr = Biquad()
+        cr.bandpass(900, 4)
+        for i in 0..<Int(0.45 * Float(SR)) {  // the creak
+          let t = Float(i) / Float(SR)
+          let f: Float = 180 + 60 * sin(t * 9) + 40 * r.bi() * 0.1
+          ph += TAU * Double(f) / Double(SR)
+          let saw = sawtooth(ph)
+          let stick: Float = sin(Double(t) * TAU * 23) > fd(0.2) ? 1 : 0.3
+          b[i] += cr.run(saw) * stick * sin(t / 0.45 * 3.14159) * 0.8
+        }
+        var t: Float = 0.2
+        var gap: Float = 0.09
+        while t < 1.6 {  // links clinking, accelerating as the bridge falls
+          for _ in 0..<3 {
+            addDampedSine(&b, t + r.next() * 0.008, 2400 + r.next() * 3500, 0.3 + 0.3 * r.next(), 90 + r.next() * 80)
+          }
+          var h = Biquad()
+          h.highpass(3000)
+          addNoise(&b, &r, t, 0.35, 200, h)
+          t += gap
+          gap = max(0.028, gap * 0.93)
+        }
+        normalize(&b, 0.8)
+        S[Sfx.chain.rawValue] = b
+      }
+      do {  // GRIND: stone dragged over stone
+        var b = make(1.6)
+        var bp = Biquad(), lp = Biquad()
+        bp.bandpass(320, 0.9)
+        lp.lowpass(900)
+        var grain: Float = 0
+        b.withUnsafeMutableBufferPointer { p in
+          for i in 0..<p.count {
+            let t = Float(i) / Float(SR)
+            if i % 600 == 0 { grain = 0.4 + 0.6 * r.next() }
+            let env = envAR(t, 0.1, 1.1, 0.4)
+            let x = r.bi()
+            let crunch: Float = r.next() < 0.002 ? r.bi() * 3 : 0
+            p[i] = (bp.run(x) * 1.5 + lp.run(x) * 0.6) * grain * env + crunch * env
+          }
+        }
+        normalize(&b, 0.75)
+        S[Sfx.grind.rawValue] = b
+      }
+      do {  // STOMP: a giant stone foot on the board
+        var b = make(1.1)
+        addDampedSine(&b, 0, 44, 1.2, 6.0, 0.5)
+        addDampedSine(&b, 0, 88, 0.6, 12.0, 0.8)
+        var lp = Biquad(), bp = Biquad()
+        lp.lowpass(300)
+        addNoise(&b, &r, 0, 2.2, 9, lp)
+        bp.bandpass(1800, 1.0)
+        addNoise(&b, &r, 0, 0.8, 40, bp)
+        for _ in 0..<12 { addDampedSine(&b, 0.02 + r.next() * 0.3, 1500 + r.next() * 3000, 0.15, 120) }
+        normalize(&b, 1.0)
+        S[Sfx.stomp.rawValue] = b
+      }
+      do {  // HOOF: a shod hoof knocking on wood (a quick double strike)
+        var b = make(0.2)
+        for k in 0..<2 {
+          let t0 = Float(k) * 0.018, a: Float = k == 0 ? 1.0 : 0.6
+          addDampedSine(&b, t0, 380, a, 60)
+          addDampedSine(&b, t0, 1050, a * 0.5, 90)
+          addDampedSine(&b, t0, 2600, a * 0.25, 140)
+          var bp = Biquad()
+          bp.bandpass(2000, 1.0)
+          addNoise(&b, &r, t0, a * 0.8, 160, bp)
+        }
+        normalize(&b, 0.7)
+        S[Sfx.hoof.rawValue] = b
+      }
+      do {  // NEIGH: a whinny - a high trilling voice sliding down, ending in a snort
+        var b = make(1.5)
+        var ph = 0.0
+        var f1 = Biquad(), f2 = Biquad(), f3 = Biquad(), nb = Biquad()
+        f1.bandpass(900, 3)
+        f2.bandpass(1700, 4)
+        f3.bandpass(3000, 5)
+        nb.bandpass(1400, 1)
+        b.withUnsafeMutableBufferPointer { p in
+          for i in 0..<Int(1.15 * Float(SR)) {
+            let t = Float(i) / Float(SR)
+            let u = t / 1.15
+            let base: Float = u < 0.12 ? 520 + 4500 * u : 1060 - 640 * (u - 0.12) / 0.88
+            let tr = sin(Double(t) * TAU * Double(17 - 5 * u))  // the trill
+            let trill = Float(1 + Double(0.06 + 0.06 * u) * tr)
+            ph += TAU * Double(base) * Double(trill) / Double(SR)
+            let saw = sawtooth(ph)
+            let env = Float(Double(envAR(t, 0.04, 0.85, 0.26)) * (fd(0.75) + fd(0.25) * tr))
+            let v: Float = f1.run(saw) * 1.0 + f2.run(saw) * 0.7 + f3.run(saw) * 0.3 + nb.run(r.bi()) * 0.35
+            p[i] += v * env
+          }
+        }
+        var sn = Biquad()
+        sn.bandpass(500, 0.8)
+        noiseShaped(&b, &r, 1.18, 0.3, sn, 1.4) { min(1, $0 / 0.02) * exp(-$0 * 14) }
+        reverb(&b, 0.15, 0.8, 0.5, 0.8)
+        normalize(&b, 0.8)
+        S[Sfx.neigh.rawValue] = b
+      }
+      do {  // BELL: a great church bell (hum, prime, minor tierce, quint, nominal ...)
+        var b = make(6.5)
+        let prime: Float = 147
+        let ratio: [Float] = [0.5, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.2]
+        let amp: [Float] = [0.7, 0.8, 0.6, 0.3, 0.7, 0.25, 0.3, 0.15]
+        let dec: [Float] = [0.45, 0.7, 0.9, 1.3, 1.1, 2.0, 2.2, 3.5]
+        for k in 0..<8 {
+          addRing(&b, 0, prime * ratio[k], amp[k], dec[k])
+          addRing(&b, 0, prime * ratio[k] * 1.0035, amp[k] * 0.6, dec[k] * 1.1)  // beating doublet
+        }
+        var strike = Biquad()
+        strike.bandpass(2500, 1.0)
+        addNoise(&b, &r, 0, 0.6, 80, strike)
+        reverb(&b, 0.4, 0.88, 0.3, 1.5)
+        normalize(&b, 0.85)
+        S[Sfx.bell.rawValue] = b
+      }
+      do {  // SPLINTER: a lance bursting into splinters
+        var b = make(1.0)
+        var bp = Biquad()
+        bp.bandpass(2800, 0.9)
+        addNoise(&b, &r, 0, 2.0, 45, bp)
+        addDampedSine(&b, 0, 210, 0.8, 25)
+        addDampedSine(&b, 0, 520, 0.5, 35)
+        for _ in 0..<45 {
+          let t = -log(1 - r.next() * 0.99) * 0.12
+          var c = Biquad()
+          c.bandpass(1200 + r.next() * 3000, 2.0)
+          addNoise(&b, &r, t, 0.3 + 0.4 * r.next(), 250, c)
+          if r.next() < 0.4 { addDampedSine(&b, t, 400 + r.next() * 900, 0.2, 60) }
+        }
+        normalize(&b, 0.9)
+        S[Sfx.splinter.rawValue] = b
+      }
+      do {  // ARMOR: a booted step with the jingle of mail
+        var b = make(0.32)
+        addDampedSine(&b, 0, 130, 0.8, 40, 2.0)
+        var lp = Biquad()
+        lp.lowpass(1200)
+        addNoise(&b, &r, 0, 0.6, 60, lp)
+        for _ in 0..<10 {
+          addDampedSine(&b, 0.01 + r.next() * 0.12, 4000 + r.next() * 5000, 0.08 + 0.08 * r.next(),
+                        140 + r.next() * 80)
+        }
+        normalize(&b, 0.6)
+        S[Sfx.armor.rawValue] = b
+      }
+      do {  // SLIDE: a heavy wooden throne sliding over the board
+        var b = make(1.3)
+        var bp = Biquad(), res = Biquad()
+        bp.bandpass(800, 0.9)
+        res.bandpass(240, 6)
+        var stick: Float = 0
+        b.withUnsafeMutableBufferPointer { p in
+          for i in 0..<p.count {
+            let t = Float(i) / Float(SR)
+            if i % 900 == 0 { stick = 0.5 + 0.5 * r.next() }
+            let chatter = Float(fd(0.6) + fd(0.4) * sin(Double(t) * TAU * Double(38 + 10 * sin(t * 3))))
+            let env = envAR(t, 0.08, 0.85, 0.35)
+            let x = r.bi()
+            p[i] = (bp.run(x) * 1.0 + res.run(x) * 0.8) * chatter * stick * env
+          }
+        }
+        normalize(&b, 0.6)
+        S[Sfx.slide.rawValue] = b
+      }
+      do {  // BITE: jaws snapping shut on stone
+        var b = make(0.8)
+        addDampedSine(&b, 0, 1900, 0.6, 120)
+        var hp = Biquad()
+        hp.highpass(1500)
+        addNoise(&b, &r, 0, 1.0, 90, hp)
+        addDampedSine(&b, 0.01, 70, 1.0, 14, 0.8)
+        for _ in 0..<40 {
+          let t = 0.02 + -log(1 - r.next() * 0.99) * 0.09
+          addDampedSine(&b, t, 1500 + r.next() * 4500, 0.15 + 0.25 * r.next(), 140 + r.next() * 120)
+        }
+        var lp = Biquad()
+        lp.lowpass(600)
+        addNoise(&b, &r, 0.02, 1.2, 18, lp)
+        normalize(&b, 0.95)
+        S[Sfx.bite.rawValue] = b
+      }
+    }
   }
 
   // MARK: - Real-time mixer
@@ -348,12 +916,17 @@ extension Audio {
   fileprivate struct PlayCmd {
     var sfx: Int32 = -1
     var rate: Float = 1, l: Float = 0, r: Float = 0
+    // filled in by the render thread when it picks the request up
+    var buf: UnsafeMutablePointer<Float>? = nil
+    var len = 0
   }
 
   fileprivate struct Voice {
     var sfx: Int32 = -1  // -1 = free
     var pos: Double = 0
     var rate: Float = 1, l: Float = 0, r: Float = 0
+    var buf: UnsafeMutablePointer<Float>? = nil
+    var len = 0
   }
 
   /// Ring indices and master volume; only touched with `lock` held.
@@ -370,9 +943,14 @@ extension Audio {
     let voiceCount = 40
     let queueCap = 256  // power of two
     let buffersOffset = MemoryLayout<AudioBufferList>.offset(of: \AudioBufferList.mBuffers) ?? 8
-    // Read-only after init: every effect back to back, with offsets/lengths.
+    // The effects back to back: the start-up ones in `arena`, the medieval army's
+    // in a second block added by publish(). Neither moves until free().
+    let soundCount: Int
     let arena: UnsafeMutablePointer<Float>
-    let offsets: UnsafeMutablePointer<Int>
+    let lateArena: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>
+    // Where each effect starts (nil while it is still being made) and its length,
+    // guarded by `lock`.
+    let bufs: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>
     let lengths: UnsafeMutablePointer<Int>
     // play()/setVolume() -> render thread hand-off, guarded by `lock`.
     let lock: UnsafeMutablePointer<os_unfair_lock>
@@ -383,19 +961,16 @@ extension Audio {
     let pending: UnsafeMutablePointer<PlayCmd>
     let master: UnsafeMutablePointer<Float>
 
+    /// `sounds` has one entry per Sfx; the empty ones are added later by publish().
     init(sounds: [[Float]], master vol: Float) {
-      let total = sounds.reduce(0) { $0 + $1.count }
-      let a = UnsafeMutablePointer<Float>.allocate(capacity: max(total, 1))
-      offsets = .allocate(capacity: sounds.count)
-      lengths = .allocate(capacity: sounds.count)
-      var o = 0
-      for (i, s) in sounds.enumerated() {
-        offsets[i] = o
-        lengths[i] = s.count
-        s.withUnsafeBufferPointer { if let p = $0.baseAddress { (a + o).initialize(from: p, count: s.count) } }
-        o += s.count
-      }
-      arena = a
+      soundCount = sounds.count
+      bufs = .allocate(capacity: soundCount)
+      bufs.initialize(repeating: nil, count: soundCount)
+      lengths = .allocate(capacity: soundCount)
+      lengths.initialize(repeating: 0, count: soundCount)
+      arena = Mixer.pack(sounds, bufs, lengths)
+      lateArena = .allocate(capacity: 1)
+      lateArena.initialize(to: nil)
       lock = .allocate(capacity: 1)
       lock.initialize(to: os_unfair_lock())
       shared = .allocate(capacity: 1)
@@ -410,10 +985,52 @@ extension Audio {
       master.initialize(to: vol)
     }
 
+    /// Copies the non-empty sounds into one new block and points bufs/lengths at them.
+    private static func pack(_ sounds: [[Float]], _ bufs: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>,
+                             _ lengths: UnsafeMutablePointer<Int>) -> UnsafeMutablePointer<Float> {
+      let total = sounds.reduce(0) { $0 + $1.count }
+      let a = UnsafeMutablePointer<Float>.allocate(capacity: max(total, 1))
+      var o = 0
+      for (i, s) in sounds.enumerated() where !s.isEmpty {
+        s.withUnsafeBufferPointer { if let p = $0.baseAddress { (a + o).initialize(from: p, count: s.count) } }
+        bufs[i] = a + o
+        lengths[i] = s.count
+        o += s.count
+      }
+      return a
+    }
+
+    /// Any thread, once: makes the effects that were still missing at init playable
+    /// (their entries in `sounds`; the others are ignored).
+    func publish(_ sounds: [[Float]]) {
+      let n = min(sounds.count, soundCount)
+      let fresh = Array(sounds.prefix(n))
+      let b = UnsafeMutablePointer<UnsafeMutablePointer<Float>?>.allocate(capacity: max(n, 1))
+      b.initialize(repeating: nil, count: max(n, 1))
+      let l = UnsafeMutablePointer<Int>.allocate(capacity: max(n, 1))
+      l.initialize(repeating: 0, count: max(n, 1))
+      let block = Mixer.pack(fresh, b, l)
+      os_unfair_lock_lock(lock)
+      let first = lateArena.pointee == nil
+      if first {
+        lateArena.pointee = block
+        for i in 0..<n where b[i] != nil && bufs[i] == nil {
+          bufs[i] = b[i]
+          lengths[i] = l[i]
+        }
+      }
+      os_unfair_lock_unlock(lock)
+      if !first { block.deallocate() }
+      b.deallocate()
+      l.deallocate()
+    }
+
     /// Only once the engine is stopped and the source node released.
     func free() {
       arena.deallocate()
-      offsets.deallocate()
+      lateArena.pointee?.deallocate()
+      lateArena.deallocate()
+      bufs.deallocate()
       lengths.deallocate()
       lock.deallocate()
       shared.deallocate()
@@ -445,7 +1062,15 @@ extension Audio {
     private func drainQueue() {
       guard os_unfair_lock_trylock(lock) else { return }
       let tail = shared.pointee.tail, n = shared.pointee.head &- tail
-      for k in 0..<n { pending[k] = ring[(tail &+ k) & (queueCap - 1)] }
+      for k in 0..<n {
+        var c = ring[(tail &+ k) & (queueCap - 1)]
+        let s = Int(c.sfx)
+        if s >= 0 && s < soundCount {
+          c.buf = bufs[s]
+          c.len = lengths[s]
+        }
+        pending[k] = c
+      }
       shared.pointee.tail = shared.pointee.head
       master.pointee = shared.pointee.master
       os_unfair_lock_unlock(lock)
@@ -453,6 +1078,7 @@ extension Audio {
     }
 
     private func startVoice(_ c: PlayCmd) {
+      guard c.buf != nil && c.len > 1 else { return }  // not made yet: silence
       var slot = -1
       for k in 0..<voiceCount where voices[k].sfx < 0 {
         slot = k
@@ -462,7 +1088,7 @@ extension Audio {
         slot = 0
         for k in 0..<voiceCount where voices[k].pos > voices[slot].pos { slot = k }
       }
-      voices[slot] = Voice(sfx: c.sfx, pos: 0, rate: c.rate, l: c.l, r: c.r)
+      voices[slot] = Voice(sfx: c.sfx, pos: 0, rate: c.rate, l: c.l, r: c.r, buf: c.buf, len: c.len)
     }
 
     /// Render block body. Returns true when the output is pure silence.
@@ -493,10 +1119,9 @@ extension Audio {
       var active = false
       for k in 0..<voiceCount {
         let v = voices + k
-        let sfx = Int(v.pointee.sfx)
-        if sfx < 0 { continue }
+        guard v.pointee.sfx >= 0, let b = v.pointee.buf else { continue }
         active = true
-        let b = arena + offsets[sfx], len = lengths[sfx]
+        let len = v.pointee.len
         let rate = Double(v.pointee.rate), gl = v.pointee.l, gr = v.pointee.r
         var pos = v.pointee.pos
         for i in 0..<frames {
@@ -538,6 +1163,8 @@ final class Audio {
   private var engine: AVAudioEngine?
   private var source: AVAudioSourceNode?
   private var observers: [NSObjectProtocol] = []
+  // the medieval army's sounds, made in the background after start()
+  private let lateSynth = DispatchGroup()
 
   init() {}
   deinit { shutdown() }
@@ -551,6 +1178,7 @@ final class Audio {
     let m = Mixer(sounds: Synth.synthAll(), master: volume_)
     mixer = m
     ok = true
+    synthesiseLate(m)
     control.async { [weak self] in
       guard let self else { return }
       if Audio.prepareOutput() { _ = self.startEngine(m) }
@@ -566,8 +1194,19 @@ final class Audio {
     }
     mixer = m
     ok = true
+    synthesiseLate(m)
     return true
 #endif
+  }
+
+  /// Makes the medieval army's sounds on another thread; until they are ready,
+  /// playing one of them does nothing.
+  private func synthesiseLate(_ m: Mixer) {
+    DispatchQueue.global(qos: .userInitiated).async(group: lateSynth) {
+      var S = [[Float]](repeating: [], count: Sfx.allCases.count)
+      Synth.synthMedieval(&S)
+      m.publish(S)
+    }
   }
 
   func shutdown() {
@@ -582,6 +1221,7 @@ final class Audio {
       engine = nil
       source = nil
     }
+    lateSynth.wait()  // it writes into the mixer
     mixer?.free()
     mixer = nil
     ok = false
@@ -696,8 +1336,10 @@ final class Audio {
   /// Debug: writes every effect as a 16-bit mono .wav (same names as the C++).
   static func dumpWav(_ dir: String) -> Bool {
     let names = ["step", "thud", "clack", "shatter", "whoosh", "clang", "boom", "explode", "charge",
-                 "zap", "crackle", "chime", "select", "check", "mate", "debris", "rumble"]
-    let S = Synth.synthAll()
+                 "zap", "crackle", "chime", "select", "check", "mate", "debris", "rumble",
+                 "hymn", "organ", "thunder", "wind", "roar", "fire", "chain", "grind", "stomp", "hoof",
+                 "neigh", "bell", "splinter", "armor", "slide", "bite"]
+    let S = Synth.synthEverything()
     for (i, buf) in S.enumerated() {
       let n = UInt32(buf.count), bytes = n * 2
       var d = Data(capacity: 44 + Int(bytes))

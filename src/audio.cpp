@@ -443,7 +443,8 @@ float polyblep(double t, double dt) {
   return 0.0f;
 }
 void choirNote(Buf& b, Rng& r, float t0, float dur, float f, float amp, int voices) {
-  size_t s0 = (size_t)(t0 * SR), n = (size_t)((dur + 0.4f) * SR);
+  long s0 = (long)(t0 * SR);  // may start just before the buffer
+  size_t n = (size_t)((dur + 0.4f) * SR);
   std::vector<float> tmp(n, 0.0f);
   for (int v = 0; v < voices; ++v) {
     double ph = r.next();
@@ -467,10 +468,10 @@ void choirNote(Buf& b, Rng& r, float t0, float dur, float f, float amp, int voic
   f2.bandpass(1090, 9.0f);
   f3.bandpass(2440, 14.0f);
   f4.lowpass(3500);
-  for (size_t i = 0; i < n && s0 + i < b.size(); ++i) {
+  for (size_t i = 0; i < n && s0 + (long)i < (long)b.size(); ++i) {
     float x = tmp[i];
-    float y = f1.run(x) * 1.0f + f2.run(x) * 0.55f + f3.run(x) * 0.22f;
-    b[s0 + i] += f4.run(y) * amp / (float)voices;
+    float y = f4.run(f1.run(x) * 1.0f + f2.run(x) * 0.55f + f3.run(x) * 0.22f);
+    if (s0 + (long)i >= 0) b[s0 + i] += y * amp / (float)voices;
   }
 }
 
@@ -634,8 +635,11 @@ void synthMedieval(std::vector<Buf>& S) {
     float t = 0.2f;
     float gap = 0.09f;
     while (t < 1.6f) {  // links clinking, accelerating as the bridge falls
-      for (int k = 0; k < 3; ++k)
-        addDampedSine(b, t + r.next() * 0.008f, 2400 + r.next() * 3500, 0.3f + 0.3f * r.next(), 90 + r.next() * 80);
+      for (int k = 0; k < 3; ++k) {
+        // draws in a fixed order (argument evaluation order differs between compilers)
+        float dt = r.next() * 0.008f, f = 2400 + r.next() * 3500, a = 0.3f + 0.3f * r.next(), d = 90 + r.next() * 80;
+        addDampedSine(b, t + dt, f, a, d);
+      }
       Biquad h;
       h.highpass(3000);
       addNoise(b, r, t, 0.35f, 200, h);
@@ -671,7 +675,10 @@ void synthMedieval(std::vector<Buf>& S) {
     addNoise(b, r, 0, 2.2f, 9, lp);
     bp.bandpass(1800, 1.0f);
     addNoise(b, r, 0, 0.8f, 40, bp);
-    for (int i = 0; i < 12; ++i) addDampedSine(b, 0.02f + r.next() * 0.3f, 1500 + r.next() * 3000, 0.15f, 120);
+    for (int i = 0; i < 12; ++i) {
+      float t = 0.02f + r.next() * 0.3f, f = 1500 + r.next() * 3000;
+      addDampedSine(b, t, f, 0.15f, 120);
+    }
     normalize(b, 1.0f);
     S[SFX_STOMP] = b;
   }
@@ -755,8 +762,11 @@ void synthMedieval(std::vector<Buf>& S) {
     Biquad lp;
     lp.lowpass(1200);
     addNoise(b, r, 0, 0.6f, 60, lp);
-    for (int i = 0; i < 10; ++i)
-      addDampedSine(b, 0.01f + r.next() * 0.12f, 4000 + r.next() * 5000, 0.08f + 0.08f * r.next(), 140 + r.next() * 80);
+    for (int i = 0; i < 10; ++i) {
+      float t = 0.01f + r.next() * 0.12f, f = 4000 + r.next() * 5000, a = 0.08f + 0.08f * r.next(),
+            d = 140 + r.next() * 80;
+      addDampedSine(b, t, f, a, d);
+    }
     normalize(b, 0.6f);
     S[SFX_ARMOR] = b;
   }
@@ -786,7 +796,8 @@ void synthMedieval(std::vector<Buf>& S) {
     addDampedSine(b, 0.01f, 70, 1.0f, 14, 0.8f);
     for (int i = 0; i < 40; ++i) {
       float t = 0.02f + -std::log(1.0f - r.next() * 0.99f) * 0.09f;
-      addDampedSine(b, t, 1500 + r.next() * 4500, 0.15f + 0.25f * r.next(), 140 + r.next() * 120);
+      float f = 1500 + r.next() * 4500, a = 0.15f + 0.25f * r.next(), d = 140 + r.next() * 120;
+      addDampedSine(b, t, f, a, d);
     }
     Biquad lp;
     lp.lowpass(600);
