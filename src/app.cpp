@@ -903,6 +903,6 @@ void App::frame(float dt) {
     quitRequested = true;
   }
   if (opt.noRender && frameCount % 600 == 0)
-    std::printf("[sim] frame %d ply %d chunks %zu particles %zu\n", frameCount, game.plyCount(), world.chunks.size(),
-                world.fx.size());
+    std::printf("[sim] frame %d ply %d anims %zu chunks %zu particles %zu %s\n", frameCount, game.plyCount(), anims.size(),
+                world.chunks.size(), world.fx.size(), chess::resultText(game.result()));
 }
