@@ -655,7 +655,8 @@ void Renderer::render(const SceneView& sv, int fbW, int fbH, GLuint outFbo) {
     shObject.set("uClip", 0);
     glFrontFace(GL_CCW);
     glDisable(GL_CLIP_DISTANCE0);
-    glBindTexture(GL_TEXTURE_2D, reflTex);
+    // on its own unit: the active one may still hold the shadow map
+    bindTex(9, GL_TEXTURE_2D, reflTex);
     glGenerateMipmap(GL_TEXTURE_2D);
   }
 
