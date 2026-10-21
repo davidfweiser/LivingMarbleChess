@@ -303,9 +303,9 @@ inline Shape triS(vec3 a, vec3 b, vec3 c, float t) {
 // fracture shards and slice halves (painted, rigid).
 inline void buildAsset(meshgen::PieceAssets& A, Model& m, vec3 lo, vec3 hi, int quality, int seeds, uint32_t seed,
                 float height, float radius) {
-  const float c0[3] = {0.0085f, 0.0062f, 0.0048f};
-  const float c1[3] = {0.016f, 0.013f, 0.011f};
-  const float cs[3] = {0.014f, 0.011f, 0.009f};
+  const float c0[4] = {0.0085f, 0.0062f, 0.0048f, 0.0034f};
+  const float c1[4] = {0.016f, 0.013f, 0.011f, 0.0085f};
+  const float cs[4] = {0.014f, 0.011f, 0.009f, 0.007f};
   m.fitBounds();
   Fn F = m.field();
   MeshOptions o;

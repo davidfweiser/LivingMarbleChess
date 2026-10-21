@@ -43,7 +43,7 @@ struct BuildProgress {
   std::atomic<const char*> stage{""};  // always a string literal (thread safe)
 };
 
-// quality: 0 = fast, 1 = normal, 2 = ultra
+// quality: 0 = fast, 1 = normal, 2 = ultra, 3 = extreme
 void buildLibrary(Library& lib, int quality, BuildProgress* progress);
 float pieceHeight(int kind);
 float pieceRadius(int kind);

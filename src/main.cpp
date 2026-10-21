@@ -12,13 +12,14 @@
 static void usage() {
   std::printf(
       "Living Marble - 3D Battle Chess\n\n"
-      "  --fullscreen            run fullscreen\n"
+      "  --fullscreen            start full screen (F11 or Alt+Enter toggles it)\n"
       "  --size WxH              window size (default 1600x900)\n"
-      "  --quality 0|1|2         sculpting/texture detail (default 1)\n"
-      "  --graphics 0..3         Low / Medium / High / Ultra (default High)\n"
+      "  --quality 0..3          sculpting/texture detail (default 3)\n"
+      "  --graphics 0..3         Low / Medium / High / Ultra (default Ultra)\n"
       "  --demo                  watch the AI play itself\n"
       "  --fen \"<fen>\"           start from a position\n"
       "  --pieces marble|medieval|alien  which army to play with (default marble)\n"
+      "  --dof                   depth of field: blur what the camera is not focused on\n"
       "  --mute                  no sound\n"
       "  --selftest              verify the move generator (perft)\n"
       "\n capture tools:\n"
@@ -61,6 +62,7 @@ int main(int argc, char** argv) {
     else if (a == "--record") o.recordDir = next();
     else if (a == "--no-ui") o.noUI = true;
     else if (a == "--no-cinematic") o.noCinematic = true;
+    else if (a == "--dof") o.dof = true;
     else if (a == "--no-render") o.noRender = true;
     else if (a == "--level") o.level = std::atoi(next().c_str());
     else if (a == "--move") o.forceMove = next();

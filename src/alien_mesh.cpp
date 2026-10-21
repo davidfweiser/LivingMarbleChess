@@ -1083,7 +1083,7 @@ float hoverHeight(int kind) {
 }
 
 void buildLibrary(Library& lib, int quality, meshgen::BuildProgress* prog) {
-  quality = std::max(0, std::min(2, quality));
+  quality = std::max(0, std::min(3, quality));
   if (prog) {
     prog->total = 8;
     prog->done = 0;

@@ -137,11 +137,18 @@ void App::drawUI() {
     ImGui::SetNextItemWidth(-90 * S);
     if (ImGui::SliderFloat("Volume", &volume, 0.0f, 1.0f, "%.2f")) audio.setVolume(volume);
   }
+  {
+    bool fs = fullscreen;
+    if (ImGui::Checkbox("Full screen (F11)", &fs)) setFullscreen(fs);
+  }
   if (ImGui::CollapsingHeader("Graphics")) {
     const char* presets[] = {"Low", "Medium", "High", "Ultra"};
     int gp = gfxPreset;
     ImGui::SetNextItemWidth(-90 * S);
     if (ImGui::Combo("Quality", &gp, presets, 4)) applyGraphicsPreset(gp);
+    ImGui::BeginDisabled(!renderer.settings().dof);
+    ImGui::Checkbox("Depth of field (blur)", &depthOfField);
+    ImGui::EndDisabled();
     ImGui::SetNextItemWidth(-90 * S);
     ImGui::SliderFloat("Exposure", &exposure, 0.4f, 2.0f, "%.2f");
     ImGui::TextDisabled("%.0f fps", fps);
@@ -203,7 +210,7 @@ void App::drawUI() {
   ImDrawList* fg = ImGui::GetForegroundDrawList();
   float gs = io.FontGlobalScale;
   // ---------------- hint line ----------------
-  const char* hint = "Click: select & move    Drag: rotate board    Scroll: zoom    R: reset view    F1: help    H: hide UI";
+  const char* hint = "Click: select & move    Drag: rotate board    Scroll: zoom    R: reset view    F1: help    H: hide UI    F11: full screen";
   fg->AddText(fontUI, fontUI->FontSize * gs * 0.9f, ImVec2(pad, io.DisplaySize.y - pad - fontUI->FontSize * gs),
               IM_COL32(220, 200, 170, 140), hint);
 
@@ -216,7 +223,7 @@ void App::drawUI() {
     ImGui::BulletText("Mouse wheel: zoom");
     ImGui::BulletText("N new game, U undo, F flip view, R reset view");
     ImGui::BulletText("B toggle battle animations, C toggle cinematic camera");
-    ImGui::BulletText("H hide the interface, F12 screenshot, Ctrl+Q quit");
+    ImGui::BulletText("H hide the interface, F11 full screen, F12 screenshot, Ctrl+Q quit");
     ImGui::Spacing();
     ImGui::TextColored(kGold, "The battles (each capture picks one at random)");
     static const char* const kPieces[6] = {"Pawn", "Knight", "Bishop", "Rook", "Queen", "King"};

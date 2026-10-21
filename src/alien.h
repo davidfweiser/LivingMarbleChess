@@ -113,7 +113,7 @@ struct Library {
   meshgen::PieceAssets asset[AL_COUNT];
   bool built = false;
 };
-// quality: 0 = fast, 1 = normal, 2 = ultra
+// quality: 0 = fast, 1 = normal, 2 = ultra, 3 = extreme
 void buildLibrary(Library& lib, int quality, meshgen::BuildProgress* progress);
 float pieceHeight(int kind);
 float pieceRadius(int kind);

@@ -59,6 +59,7 @@ RenderSettings presetSettings(int p) {
 
 App::App(const Options& o) : opt(o) {
   gfxPreset = o.gfxPreset;
+  depthOfField = o.dof;
   if (o.demo) mode = Mode::Watch;
   if (o.level >= 0) aiLevel = std::min(4, o.level);
   fixedStep = !o.shotPath.empty() || !o.recordDir.empty() || o.battle >= 0 || !o.shotTimes.empty();
@@ -98,9 +99,17 @@ bool App::initWindow() {
     const GLFWvidmode* vm = glfwGetVideoMode(mon);
     w = vm->width;
     h = vm->height;
+    // leaving full screen gives back a centred window of the requested size
+    int mx, my;
+    glfwGetMonitorPos(mon, &mx, &my);
+    winW = std::min(opt.width, vm->width);
+    winH = std::min(opt.height, vm->height);
+    winX = mx + (vm->width - winW) / 2;
+    winY = my + (vm->height - winH) / 2;
   }
   win = glfwCreateWindow(w, h, "Living Marble - 3D Battle Chess", mon, nullptr);
   if (!win) return false;
+  fullscreen = mon != nullptr;
   glfwMakeContextCurrent(win);
   glfwSwapInterval(fixedStep ? 0 : 1);
   const char* missing = nullptr;
@@ -385,6 +394,44 @@ void App::setMode(Mode m) {
   deselect();
 }
 
+// The monitor holding most of the window (the primary one if it is off-screen).
+static GLFWmonitor* monitorOf(GLFWwindow* w) {
+  int wx, wy, ww, wh;
+  glfwGetWindowPos(w, &wx, &wy);
+  glfwGetWindowSize(w, &ww, &wh);
+  int n = 0;
+  GLFWmonitor** mons = glfwGetMonitors(&n);
+  GLFWmonitor* best = glfwGetPrimaryMonitor();
+  long bestArea = 0;
+  for (int i = 0; i < n; ++i) {
+    int mx, my;
+    glfwGetMonitorPos(mons[i], &mx, &my);
+    const GLFWvidmode* vm = glfwGetVideoMode(mons[i]);
+    long ox = std::max(0, std::min(wx + ww, mx + vm->width) - std::max(wx, mx));
+    long oy = std::max(0, std::min(wy + wh, my + vm->height) - std::max(wy, my));
+    if (ox * oy > bestArea) {
+      bestArea = ox * oy;
+      best = mons[i];
+    }
+  }
+  return best;
+}
+
+void App::setFullscreen(bool on) {
+  if (on == fullscreen || !win) return;
+  if (on) {
+    glfwGetWindowPos(win, &winX, &winY);
+    glfwGetWindowSize(win, &winW, &winH);
+    GLFWmonitor* mon = monitorOf(win);
+    const GLFWvidmode* vm = glfwGetVideoMode(mon);
+    glfwSetWindowMonitor(win, mon, 0, 0, vm->width, vm->height, vm->refreshRate);
+  } else {
+    glfwSetWindowMonitor(win, nullptr, winX, winY, winW, winH, 0);
+  }
+  fullscreen = on;
+  glfwSwapInterval(fixedStep ? 0 : 1);  // some drivers drop the swap interval on a mode switch
+}
+
 void App::applyGraphicsPreset(int p) {
   gfxPreset = p;
   renderer.applySettings(presetSettings(p));
@@ -574,6 +621,8 @@ void App::handleInput() {
     if (ImGui::IsKeyPressed(ImGuiKey_B)) battles = !battles;
     if (ImGui::IsKeyPressed(ImGuiKey_H)) showUI = !showUI;
     if (ImGui::IsKeyPressed(ImGuiKey_F1)) showHelp = !showHelp;
+    if (ImGui::IsKeyPressed(ImGuiKey_F11, false) || (io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_Enter, false)))
+      setFullscreen(!fullscreen);
     if (ImGui::IsKeyPressed(ImGuiKey_Escape)) deselect();
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Q)) quitRequested = true;
     if (ImGui::IsKeyPressed(ImGuiKey_F12)) {
@@ -687,7 +736,7 @@ void App::buildScene(SceneView& sv, int fbW, int fbH) {
   sv.proj = proj;
   sv.camPos = cp.pos;
   sv.focusDist = cp.focus;
-  sv.aperture = cp.aperture;
+  sv.aperture = depthOfField ? cp.aperture : 0.0f;
   sv.time = world.time;
   sv.exposure = exposure;
   sv.flash = world.flash;

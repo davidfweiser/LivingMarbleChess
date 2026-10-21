@@ -1323,7 +1323,7 @@ vec3 itemTip(int kind) {
 float seatHeight(int kind) { return 0.30f * seatedScale(kind); }
 
 void buildLibrary(Library& lib, int quality, meshgen::BuildProgress* prog) {
-  quality = std::max(0, std::min(2, quality));
+  quality = std::max(0, std::min(3, quality));
   if (prog) {
     prog->total = 9;
     prog->done = 0;

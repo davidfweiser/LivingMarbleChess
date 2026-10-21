@@ -21,8 +21,8 @@ struct ImFont;
 
 struct Options {
   int width = 1600, height = 900;
-  int quality = 1;      // mesh/texture quality 0..2
-  int gfxPreset = 2;    // 0 low .. 3 ultra
+  int quality = 3;      // mesh/texture quality 0..3
+  int gfxPreset = 3;    // 0 low .. 3 ultra
   bool fullscreen = false;
   // capture / testing
   std::string shotPath;           // single screenshot then exit
@@ -37,6 +37,7 @@ struct Options {
   bool noUI = false;
   bool hasCam = false;
   bool noCinematic = false;       // keep the camera still (no battle shots, no turning to the side to move)
+  bool dof = false;               // depth of field (off: every piece stays sharp)
   float camYaw = 0, camPitch = 0.8f, camDist = 12.6f;
   float camTX = 0, camTY = 0.15f, camTZ = 0;
   bool noAudio = false;
@@ -66,8 +67,10 @@ class App {
   bool autoRotate = true;
   bool showUI = true;
   bool showHelp = false;
-  int gfxPreset = 2;
+  bool fullscreen = false;
+  int gfxPreset = 3;
   float exposure = 1.0f;
+  bool depthOfField = false;  // blur what the camera is not focused on (High and Ultra only)
   float volume = 0.8f;
   float fps = 0;
   chess::Game game;
@@ -91,6 +94,7 @@ class App {
   void undo();
   void flipCamera();
   void resetView();
+  void setFullscreen(bool on);
   void setMode(Mode m);
   void applyGraphicsPreset(int p);
   // 0 Living Marble, 1 medieval, 2 aliens (the figure sets are built in the background on first use)
@@ -124,6 +128,7 @@ class App {
   void setupScenario();
 
   GLFWwindow* win = nullptr;
+  int winX = 0, winY = 0, winW = 0, winH = 0;  // the windowed placement to return to from full screen
   std::deque<std::unique_ptr<Anim>> anims;
   meshgen::Library lib;
   meshgen::BuildProgress progress;

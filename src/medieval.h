@@ -153,7 +153,7 @@ struct Library {
   meshgen::PieceAssets asset[A_COUNT];
   bool built = false;
 };
-// quality: 0 = fast, 1 = normal, 2 = ultra
+// quality: 0 = fast, 1 = normal, 2 = ultra, 3 = extreme
 void buildLibrary(Library& lib, int quality, meshgen::BuildProgress* progress);
 float pieceHeight(int kind);  // includes the throne for throned pieces
 float pieceRadius(int kind);

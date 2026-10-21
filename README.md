@@ -175,9 +175,9 @@ mothership's drone and a sputtering disintegrator.
 - Inlaid maple and walnut board with a lacquer clear-coat, **planar
   reflections** of the pieces, brass inlay and gold coordinate lettering
 - SSAO, baked per-vertex ambient occlusion and analytic contact shadows
-- 4× MSAA HDR pipeline, physically based bloom, bokeh depth of field
-  (strong during cinematic battle shots), ACES filmic tone mapping, vignette
-  and film grain
+- 4× MSAA HDR pipeline, physically based bloom, optional bokeh depth of
+  field (off by default so every piece stays sharp; strong during cinematic
+  battle shots when on), ACES filmic tone mapping, vignette and film grain
 - Voronoi fracture: every piece is pre-shattered into 10–16 real chunks
   (plus a two-piece slice for the king's sword) with rigid-body physics —
   chunks bounce, roll, spin, collide with standing pieces and can tumble off
@@ -276,6 +276,7 @@ few seconds (shown on the loading screen).
 | B | Toggle battle animations (quick captures when off) |
 | C | Toggle the cinematic battle camera |
 | H | Hide / show the interface |
+| F11 / Alt+Enter (Mac: ⌃⌘F) | Toggle full screen (also a checkbox in the panel) |
 | F1 (Mac: also ? or ⌘?) | Help |
 | F12 (Mac: also ⇧⌘S) | Save a screenshot (PNG; on the Mac it goes to Pictures › Living Marble) |
 | Ctrl+Q (Mac: ⌘Q) | Quit |
@@ -315,14 +316,15 @@ The Mac app takes the same options when started from Terminal:
 many pixels, and screenshots show the 3D scene without the interface panels.
 
 ```
---fullscreen            run fullscreen
+--fullscreen            start full screen (F11 or Alt+Enter toggles it)
 --size WxH              window size (default 1600x900)
---graphics 0..3         Low / Medium / High / Ultra (default High)
---quality 0|1|2         sculpting & board texture detail (default 1)
+--graphics 0..3         Low / Medium / High / Ultra (default Ultra)
+--quality 0..3          sculpting & board texture detail (default 3)
 --demo                  watch the AI play itself
 --level 0..4            AI strength
 --fen "<FEN>"           start from a position
 --pieces marble|medieval|alien  which army to play with (default marble)
+--dof                   depth of field: blur what the camera is not focused on
 --mute                  no sound
 --selftest              verify the move generator (perft)
 ```
@@ -338,7 +340,8 @@ through the battles), `--scenario 4` (a gallery of ghosts on both sides),
 
 If the frame rate is low, open *Graphics* in the panel and pick *Medium* or
 *Low* (turns off depth of field, reflections and SSAO and lowers MSAA and the
-shadow map size).
+shadow map size). *Depth of field* in the same section (or `--dof`) brings
+back the camera-focus blur on *High* and *Ultra*.
 
 ## How it is built
 

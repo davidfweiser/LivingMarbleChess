@@ -610,10 +610,10 @@ static MeshData buildBoard(float E, float T) {
 }
 
 void buildLibrary(Library& lib, int quality, BuildProgress* prog) {
-  quality = std::max(0, std::min(2, quality));
-  const float c0[3] = {0.0125f, 0.0095f, 0.0074f};
-  const float c1[3] = {0.022f, 0.018f, 0.015f};
-  const float cs[3] = {0.016f, 0.0125f, 0.0105f};
+  quality = std::max(0, std::min(3, quality));
+  const float c0[4] = {0.0125f, 0.0095f, 0.0074f, 0.0052f};
+  const float c1[4] = {0.022f, 0.018f, 0.015f, 0.011f};
+  const float cs[4] = {0.016f, 0.0125f, 0.0105f, 0.008f};
   const int seeds[K_COUNT] = {10, 13, 13, 13, 15, 16};
   int total = K_COUNT * 4 + 3;
   if (prog) {
@@ -652,7 +652,7 @@ void buildLibrary(Library& lib, int quality, BuildProgress* prog) {
   }
   {
     MeshOptions o;
-    o.cell = quality == 0 ? 0.0055f : 0.0042f;
+    o.cell = quality == 0 ? 0.0055f : (quality < 3 ? 0.0042f : 0.0032f);
     o.bmin = vec3(-0.22f, -0.36f, -0.06f);
     o.bmax = vec3(0.22f, 1.02f, 0.06f);
     o.aoRadius = 0.04f;
