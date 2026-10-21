@@ -2309,9 +2309,9 @@ class KingMothership : public ABattle {
             CamPose s;
             float best = 1e9f;
             vec3 aim = mid + vec3(0, 1.8f, 0);
-            for (int k = -1; k <= 1; ++k) {
+            for (int k = -2; k <= 2; ++k) {
               for (int e = 0; e < 6; ++e) {
-                float ang = 2.356f + 0.09f * (float)k;  // between the fill panel and the key light
+                float ang = 2.226f + 0.157f * (float)k;  // between the fill panel and the blue one
                 vec3 look(std::cos(ang), 0, std::sin(ang));
                 vec3 cam = mid - look * (3.6f + 0.8f * (float)(e % 3)) + vec3(0, e < 3 ? 1.1f : 1.7f, 0);
                 vec3 view = glm::normalize(aim - cam);
