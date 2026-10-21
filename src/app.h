@@ -36,6 +36,7 @@ struct Options {
   bool demo = false;              // AI vs AI
   bool noUI = false;
   bool hasCam = false;
+  bool noCinematic = false;       // keep the camera still (no battle shots, no turning to the side to move)
   float camYaw = 0, camPitch = 0.8f, camDist = 12.6f;
   float camTX = 0, camTY = 0.15f, camTZ = 0;
   bool noAudio = false;

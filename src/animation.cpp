@@ -297,6 +297,8 @@ void World::reset() {
   timeScale = slowTarget = 1;
   slowTimer = 0;
   flash = vec3(0);
+  ghosts.clear();
+  ghostFocus = vec3(0);
 }
 
 void World::spawnFromBoard(const uint8_t sq[64], bool materialize) {
@@ -816,6 +818,188 @@ void World::updateFidgets(float dt) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Ghosts: the captured pieces float in a row at their army's side of the
+// board (White's along the a-file, Black's along the h-file, each starting
+// from its own end), watching the game and cheering their army on.
+// ---------------------------------------------------------------------------
+namespace {
+const float kGhostScale = 0.7f;
+vec3 ghostTint(int color) { return color == 1 ? vec3(0.78f, 0.62f, 1.0f) : vec3(0.62f, 0.9f, 1.0f); }
+}  // namespace
+
+vec3 World::ghostSpot(int color, int slot) {
+  float side = color == 0 ? -1.0f : 1.0f;
+  float row = (float)(slot / 15), i = (float)(slot % 15);
+  return vec3(side * (5.1f + 0.6f * row), 0.12f, -side * (3.64f - 0.52f * i));
+}
+
+void World::addGhost(int kind, int color, float delay, bool instant) {
+  Ghost g;
+  for (const Ghost& o : ghosts)
+    if (o.body.color == color) ++g.slot;
+  Actor& a = g.body;
+  a.kind = kind;
+  a.color = color;
+  a.set = pieceSet;
+  a.pos = ghostSpot(color, g.slot);
+  a.baseYaw = color == 0 ? 0.5f * kPI : -0.5f * kPI;  // facing the board
+  a.yaw = a.yawTarget = a.baseYaw;
+  a.scale = kGhostScale;
+  a.phase = fx.rnd(0, 100);
+  a.ctl.idle = fx.rnd(0, 100);
+  a.resetControls();
+  a.texOffset = vec3(fx.rnd(-20, 20), fx.rnd(-20, 20), fx.rnd(-20, 20));
+  g.delay = delay;
+  g.appear = instant ? 1.0f : 0.0f;
+  g.nextWave = fx.rnd(4.0f, 10.0f);
+  ghosts.push_back(g);
+}
+
+void World::cheerGhosts(int color, float power, float seconds) {
+  int n = 0;
+  vec3 at(0);
+  for (Ghost& g : ghosts) {
+    if (g.body.color != color) continue;
+    g.cheer = std::max(g.cheer, seconds * fx.rnd(0.8f, 1.1f));  // they don't all stop at once
+    g.cheerPower = power;
+    g.droop = 0;
+    if (g.appear > 0.3f) {
+      ++n;
+      at += g.body.pos;
+    }
+  }
+  if (n > 0) sound(SFX_CHEER, std::min(0.25f + 0.07f * (float)n, 0.6f) * power, at / (float)n, fx.rnd(0.95f, 1.08f));
+}
+
+void World::droopGhosts(int color, float seconds) {
+  int n = 0;
+  vec3 at(0);
+  for (Ghost& g : ghosts) {
+    if (g.body.color != color) continue;
+    g.droop = std::max(g.droop, seconds);
+    g.cheer = 0;
+    if (g.appear > 0.3f) {
+      ++n;
+      at += g.body.pos;
+    }
+  }
+  if (n > 0) sound(SFX_GHOST, 0.22f, at / (float)n, 0.72f);  // a disappointed moan
+}
+
+void World::updateGhosts(float dt) {
+  if (ghosts.empty()) return;
+  // they watch whoever is on the move
+  vec3 target = ghostFocus;
+  float best = 0.25f;
+  for (const Actor& a : actors) {
+    if (!a.alive || !a.visible) continue;
+    float v = glm::length(glm::vec2(a.vel.x, a.vel.z));
+    if (v > best) {
+      best = v;
+      target = a.pos;
+    }
+  }
+  ghostFocus += (target - ghostFocus) * (1.0f - std::exp(-dt * 2.5f));
+  for (Ghost& g : ghosts) {
+    Actor& a = g.body;
+    if (a.set != pieceSet) {  // the armies were switched
+      a.set = pieceSet;
+      a.resetControls();
+    }
+    vec3 tint = ghostTint(a.color);
+    vec3 home = ghostSpot(a.color, g.slot);
+    if (g.delay > 0) {
+      g.delay -= dt;
+      if (g.delay <= 0) sound(SFX_GHOST, 0.4f, home, fx.rnd(0.92f, 1.08f));
+      continue;
+    }
+    g.t += dt;
+    if (g.appear < 1.0f) {
+      // it takes shape slowly, out of rising wisps
+      g.appear = std::min(1.0f, g.appear + dt / 4.5f);
+      if (fx.rnd() < dt * 22.0f * (1.0f - g.appear)) {
+        Particle p;
+        float px = fx.rnd(-0.2f, 0.2f), py = fx.rnd(0.0f, 0.55f), pz = fx.rnd(-0.2f, 0.2f);
+        p.pos = home + vec3(px, py, pz);
+        p.vel = vec3(0, fx.rnd(0.15f, 0.4f), 0);
+        p.size = fx.rnd(0.01f, 0.024f);
+        p.color = tint * fx.rnd(0.8f, 1.6f);
+        p.colorEnd = tint * 0.2f;
+        p.opacity = 0;
+        p.maxLife = fx.rnd(0.8f, 1.6f);
+        p.type = PT_GLOW;
+        p.drag = 0.5f;
+        p.fadeIn = 0.3f;
+        fx.add(p);
+      }
+    }
+    // cheering, moping and the odd "come on!", eased in and out
+    g.cheer = std::max(0.0f, g.cheer - dt);
+    g.droop = std::max(0.0f, g.droop - dt);
+    if (g.cheer <= 0 && g.droop <= 0 && g.appear >= 1.0f) {
+      g.nextWave -= dt;
+      if (g.nextWave <= 0) {
+        g.wave = 1.6f;
+        g.nextWave = fx.rnd(5.0f, 12.0f);
+      }
+    }
+    g.wave = std::max(0.0f, g.wave - dt);
+    float kf = 1.0f - std::exp(-dt * 6.0f), ks = 1.0f - std::exp(-dt * 3.0f);
+    g.cheerS += ((g.cheer > 0 ? g.cheerPower : 0.0f) - g.cheerS) * kf;
+    g.droopS += ((g.droop > 0 ? 1.0f : 0.0f) - g.droopS) * ks;
+    g.waveS += ((g.wave > 0 ? 1.0f : 0.0f) - g.waveS) * kf;
+    float cs = g.cheerS, ds = g.droopS, ws = g.waveS;
+    float ph = a.phase;
+    // float, bob, and jump for joy
+    float rise = 1.0f - easeOut(g.appear);
+    float bob = 0.035f * std::sin(g.t * 1.4f + ph);
+    float hop = 0.16f * std::fabs(std::sin(g.t * 8.0f + ph)) * cs + 0.05f * std::fabs(std::sin(g.t * 5.0f + ph)) * ws;
+    a.pos = home + vec3(0, bob - 0.4f * rise + hop - 0.06f * ds, 0);
+    // turn to watch the action (but stay facing the board)
+    float off = glm::clamp(wrapAngle(faceAngle(ghostFocus - home) - a.baseYaw), -1.2f, 1.2f);
+    a.yawTarget = a.baseYaw + off;
+    a.yawRate = 3.0f;
+    // the marble rig: a wiggle when cheering, a bow when moping
+    a.poseSquash = 1.0f + 0.1f * std::sin(g.t * 16.0f + ph) * cs;
+    a.poseTwist = 0.35f * std::sin(g.t * 7.0f + ph) * cs;
+    a.poseBend = glm::vec2(0.12f * std::sin(g.t * 4.0f + ph) * (cs + ws), 0.25f * ds);
+    // the figures: arms up, mouths open, antennae up - or heads down
+    medieval::Controls& k = a.ctl;
+    float wv = std::sin(g.t * 11.0f + ph);
+    k.armL = vec3(2.7f - 0.25f * wv, 0.35f, 0.3f) * cs;
+    k.armR = vec3(2.7f + 0.25f * wv, 0.35f, 0.3f) * cs + vec3(2.5f, 0.4f + 0.3f * std::sin(g.t * 9.0f), 0.4f) * ws * (1.0f - cs);
+    k.headPitch = -0.25f * cs + 0.45f * ds;
+    k.lean = -0.1f * cs + 0.25f * ds;
+    k.jaw = 0.7f * cs;
+    k.perk = cs - ds;
+    if (a.set == 1 && a.kind == meshgen::K_KNIGHT) k.rear = 0.5f * cs;  // the horse rears
+    if (a.set == 1 && a.kind == meshgen::K_ROOK) k.bridge = 0.35f * std::fabs(std::sin(g.t * 6.0f + ph)) * cs;
+    if (a.set == 2 && a.kind == meshgen::K_KNIGHT) k.spin += dt * (2.0f + 14.0f * cs);
+    if (a.set == 2 && a.kind == meshgen::K_ROOK) k.crouch = 0.3f * std::fabs(std::sin(g.t * 8.0f + ph)) * cs;
+    // a ghostly glow, brighter when cheering, and it materialises out of the wisps
+    a.glow = glm::vec4(tint, 0.25f + 0.9f * cs + 0.3f * ws);
+    a.dissolve = (1.0f - g.appear) * 0.85f;
+    a.dissolveColor = tint * 1.5f;
+    if (cs > 0.3f && fx.rnd() < dt * 5.0f * cs) {
+      Particle p;
+      float px = fx.rnd(-0.12f, 0.12f), pz = fx.rnd(-0.12f, 0.12f);
+      p.pos = a.pos + vec3(px, a.height() * 0.9f, pz);
+      p.vel = vec3(0, fx.rnd(0.3f, 0.7f), 0);
+      p.size = fx.rnd(0.008f, 0.018f);
+      p.color = tint * 2.0f;
+      p.colorEnd = tint * 0.3f;
+      p.opacity = 0;
+      p.maxLife = fx.rnd(0.6f, 1.1f);
+      p.type = PT_GLOW;
+      p.drag = 0.8f;
+      p.fadeIn = 0.1f;
+      fx.add(p);
+    }
+    a.update(dt, time, audio);
+  }
+}
+
 void World::simulate(float dt) {
   updateFidgets(dt);
   // dust motes drifting through the pool of light
@@ -839,6 +1023,15 @@ void World::simulate(float dt) {
   }
   for (Actor& a : actors)
     if (a.alive) a.update(dt, time, audio);
+  // the fallen come back as ghosts; their army mourns, the other cheers
+  for (Actor& a : actors) {
+    if (!a.ghostOnDeath || a.alive) continue;
+    a.ghostOnDeath = false;
+    addGhost(a.kind, a.color, 1.4f);
+    cheerGhosts(a.color ^ 1, 1.0f, 2.6f);
+    droopGhosts(a.color, 3.0f);
+  }
+  updateGhosts(dt);
   for (Puppet& p : puppets) {
     p.ctl.idle += dt;
     figurePose(p.set, p.asset, p.ctl, p.pose);
@@ -855,84 +1048,108 @@ void World::simulate(float dt) {
   props.erase(std::remove_if(props.begin(), props.end(), [](const Prop& p) { return !p.alive; }), props.end());
 }
 
-void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
-  for (const Actor& a : actors) {
-    if (!a.alive || !a.visible || a.dissolve >= 0.999f) continue;
-    if (a.set != 0) {
-      const Renderer::PieceGpu* G = r.figures(a.set);
-      if (!G) continue;
-      DrawItem d;
-      d.mesh = &G[a.kind].lod0;
-      d.meshLow = &G[a.kind].lod1;
-      d.model = a.model();
-      if (a.set == 1) {
-        // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
-        d.rig = glm::vec4(a.rig.x * 0.3f, a.rig.y, 1.0f + (a.rig.z - 1.0f) * 0.12f, a.rig.w * 0.25f);
-      } else {
-        // aliens are a bit rubbery (the saucer and the tripod less so)
-        float k = (a.kind == meshgen::K_KNIGHT || a.kind == meshgen::K_ROOK) ? 0.4f : 0.8f;
-        d.rig = glm::vec4(a.rig.x * k, a.rig.y, 1.0f + (a.rig.z - 1.0f) * k, a.rig.w * k);
-      }
-      d.rigH = a.height() / std::max(a.scale, 1e-3f);
-      d.material = a.set == 2 ? MAT_ALIEN : MAT_MEDIEVAL;
-      d.team = a.color;
-      d.bones = a.pose.bone;
-      d.boneCount = a.pose.count;
-      d.texOffset = a.texOffset;
-      d.glow = a.glow;
-      d.crack = a.crack;
-      d.crackColor = a.crackColor;
-      d.dissolve = a.dissolve;
-      d.dissolveColor = a.dissolveColor;
-      d.heat = a.heat;
-      d.stone = a.stone;
-      out.push_back(d);
-      int ga = a.set == 2 ? alien::glassAsset(a.kind) : -1;
-      if (ga >= 0) {  // the saucer's canopy, the psychic's jar
-        DrawItem g = d;
-        g.mesh = &G[ga].lod0;
-        g.meshLow = &G[ga].lod1;
-        g.material = MAT_GLASS;
-        g.glass = true;
-        g.castShadow = false;
-        out.push_back(g);
-      }
-      if (a.set == 1 && a.kind == meshgen::K_ROOK && a.ctl.legs > 0.001f) {
-        DrawItem l = d;
-        l.mesh = &r.medieval[medieval::A_LEGS].lod0;
-        l.meshLow = &r.medieval[medieval::A_LEGS].lod1;
-        l.rig = glm::vec4(0, 0, 1, 0);
-        out.push_back(l);
-      }
-      if (a.hasSeat()) {
-        int sa = medieval::seatAsset(a.kind);
-        DrawItem t = d;
-        t.mesh = &r.medieval[sa].lod0;
-        t.meshLow = &r.medieval[sa].lod1;
-        t.model = seatModel(a);
-        t.rig = a.seatFree ? glm::vec4(0, 0, 1, 0) : d.rig;
-        t.bones = nullptr;
-        t.boneCount = 0;
-        t.texOffset = a.texOffset + vec3(3.1f);
-        if (a.seatFree) t.glow = glm::vec4(0);
-        out.push_back(t);
-      }
-      continue;
-    }
+// The draw items of one figure (a chessman or a ghost).
+void World::figureItems(Renderer& r, const Actor& a, std::vector<DrawItem>& out) const {
+  if (a.set != 0) {
+    const Renderer::PieceGpu* G = r.figures(a.set);
+    if (!G) return;
     DrawItem d;
-    d.mesh = &r.pieces[a.kind].lod0;
-    d.meshLow = &r.pieces[a.kind].lod1;
+    d.mesh = &G[a.kind].lod0;
+    d.meshLow = &G[a.kind].lod1;
     d.model = a.model();
-    d.rig = a.rig;
-    d.rigH = meshgen::pieceHeight(a.kind);
-    d.material = a.color == 0 ? MAT_WHITE : MAT_BLACK;
+    if (a.set == 1) {
+      // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
+      d.rig = glm::vec4(a.rig.x * 0.3f, a.rig.y, 1.0f + (a.rig.z - 1.0f) * 0.12f, a.rig.w * 0.25f);
+    } else {
+      // aliens are a bit rubbery (the saucer and the tripod less so)
+      float k = (a.kind == meshgen::K_KNIGHT || a.kind == meshgen::K_ROOK) ? 0.4f : 0.8f;
+      d.rig = glm::vec4(a.rig.x * k, a.rig.y, 1.0f + (a.rig.z - 1.0f) * k, a.rig.w * k);
+    }
+    d.rigH = a.height() / std::max(a.scale, 1e-3f);
+    d.material = a.set == 2 ? MAT_ALIEN : MAT_MEDIEVAL;
+    d.team = a.color;
+    d.bones = a.pose.bone;
+    d.boneCount = a.pose.count;
     d.texOffset = a.texOffset;
     d.glow = a.glow;
     d.crack = a.crack;
     d.crackColor = a.crackColor;
     d.dissolve = a.dissolve;
     d.dissolveColor = a.dissolveColor;
+    d.heat = a.heat;
+    d.stone = a.stone;
     out.push_back(d);
+    int ga = a.set == 2 ? alien::glassAsset(a.kind) : -1;
+    if (ga >= 0) {  // the saucer's canopy, the psychic's jar
+      DrawItem g = d;
+      g.mesh = &G[ga].lod0;
+      g.meshLow = &G[ga].lod1;
+      g.material = MAT_GLASS;
+      g.glass = true;
+      g.castShadow = false;
+      out.push_back(g);
+    }
+    if (a.set == 1 && a.kind == meshgen::K_ROOK && a.ctl.legs > 0.001f) {
+      DrawItem l = d;
+      l.mesh = &r.medieval[medieval::A_LEGS].lod0;
+      l.meshLow = &r.medieval[medieval::A_LEGS].lod1;
+      l.rig = glm::vec4(0, 0, 1, 0);
+      out.push_back(l);
+    }
+    if (a.hasSeat()) {
+      int sa = medieval::seatAsset(a.kind);
+      DrawItem t = d;
+      t.mesh = &r.medieval[sa].lod0;
+      t.meshLow = &r.medieval[sa].lod1;
+      t.model = seatModel(a);
+      t.rig = a.seatFree ? glm::vec4(0, 0, 1, 0) : d.rig;
+      t.bones = nullptr;
+      t.boneCount = 0;
+      t.texOffset = a.texOffset + vec3(3.1f);
+      if (a.seatFree) t.glow = glm::vec4(0);
+      out.push_back(t);
+    }
+    return;
+  }
+  DrawItem d;
+  d.mesh = &r.pieces[a.kind].lod0;
+  d.meshLow = &r.pieces[a.kind].lod1;
+  d.model = a.model();
+  d.rig = a.rig;
+  d.rigH = meshgen::pieceHeight(a.kind);
+  d.material = a.color == 0 ? MAT_WHITE : MAT_BLACK;
+  d.texOffset = a.texOffset;
+  d.glow = a.glow;
+  d.crack = a.crack;
+  d.crackColor = a.crackColor;
+  d.dissolve = a.dissolve;
+  d.dissolveColor = a.dissolveColor;
+  out.push_back(d);
+}
+
+void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
+  for (const Actor& a : actors) {
+    if (!a.alive || !a.visible || a.dissolve >= 0.999f) continue;
+    figureItems(r, a, out);
+  }
+  for (size_t i = 0; i < ghosts.size(); ++i) {
+    const Ghost& g = ghosts[i];
+    if (g.appear <= 0.0f) continue;
+    size_t first = out.size();
+    figureItems(r, g.body, out);
+    float alpha = std::max(0.85f * easeInOut(g.appear), 1e-3f);
+    for (size_t k = first; k < out.size(); ++k) {
+      DrawItem& d = out[k];
+      d.ghost = alpha;
+      d.ghostId = (int)i;
+      d.castShadow = false;
+      d.reflect = false;
+      d.groundAO = false;
+      d.team = g.body.color;
+    }
+    // no glass on a ghost: its canopy or jar would hide what is inside
+    out.erase(std::remove_if(out.begin() + (long)first, out.end(), [](const DrawItem& d) { return d.glass; }),
+              out.end());
   }
   for (const Chunk& c : chunks) {
     const Renderer::PieceGpu* G = c.set != 0 ? r.figures(c.set) : r.pieces;

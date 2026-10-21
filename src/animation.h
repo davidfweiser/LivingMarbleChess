@@ -59,6 +59,7 @@ struct Actor {
   float phase = 0;
   float selectT = 0, bob = 0, prevSelS = 0;
   float dissolveVel = 0;  // automatic dissolve change per second (materialise / vanish)
+  bool ghostOnDeath = false;  // captured: comes back as a ghost once it has died
   float fidgetT = -1, fidgetDir = 1;
   int fidgetType = 0;
   // secondary motion
@@ -130,6 +131,22 @@ struct Puppet {
   glm::vec3 texOffset{0};
   bool alive = true;
   glm::mat4 model() const;
+};
+
+// A captured piece come back as a ghost: it floats at its army's side of the
+// board, watches the game and cheers its team on.
+struct Ghost {
+  Actor body;           // what it looks like (kind, colour, army) and its pose
+  int slot = 0;         // its place in its army's row
+  float delay = 0;      // before it starts to appear
+  float appear = 0;     // 0..1: it fades in slowly
+  float cheer = 0;      // seconds of cheering left
+  float cheerPower = 1;
+  float droop = 0;      // seconds of moping left (its army lost a piece)
+  float wave = 0;       // seconds left of a little "come on!" now and then
+  float nextWave = 4;
+  float cheerS = 0, droopS = 0, waveS = 0;  // the same, eased in and out
+  float t = 0;
 };
 
 struct GroundRing {
@@ -213,6 +230,13 @@ class World {
   float fidgetTimer = 2.0f;
   int excludeFidget = -1;
   void stopFidgets();
+  // the captured pieces' ghosts, watching from the sides of the board
+  std::vector<Ghost> ghosts;
+  glm::vec3 ghostFocus{0};  // what they are watching
+  void addGhost(int kind, int color, float delay, bool instant = false);
+  void cheerGhosts(int color, float power, float seconds);
+  void droopGhosts(int color, float seconds);
+  static glm::vec3 ghostSpot(int color, int slot);
 
   void reset();
   void spawnFromBoard(const uint8_t sq[64], bool materialize);
@@ -257,4 +281,6 @@ class World {
  private:
   void updateChunks(float dt);
   void updateFidgets(float dt);
+  void updateGhosts(float dt);
+  void figureItems(Renderer& r, const Actor& a, std::vector<DrawItem>& out) const;
 };

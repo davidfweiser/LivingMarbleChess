@@ -61,6 +61,8 @@ struct DrawItem {
   bool reflect = true;
   bool groundAO = true;
   bool glass = false;                // see-through (drawn blended after everything solid)
+  float ghost = 0;                   // > 0: a translucent ghost (its opacity), drawn after everything solid
+  int ghostId = -1;                  // the items of one ghost share an id
   const glm::mat4* bones = nullptr;  // skinned meshes (medieval figures)
   int boneCount = 0;
   int team = 0;                      // medieval: 0 white army, 1 black army
@@ -146,9 +148,12 @@ class Renderer {
   void createTargets(int w, int h);
   void destroyTargets();
   void setLighting(Shader& s, const SceneView& sv, bool reflectionPass);
+  // the solid items, or only the glass ones (ghosts are drawn by drawGhosts)
   void drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shadowPass, bool reflectPass, bool glass = false);
+  void drawItem(Shader& s, const DrawItem& it, bool lowLod, bool shadowPass);
   // cull: whether face culling stays enabled afterwards
   void drawGlass(Shader& s, const SceneView& sv, bool lowLod, bool reflectPass, bool cull);
+  void drawGhosts(Shader& s, const SceneView& sv);
   void drawBoard(Shader& s);
   void fullscreen();
   void bindTex(int unit, GLenum target, GLuint tex);

@@ -22,12 +22,13 @@ static void usage() {
       "  --mute                  no sound\n"
       "  --selftest              verify the move generator (perft)\n"
       "\n capture tools:\n"
-      "  --shot file.png [--frames N] [--scenario 0|1|2]\n"
+      "  --shot file.png [--frames N] [--scenario 0|1|2|4]   (4: a gallery of ghosts)\n"
       "  --battle K --shots t1,t2,... [--prefix name]   (K: 0 pawn .. 5 king)\n"
       "  --fen \"<fen>\" --move e2e4 --shots t1,t2,...   (screenshots of any move)\n"
       "  --style S               force battle style S (0..2) instead of a random one\n"
       "  --record dir [--frames N]\n"
-      "  --camera yaw,pitch,dist\n"
+      "  --camera yaw,pitch,dist[,tx,ty,tz]\n"
+      "  --no-cinematic          keep the camera still\n"
       "  --no-ui\n");
 }
 
@@ -59,6 +60,7 @@ int main(int argc, char** argv) {
     else if (a == "--prefix") o.shotPrefix = next();
     else if (a == "--record") o.recordDir = next();
     else if (a == "--no-ui") o.noUI = true;
+    else if (a == "--no-cinematic") o.noCinematic = true;
     else if (a == "--no-render") o.noRender = true;
     else if (a == "--level") o.level = std::atoi(next().c_str());
     else if (a == "--move") o.forceMove = next();

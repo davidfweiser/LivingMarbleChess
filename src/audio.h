@@ -57,6 +57,9 @@ enum Sfx {
   SFX_HATCH,     // an egg cracking open, chirps
   SFX_DRONE,     // the mothership
   SFX_SPUTTER,   // a machine sputtering and dying
+  // the ghosts of captured pieces
+  SFX_GHOST,     // a wavering "oooOOOooo"
+  SFX_CHEER,     // a far-off little crowd of ghosts cheering
   SFX_COUNT
 };
 

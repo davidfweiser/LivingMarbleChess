@@ -1165,18 +1165,88 @@ void synthAlien(std::vector<Buf>& S) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The ghosts
+// ---------------------------------------------------------------------------
+void synthGhosts(std::vector<Buf>& S) {
+  Rng r;
+  r.s = 777;
+  {  // GHOST: a wavering "oooOOOooo" in a big hall, with a breath of wind
+    Buf b = make(3.0f);
+    auto freq = [](float t) {
+      float glide = 300.0f + 170.0f * std::sin(std::min(t / 1.9f, 1.0f) * 3.14159f);
+      return glide * (1.0f + 0.03f * std::sin(t * 6.2831f * 5.2f));
+    };
+    auto env = [](float t) { return envAR(t, 0.45f, 0.9f, 0.7f); };
+    addSaw(b, 0, 2.2f, freq, [env](float t) { return 0.5f * env(t); });
+    addSaw(b, 0, 2.2f, [freq](float t) { return freq(t) * 1.4983f; }, [env](float t) { return 0.18f * env(t); });
+    Biquad lp, bp;
+    lp.lowpass(700, 0.9f);
+    bp.bandpass(380, 1.4f);
+    for (float& x : b) {
+      float y = x;
+      x = lp.run(y) * 0.6f + bp.run(y) * 0.8f;
+    }
+    addSweep(b, 0, 2.2f, freq, [env](float t) { return 0.35f * env(t); });
+    Biquad wf;
+    wf.bandpass(900, 0.8f);
+    noiseShaped(b, r, 0, 2.2f, wf, 0.08f, env);
+    reverb(b, 0.7f, 0.86f, 0.35f, 1.3f);
+    normalize(b, 0.6f);
+    S[SFX_GHOST] = b;
+  }
+  {  // CHEER: a far-off little crowd of ghosts going "yaaay!", clapping, with a shimmer
+    Buf b = make(2.4f), v = make(2.4f);
+    for (int k = 0; k < 7; ++k) {
+      float t0 = r.next() * 0.12f;
+      float f0 = 220.0f + 260.0f * r.next();
+      float vib = r.next() * 6.28f;
+      addSaw(v, t0, 1.4f,
+             [f0, vib](float t) {
+               float up = 1.0f + 0.35f * std::min(t / 0.22f, 1.0f) - 0.12f * std::max(0.0f, t - 0.6f);
+               return f0 * up * (1.0f + 0.012f * std::sin(t * 6.2831f * 5.5f + vib));
+             },
+             [](float t) { return envAR(t, 0.06f, 0.55f, 0.6f) * 0.3f; });
+    }
+    Biquad f1, f2, f3, f4;  // the vowel "ah"
+    f1.bandpass(730, 6.0f);
+    f2.bandpass(1090, 8.0f);
+    f3.bandpass(2440, 12.0f);
+    f4.lowpass(3500);
+    for (size_t i = 0; i < b.size(); ++i) {
+      float x = v[i];
+      b[i] = f4.run(f1.run(x) + f2.run(x) * 0.6f + f3.run(x) * 0.25f);
+    }
+    Biquad cf;
+    cf.bandpass(1600, 1.1f);
+    for (int k = 0; k < 14; ++k) {
+      float t = 0.1f + r.next() * 1.3f;
+      addNoise(b, r, t, 0.5f, 60, cf);
+    }
+    for (int k = 0; k < 6; ++k) {
+      float t = r.next() * 1.5f;
+      float f = 1800.0f + r.next() * 1800.0f;
+      addDampedSine(b, t, f, 0.06f, 5.0f);
+    }
+    reverb(b, 0.65f, 0.84f, 0.3f, 1.15f);
+    normalize(b, 0.55f);
+    S[SFX_CHEER] = b;
+  }
+}
+
 }  // namespace
 
 std::vector<Buf> synthEverything() {
   std::vector<Buf> S = synthAll();
   synthMedieval(S);
   synthAlien(S);
+  synthGhosts(S);
   return S;
 }
 
 struct Audio::Impl {
   std::vector<Buf> sounds;
-  std::thread medievalSynth;  // the medieval and alien armies' sounds are made in the background
+  std::thread medievalSynth;  // the medieval army's, the aliens' and the ghosts' sounds are made in the background
   struct Voice {
     int sfx = -1;
     double pos = 0;
@@ -1232,6 +1302,7 @@ bool Audio::init() {
     std::vector<Buf> med(SFX_COUNT);
     synthMedieval(med);
     synthAlien(med);
+    synthGhosts(med);
     std::lock_guard<std::mutex> lk(impl->mtx);
     for (int i = SFX_HYMN; i < SFX_COUNT; ++i) impl->sounds[i] = std::move(med[i]);
   });
@@ -1303,7 +1374,8 @@ bool Audio::dumpWav(const char* dir) {
                                          "bell",    "splinter", "armor",  "slide",   "bite",   "pew",
                                          "ufo",     "theremin", "beam",   "gibber",  "slurp",  "burp",   "boing",
                                          "whistle", "splat",   "moo",     "pop",     "shrink", "heatray", "horn",
-                                         "twinkle", "sizzle",  "hatch",   "drone",   "sputter"};
+                                         "twinkle", "sizzle",  "hatch",   "drone",   "sputter", "ghost",
+                                         "cheer"};
   std::vector<Buf> S = synthEverything();
   for (int i = 0; i < SFX_COUNT; ++i) {
     std::string path = std::string(dir) + "/" + names[i] + ".wav";

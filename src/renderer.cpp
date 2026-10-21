@@ -575,11 +575,17 @@ void Renderer::setLighting(Shader& s, const SceneView& sv, bool reflectionPass) 
 
 void Renderer::drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shadowPass, bool reflectPass, bool glass) {
   for (const DrawItem& it : sv.items) {
-    if (it.glass != glass) continue;
+    if (it.glass != glass || it.ghost > 0.0f) continue;
     if (shadowPass && !it.castShadow) continue;
     if (reflectPass && !it.reflect) continue;
+    drawItem(s, it, lowLod, shadowPass);
+  }
+}
+
+void Renderer::drawItem(Shader& s, const DrawItem& it, bool lowLod, bool shadowPass) {
+  {
     const GpuMesh* m = (lowLod && it.meshLow) ? it.meshLow : it.mesh;
-    if (!m || !m->vao) continue;
+    if (!m || !m->vao) return;
     s.set("uModel", it.model);
     s.set("uRig", it.rig);
     s.set("uRigH", it.rigH);
@@ -598,6 +604,7 @@ void Renderer::drawItems(Shader& s, const SceneView& sv, bool lowLod, bool shado
       s.set("uHeat", it.heat);
       s.set("uStone", it.stone);
       s.set("uGroundAO", it.groundAO ? 1.0f : 0.0f);
+      s.set("uGhost", it.ghost);
     }
     m->draw();
   }
@@ -620,6 +627,37 @@ void Renderer::drawGlass(Shader& s, const SceneView& sv, bool lowLod, bool refle
   glDepthMask(GL_TRUE);
   glDisable(GL_BLEND);
   if (!cull) glDisable(GL_CULL_FACE);
+}
+
+// Ghosts: see-through, but each showing only its nearest surface - its depth
+// first, then its colour blended on top - the farthest ghost first.
+void Renderer::drawGhosts(Shader& s, const SceneView& sv) {
+  std::vector<std::pair<float, int>> order;  // (distance, ghost id)
+  for (const DrawItem& it : sv.items) {
+    if (it.ghost <= 0.0f) continue;
+    bool seen = false;
+    for (const auto& o : order) seen = seen || o.second == it.ghostId;
+    if (!seen) order.push_back({glm::length(glm::vec3(it.model[3]) - sv.camPos), it.ghostId});
+  }
+  if (order.empty()) return;
+  std::sort(order.begin(), order.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
+  glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+  for (const auto& o : order) {
+    glDisable(GL_BLEND);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glDepthMask(GL_TRUE);
+    for (const DrawItem& it : sv.items)
+      if (it.ghost > 0.0f && it.ghostId == o.second) drawItem(s, it, false, false);
+    glEnable(GL_BLEND);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_FALSE);
+    for (const DrawItem& it : sv.items)
+      if (it.ghost > 0.0f && it.ghostId == o.second) drawItem(s, it, false, false);
+  }
+  glDisable(GL_BLEND);
+  glDisable(GL_CULL_FACE);
 }
 
 void Renderer::drawBoard(Shader& s) {
@@ -795,9 +833,10 @@ void Renderer::render(const SceneView& sv, int fbW, int fbH, GLuint outFbo) {
   shBackground.set("uBgIntensity", 0.35f);
   fullscreen();
 
-  // glass
+  // glass, then the ghosts
   shObject.use();
   drawGlass(shObject, sv, false, false, false);
+  drawGhosts(shObject, sv);
   glDepthMask(GL_FALSE);
 
   // particles

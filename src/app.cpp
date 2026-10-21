@@ -360,6 +360,10 @@ void App::undo() {
   world.props.clear();
   world.cam.release(0.6f);
   world.spawnFromBoard(game.board().sq, true);
+  // the ghosts of the pieces still captured
+  world.ghosts.clear();
+  for (const chess::Move& m : game.moves())
+    if (m.isCapture() && m.captured) world.addGhost((m.captured & 7) - 1, m.captured >> 3, 0.0f, true);
   world.sound(SFX_CHIME, 0.5f, vec3(0), 0.8f);
 }
 
@@ -444,6 +448,7 @@ void App::commitMove(const chess::Move& m) {
     int cs = m.captureSquare();
     plan.victim = world.actorAt[cs];
     world.actorAt[cs] = -1;
+    if (plan.victim >= 0) world.actors[plan.victim].ghostOnDeath = true;  // it will watch from the side
   }
   if (m.flags & chess::MF_CASTLE) {
     int rf = m.to > m.from ? m.from + 3 : m.from - 4;
@@ -631,6 +636,7 @@ void App::updateGame(float dt) {
       world.sound(SFX_CHECK, 0.9f);
       bannerText = "Check!";
       bannerTime = 2.0f;
+      world.cheerGhosts(b.side ^ 1, 0.7f, 1.8f);
     }
     if (mode == Mode::TwoPlayer && autoRotate && game.result() == chess::Result::Ongoing)
       world.cam.setSide(b.side);
@@ -646,6 +652,8 @@ void App::updateGame(float dt) {
         int ks = game.board().kingSq[loser];
         int kid = world.actorAt[ks];
         if (kid >= 0) anims.push_back(makeCheckmateAnim(world, kid, loser ^ 1));
+        world.cheerGhosts(loser ^ 1, 1.3f, 8.0f);
+        world.droopGhosts(loser, 10.0f);
       } else {
         anims.push_back(makeStalemateAnim(world));
       }
@@ -757,6 +765,12 @@ void App::setupScenario() {
   }
   world.reset();
   world.spawnFromBoard(game.board().sq, false);
+  if (opt.scenario == 4) {
+    // ghost gallery: a row of captured pieces on each side
+    static const int kinds[7] = {0, 0, 1, 2, 3, 4, 0};
+    for (int c = 0; c < 2; ++c)
+      for (int k : kinds) world.addGhost(k, c, 0.0f, true);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -784,6 +798,10 @@ void App::frame(float dt) {
         world.cam.pitch = opt.camPitch;
         world.cam.dist = opt.camDist;
         world.cam.target = glm::vec3(opt.camTX, opt.camTY, opt.camTZ);
+      }
+      if (opt.noCinematic) {
+        world.cinematic = false;
+        autoRotate = false;
       }
       if (opt.battle >= 0) setupBattleDemo();
       else if (!opt.shotPath.empty() || !opt.recordDir.empty() || !opt.shotTimes.empty()) {
