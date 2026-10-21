@@ -392,7 +392,7 @@ struct Flight {
     t = 0
     v.tremble = 0
     v.idleWeight = 0
-    v.tiltPivot = vec3(0, MeshGen.pieceHeight(v.kind) * 0.5, 0)
+    v.tiltPivot = vec3(0, v.height() / max(v.scale, 1e-3) * 0.5, 0)
   }
   /// True once it hits the board (or has dropped well below it).
   mutating func update(_ v: Actor, _ dt: Float) -> Bool {
@@ -518,6 +518,7 @@ final class PromotionAnim: Staged {
       let n = p.copy()
       n.id = w.actors.count
       n.kind = kind
+      if n.set == 1 { n.resetControls() }
       n.alive = true
       n.visible = true
       n.dissolve = 1
@@ -719,29 +720,34 @@ private func makeBattle(_ kind: Int, _ style: Int, _ plan: MovePlan) -> Anim {
   }
 }
 
-func battleStyleName(_ kind: Int, _ style: Int) -> String {
+/// set: 0 Living Marble, 1 medieval.
+func battleStyleName(_ kind: Int, _ style: Int, _ set: Int = 0) -> String {
+  if set == 1 { return medievalBattleStyleName(kind, style) }
   if kind < 0 || kind >= Kind.count || style < 0 || style >= kBattleStyles { return "" }
   return kStyleNames[kind][style]
 }
 
 func makeMoveAnim(_ w: World, _ plan: MovePlan) -> Anim {
   let seq = SeqAnim()
+  let med = w.actors[plan.mover].set == 1
   if plan.victim >= 0 {
     if plan.fast {
-      seq.add(QuickCapture(plan))
+      seq.add(med ? makeMedievalQuickCapture(plan) : QuickCapture(plan))
     } else {
       let kind = w.actors[plan.mover].kind
-      seq.add(makeBattle(kind, pickStyle(kind, plan.style), plan))
+      let style = pickStyle(kind, plan.style)
+      seq.add(med ? makeMedievalBattle(kind, style, plan) : makeBattle(kind, style, plan))
     }
   } else {
-    seq.add(QuietMove(plan))
+    seq.add(med ? makeMedievalQuiet(plan) : QuietMove(plan))
   }
   if plan.promoKind >= 0 { seq.add(PromotionAnim(plan.mover, plan.promoSquare, plan.promoKind)) }
   return seq
 }
 
 func makeCheckmateAnim(_ w: World, _ kingId: Int, _ winnerColor: Int) -> Anim {
-  CheckmateAnim(kingId, winnerColor)
+  if w.actors[kingId].set == 1 { return makeMedievalCheckmate(kingId, winnerColor) }
+  return CheckmateAnim(kingId, winnerColor)
 }
 
 func makeStalemateAnim(_ w: World) -> Anim { StalemateAnim() }

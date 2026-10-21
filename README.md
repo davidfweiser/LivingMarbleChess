@@ -6,6 +6,12 @@ fight. Each piece type knows three attacks and picks one at random, and the lose
 real fracture chunks that tumble across a lacquered wooden board floating in
 mid-air — drag to turn it and look at the battle from any side, even underneath.
 
+There is a second army to play with: **the medieval set** (*Pieces* in the
+panel, or `--pieces medieval`). Men-at-arms, knights on caparisoned horses,
+bishops and royals on their thrones and a gatehouse with a drawbridge — and a
+dragon living inside it. Its figures walk, ride, stand up from their thrones
+and fight with their own battles, sounds and music.
+
 Everything is procedural. There are **no model, texture or sound files**:
 the pieces are sculpted from signed-distance fields at startup, the board's
 inlaid wood is baked on the fly, and every sound effect is synthesised.
@@ -36,6 +42,52 @@ king walks with dignity. Selected pieces bounce impatiently, threatened pieces
 tremble, a king in check shakes and glows red, and a mated king cracks and
 falls. Castling makes the rook vault over the king; promotion turns the pawn
 into its new self inside a pillar of light.
+
+## The medieval army
+
+Switch armies with *Pieces* in the panel (on iPhone and iPad: Settings; on the
+Mac also *Game › Pieces*). The pieces on the board swap in place; the first
+time, the medieval figures are sculpted in the background (a few seconds)
+while the game goes on. `--pieces medieval` starts with them.
+
+- **Pawn** — a man-at-arms in a kettle hat and gambeson, with spear and kite shield
+- **Knight** — a knight in a great helm on a caparisoned horse, with a lance
+- **Bishop** — a bishop in mitre and cope with his crozier, enthroned on a gothic cathedra
+- **Rook** — a gatehouse with battlements, a portcullis and a drawbridge on
+  chains. It glides over the board — or stands up on stone legs and walks
+- **Queen** and **King** — crowned, on their thrones (the king bearded, in an
+  ermine mantle, with a sword; the queen with a sceptre). They glide across
+  the board on their thrones, or get up, walk, fight and sit back down
+- A **dragon** lives in each gatehouse
+
+Every figure is a painted, multi-material mesh (stone, wood, steel, chain
+mail, gold, cloth, skin, fur, horse coat, dragon scales, ...) skinned to a
+small skeleton and animated on the GPU: walk cycles, the horse's walk, canter
+and gallop, rearing and leaping, standing up from a throne, the drawbridge and
+portcullis, the dragon's neck, jaw, wings and tail. White's army wears ivory
+and azure over bright steel, Black's sable and gules over blackened steel.
+
+| Attacker | Attacks |
+|---|---|
+| Pawn   | **Spear thrust** — marches up, levels the spear and lunges · **Shield bash** — raises the shield and charges, knocking the victim flying · **Javelin** — hurls the spear from afar, then walks over to pull it out of the rubble |
+| Knight | **Joust** — couches the lance and charges; the lance shatters on impact · **Trample** — the horse rears over the victim and crashes down on it · **Sword sweep** — the rider draws his sword and cuts the victim in two at a gallop |
+| Bishop | **Wrath of heaven** — the organ plays the *Dies irae* with a choir, a storm cloud gathers over the victim and lightning strikes it · **Brimstone** — a dark organ chord, a red cloud and burning stones raining down · **Pillar of salt** — a bell tolls three times and the victim turns to salt and crumbles |
+| Rook   | **Siege stomp** — the gatehouse stands up on stone legs, walks over and stamps on the victim · **Dragon fire** — the drawbridge drops, a dragon crawls out of the gate and breathes fire · **Dragon's jaws** — the dragon lunges and bites the victim apart |
+| Queen  | **Throne charge** — the throne rockets across the board and sends the victim flying · **Sceptre smite** — she gets up, walks over and brings the sceptre down in a burst of gold · **Sceptre sweep** — a backhanded sweep that knocks the victim off its feet |
+| King   | **Royal cleave** — he rises, draws his sword overhead and cleaves the victim in two · **Throne ram** — the throne slams into the victim and smashes it · **Sweeping blow** — a level sweep of the sword |
+
+Royals who get up to fight leave their throne behind; it glides after them and
+they sit back down. Men-at-arms march, knights walk, canter and leap (the
+knight's move is a jump), thrones and gatehouses glide with grinding stone;
+when castling, the king's throne swings out in an arc while the gatehouse
+slides past. A promoted man-at-arms
+becomes a queen on her throne in a pillar of light; a mated king rises,
+cracks, topples forward and shatters with his throne.
+
+Sounds of the medieval army: a synthesised pipe organ and choir, thunder,
+storm wind, the dragon's roar and fire, drawbridge chains, grinding stone,
+giant footsteps, hooves and a whinny, a church bell, splintering lances and
+armoured steps.
 
 ## Graphics
 
@@ -154,7 +206,7 @@ few seconds (shown on the loading screen).
 | Ctrl+Q (Mac: ⌘Q) | Quit |
 
 On the Mac every action is also in the menu bar, including the mode, the
-opponent's strength and the graphics quality. ⌃⌘F switches to full screen.
+opponent's strength, the army and the graphics quality. ⌃⌘F switches to full screen.
 
 On iPhone and iPad:
 
@@ -169,7 +221,7 @@ On iPhone and iPad:
 
 The toolbar has New game, Undo, Flip, Reset view, the move list (on iPhone;
 iPad shows it beside the board) and Settings, which holds the mode, opponent,
-battle and camera switches, volume, graphics quality, *Hide Interface* and
+the army (*Pieces*), battle and camera switches, volume, graphics quality, *Hide Interface* and
 *Save Screenshot* (the board without the interface, saved to the Files app).
 The board fills the screen in portrait as well as landscape. On iPad a
 trackpad or mouse also hovers and scrolls to zoom, and a keyboard takes the
@@ -195,6 +247,7 @@ many pixels, and screenshots show the 3D scene without the interface panels.
 --demo                  watch the AI play itself
 --level 0..4            AI strength
 --fen "<FEN>"           start from a position
+--pieces marble|medieval  which army to play with (default marble)
 --mute                  no sound
 --selftest              verify the move generator (perft)
 ```
@@ -202,8 +255,9 @@ many pixels, and screenshots show the 3D scene without the interface panels.
 Capture tools (handy for making videos): `--shot file.png [--frames N]`,
 `--record folder` (writes a PNG per frame at a fixed 30 fps),
 `--battle K` (stages one battle: 0 pawn … 5 king), `--style S` (forces battle
-style 0–2 instead of a random one), `--camera yaw,pitch,dist`,
-`--no-ui`.
+style 0–2 instead of a random one), `--shots t1,t2,...` (screenshots at those
+times, with `--battle K` or with `--fen "<FEN>" --move e2e4` for any move),
+`--camera yaw,pitch,dist`, `--no-ui`. All of them work with `--pieces medieval`.
 
 If the frame rate is low, open *Graphics* in the panel and pick *Medium* or
 *Low* (turns off depth of field, reflections and SSAO and lowers MSAA and the
@@ -217,13 +271,16 @@ shadow map size).
 | `ai.*` | Alpha-beta engine (PVS, transposition table, null-move, LMR, quiescence) on a background thread |
 | `sdf.*` | SDF primitives, lathe profiles, sparse Surface-Nets mesher with baked AO |
 | `meshgen.*` | Sculpts the six pieces, Voronoi fracture chunks, slice halves, the sword, the board |
+| `medieval.h`, `medieval_mesh.cpp` | The medieval army: figures built from blended, painted SDF parts, each bound to a bone; skeletons and skin weights |
+| `medieval_pose.cpp` | Turns animation controls into bone matrices: walking, riding, standing up, drawbridge, dragon |
 | `textures.*` | Bakes the inlaid wooden board (grain, pores, seams, brass, lettering) and 3D noise |
 | `shaders.cpp` | All GLSL: PBR, PCSS, marble, lacquer, IBL generation, SSAO, DoF, bloom, tone mapping |
 | `renderer.*` | Render passes: shadow → reflection → prepass → SSAO → MSAA HDR → DoF → bloom → composite |
 | `animation.*` | The living-piece rig, rigid-body debris, props, lights, cinematic camera |
-| `battle.*` | Choreography for moves, castling, promotion, checkmate and the six battles |
+| `battle.*`, `battle_kit.h` | Choreography for moves, castling, promotion, checkmate and the marble battles |
+| `battle_medieval.cpp` | The medieval army's moves, castling, checkmate and its 18 battles |
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
-| `audio.*` | Procedural sound synthesis and a small real-time mixer (miniaudio) |
+| `audio.*` | Procedural sound synthesis (including a pipe organ and choir) and a small real-time mixer (miniaudio) |
 | `app.*`, `ui.cpp` | Window, game flow, input/picking, Dear ImGui interface |
 
 The native Mac version in `macos/Sources/LivingMarble` is a Swift port of the
@@ -233,10 +290,12 @@ same design:
 |---|---|
 | `Chess.swift`, `AI.swift` | Rules and the alpha-beta engine (as `chess.*`, `ai.*`) |
 | `SDF.swift`, `MeshGen.swift`, `Textures.swift` | Procedural sculpting, fracture and the baked board (as `sdf.*`, `meshgen.*`, `textures.*`) |
+| `Medieval.swift`, `MedievalMesh.swift`, `MedievalPose.swift` | The medieval army, its skeletons and poses (as `medieval*`) |
 | `Shaders.swift` | All Metal Shading Language, compiled at startup |
 | `Renderer.swift` | The same render passes on Metal |
 | `Animation.swift`, `Particles.swift` | The living-piece rig, debris, props, lights, camera and particles |
 | `BattleCore.swift`, `Battles*.swift` | Moves, castling, promotion, checkmate and all 18 battle styles |
+| `BattlesMedieval*.swift` | The medieval army's choreography and battles (as `battle_medieval.cpp`) |
 | `Audio.swift` | Procedural sounds mixed in real time through AVAudioEngine |
 | `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, capture tools |
 | `Interface.swift`, `AppDelegate.swift` | Native SwiftUI interface, window and menu bar |

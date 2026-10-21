@@ -5,12 +5,15 @@ import simd
 /// Signed distance field: negative inside.
 typealias SDFFn = (vec3) -> Float
 
-/// Stride 48 bytes: pos @0, nrm @16, ao @32, aux @36 (matches the Metal vertex descriptor).
+/// Stride 48 bytes: pos @0, nrm @16, ao @32, aux @36, bones @40, mat @44
+/// (matches the Metal vertex descriptor).
 struct Vertex {
   var pos: vec3
   var nrm: vec3
   var ao: Float   // baked ambient occlusion (1 = open)
   var aux: Float  // fragment: 1 on fresh fracture faces; sword: material id
+  var bones: Float = 0  // skinned meshes: bone0 + 64 * bone1
+  var mat: Float = 0    // medieval pieces: material id + 0.998 * weight of bone0
   init(pos: vec3, nrm: vec3, ao: Float = 1, aux: Float = 0) {
     self.pos = pos
     self.nrm = nrm

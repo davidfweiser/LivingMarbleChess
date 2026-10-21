@@ -449,11 +449,12 @@ enum MeshGen {
     return (lo, hi)
   }
 
-  /// Breaks the piece into Voronoi cells (with domain-warped borders so the
-  /// cracks aren't perfectly planar) and meshes each cell as its own fragment.
-  private static func voronoiShatter(_ kind: Int, _ nSeeds: Int, _ seedVal: UInt32, _ cell: Float) -> [Fragment] {
-    let F = pieceField(kind)
-    let (lo, hi) = pieceBounds(kind)
+  /// Breaks a solid inside [lo, hi] into Voronoi cells (with domain-warped borders
+  /// so the cracks aren't perfectly planar) and meshes each cell as its own fragment.
+  /// 'skin' (optional) fills each vertex's material while it is still in piece space
+  /// (shared with the medieval set).
+  static func voronoiShatter(_ F: @escaping SDFFn, _ lo: vec3, _ hi: vec3, _ nSeeds: Int, _ seedVal: UInt32,
+                             _ cell: Float, skin: ((inout Vertex) -> Void)? = nil) -> [Fragment] {
     var rng = MT19937(seedVal)
     var seeds: [vec3] = []
     var minD: Float = 0.10
@@ -527,6 +528,7 @@ enum MeshGen {
       o.newtonSteps = 2
       // fresh fracture faces (inside the original surface) get aux = 1
       o.aux = { p in clamp((-F(p) - 0.0015) / 0.004, 0, 1) }
+      o.skin = skin
       let m = polygonize(frag, o)
       if m.idx.count < 60 { continue }
       let fr = finishFragment(m)
@@ -536,10 +538,9 @@ enum MeshGen {
     return out
   }
 
-  /// Cuts the piece in two along the plane through p0 with normal n.
-  private static func sliceHalves(_ kind: Int, _ n: vec3, _ p0: vec3, _ cell: Float) -> [Fragment] {
-    let F = pieceField(kind)
-    let (lo, hi) = pieceBounds(kind)
+  /// Cuts a solid inside [lo, hi] in two along the plane through p0 with normal n.
+  static func sliceHalves(_ F: @escaping SDFFn, _ lo: vec3, _ hi: vec3, _ n: vec3, _ p0: vec3, _ cell: Float,
+                          skin: ((inout Vertex) -> Void)? = nil) -> [Fragment] {
     var out: [Fragment] = []
     for s in stride(from: -1, through: 1, by: 2) {
       let fs = Float(s)
@@ -554,6 +555,7 @@ enum MeshGen {
       o.computeAO = true
       o.aoRadius = 0.12
       o.aux = { p in clamp((-F(p) - 0.0015) / 0.004, 0, 1) }
+      o.skin = skin
       let m = polygonize(frag, o)
       out.append(finishFragment(m))
     }
@@ -682,11 +684,12 @@ enum MeshGen {
       o.newtonSteps = 3
       A.lod1 = polygonize(F, o)
       tick("Sculpting marble")
-      A.shards = voronoiShatter(k, seeds[k], 1234 + 77 * UInt32(k), cs[quality])
+      let (lo, hi) = pieceBounds(k)
+      A.shards = voronoiShatter(F, lo, hi, seeds[k], 1234 + 77 * UInt32(k), cs[quality])
       tick("Planning fractures")
       A.sliceN = normalize(vec3(0.78, 0.62, 0.0))
       A.slicePoint = vec3(0, A.height * 0.52, 0)
-      A.halves = sliceHalves(k, A.sliceN, A.slicePoint, cs[quality])
+      A.halves = sliceHalves(F, lo, hi, A.sliceN, A.slicePoint, cs[quality])
       tick("Planning fractures")
       lib.piece[k] = A
     }

@@ -25,7 +25,7 @@ struct PieceGpu {
 }
 
 enum Material: Int32 {
-  case white = 0, black = 1, sword = 2, iron = 3
+  case white = 0, black = 1, sword = 2, iron = 3, medieval = 4
 }
 
 struct DrawItem {
@@ -42,9 +42,12 @@ struct DrawItem {
   var dissolve: Float = 0
   var dissolveColor = vec3(1.0, 0.8, 0.4)
   var heat: Float = 0
+  var stone: Float = 0  // medieval: turned to salt
   var castShadow = true
   var reflect = true
   var groundAO = true
+  var bones: [mat4] = []  // skinned meshes (medieval figures), at most Medieval.maxBones
+  var team: Int32 = 0     // medieval: 0 white army, 1 black army
 }
 
 struct PointLight {

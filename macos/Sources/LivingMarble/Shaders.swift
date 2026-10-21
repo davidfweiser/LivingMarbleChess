@@ -77,7 +77,10 @@ struct DrawU {
   float crack;
   float heat;
   float groundAO;
-  int mat;           // 0 white marble, 1 black marble, 2 sword, 3 iron
+  int mat;           // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure
+  int team;          // medieval: 0 white army, 1 black army
+  int boneCount;     // > 0: skinned
+  float stone;       // medieval: turned to salt
 };
 
 // board-only parameters (occluders, rings and the 8x8 state live in their own buffers)
@@ -259,14 +262,18 @@ struct MeshIn {
   float3 nrm [[attribute(1)]];
   float ao [[attribute(2)]];
   float aux [[attribute(3)]];
+  float bones [[attribute(4)]];  // bone0 + 64 * bone1
+  float mat [[attribute(5)]];    // material + 0.998 * weight of bone0
 };
 struct MeshOut {
   float4 position [[position]];
   float3 world;
   float3 nrm;
   float3 obj;
+  float3 objN;
   float ao;
   float aux;
+  float mat [[flat]];
   float clip [[clip_distance]] [1];
 };
 // same varyings without the clip distance (fragment stage_in can't take it)
@@ -275,8 +282,10 @@ struct MeshFrag {
   float3 world;
   float3 nrm;
   float3 obj;
+  float3 objN;
   float ao;
   float aux;
+  float mat [[flat]];
 };
 
 float3 deform(float3 p, thread float3& n, float4 rig, float rigH) {
@@ -312,16 +321,30 @@ float3 deform(float3 p, thread float3& n, float4 rig, float rigH) {
   return p;
 }
 
-vertex MeshOut meshVS(MeshIn in [[stage_in]], constant DrawU& d [[buffer(1)]], constant PassU& u [[buffer(2)]]) {
+// bones: the skinning palette (at least one matrix is always bound)
+vertex MeshOut meshVS(MeshIn in [[stage_in]], constant DrawU& d [[buffer(1)]], constant PassU& u [[buffer(2)]],
+                      constant float4x4* bones [[buffer(3)]]) {
   float3 n = in.nrm;
-  float3 p = deform(in.pos, n, d.rig, d.rigH);
+  float3 p = in.pos;
+  if (d.boneCount > 0) {
+    float b1 = floor(in.bones / 64.0 + 0.001);
+    float b0 = in.bones - 64.0 * b1;
+    float w0 = clamp(fract(in.mat) / 0.998, 0.0, 1.0);
+    int i0 = clamp(int(b0 + 0.5), 0, d.boneCount - 1), i1 = clamp(int(b1 + 0.5), 0, d.boneCount - 1);
+    float4x4 M = bones[i0] * w0 + bones[i1] * (1.0 - w0);
+    p = (M * float4(p, 1.0)).xyz;
+    n = float3x3(M[0].xyz, M[1].xyz, M[2].xyz) * n;
+  }
+  p = deform(p, n, d.rig, d.rigH);
   float4 w = d.model * float4(p, 1.0);
   MeshOut o;
   o.world = w.xyz;
   o.nrm = float3x3(d.model[0].xyz, d.model[1].xyz, d.model[2].xyz) * n;
   o.obj = in.pos;
+  o.objN = in.nrm;
   o.ao = in.ao;
   o.aux = in.aux;
+  o.mat = floor(in.mat + 0.0001);
   o.position = u.viewProj * w;
   o.clip[0] = (u.clip == 1) ? (w.y + 0.002) : 1.0;
   return o;
@@ -357,6 +380,172 @@ fragment float4 prepassFS(MeshFrag in [[stage_in]], bool front [[front_facing]],
 // ===========================================================================
 extension Shaders {
   fileprivate static let mslObject = #"""
+float hash13(float3 p) {
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+// GLSL's mod (floored), unlike fmod
+float gmod(float x, float y) { return x - y * floor(x / y); }
+
+// Painted medieval figures: every vertex carries one of these materials.
+// The white army wears ivory and azure over bright steel; the black army
+// sable and gules over blackened steel.
+void medievalSurface(int id, bool black, float3 o, float3 on, float aux, float3 texOffset, float3 V,
+                     texture3d<float> noise, thread float3& albedo, thread float& rough, thread float& metal,
+                     thread float& wrap, thread float3& sss, thread float3& N, thread float3& emissive,
+                     thread float& specOcc) {
+  float n1 = noise.sample(sNoise, o * 3.1 + texOffset * 0.13).r;
+  float n2 = noise.sample(sNoise, o * 11.0 + texOffset * 0.07).g;
+  float n3 = noise.sample(sNoise, o * 37.0).b;
+  if (id == 0) {  // stone: ashlar courses with mortar joints
+    float3 an = abs(on);
+    float u = an.x > an.z ? o.z : o.x;
+    if (an.y > 0.8) u = o.x + o.z * 0.3;
+    float h = 0.052;
+    float row = floor(o.y / h);
+    float uu = u / 0.095 + 0.5 * gmod(row, 2.0);
+    float fy = fract(o.y / h), fu = fract(uu);
+    float joint = 1.0 - smoothstep(0.0, 0.06, min(min(fy, 1.0 - fy) * h / 0.095, min(fu, 1.0 - fu)));
+    if (an.y > 0.8) joint *= 0.3;
+    float blockVar = hash13(float3(floor(uu), row, 7.0)) - 0.5;
+    float3 base = black ? float3(0.12, 0.115, 0.11) : float3(0.70, 0.66, 0.58);
+    albedo = base * (0.86 + 0.22 * n1 + 0.2 * blockVar + 0.12 * (n2 - 0.5));
+    albedo = mix(albedo, black ? float3(0.07) : float3(0.48, 0.45, 0.40), joint * 0.75);
+    rough = 0.82 + 0.1 * n2;
+    N = normalize(N + (float3(n2, n3, n1) - 0.5) * 0.35);
+    specOcc = 0.6;
+  } else if (id == 1) {  // wood
+    float g = noise.sample(sNoise, float3(o.x * 9.0, o.y * 1.2, o.z * 9.0) + texOffset * 0.1).r;
+    float ring = abs(fract(g * 7.0) - 0.5) * 2.0;
+    float3 base = black ? float3(0.055, 0.036, 0.026) : float3(0.48, 0.33, 0.19);
+    albedo = base * (0.75 + 0.35 * ring + 0.15 * n2);
+    rough = black ? 0.32 : 0.48;
+    rough += 0.1 * n3;
+  } else if (id == 2 || id == 12 || id == 13) {  // steel, mail, wrought iron
+    metal = 1.0;
+    if (id == 13) {
+      albedo = float3(0.09, 0.085, 0.085) * (0.8 + 0.5 * n1);
+      albedo = mix(albedo, float3(0.18, 0.07, 0.03), smoothstep(0.55, 0.8, n2) * 0.6);
+      rough = 0.55 + 0.2 * n3;
+      metal = 0.75;
+    } else {
+      albedo = black ? float3(0.13, 0.13, 0.145) : float3(0.64, 0.64, 0.66);
+      albedo *= 0.88 + 0.2 * n1;
+      rough = (black ? 0.34 : 0.2) + 0.12 * n2;
+      if (id == 12) {  // chain mail: little rings
+        float2 q = float2(o.x + o.z, o.y) / 0.0075;
+        q.x += 0.5 * gmod(floor(q.y), 2.0);
+        float2 f = fract(q) - 0.5;
+        float ringD = abs(length(f) - 0.32);
+        float rr = 1.0 - smoothstep(0.06, 0.16, ringD);
+        albedo *= 0.35 + 0.75 * rr;
+        rough = mix(0.6, rough + 0.05, rr);
+        N = normalize(N + float3(f.x, 0.0, f.y) * rr * 0.6);
+      }
+    }
+  } else if (id == 3) {  // gold
+    albedo = float3(1.0, 0.74, 0.32) * (0.9 + 0.15 * n1);
+    metal = 1.0;
+    rough = 0.2 + 0.1 * n2;
+  } else if (id == 4 || id == 5 || id == 18 || id == 20) {  // cloth, heraldic cloth, velvet, linen
+    float3 base;
+    if (id == 4) base = black ? float3(0.04, 0.038, 0.037) : float3(0.76, 0.73, 0.65);
+    else if (id == 5) base = black ? float3(0.36, 0.05, 0.04) : float3(0.075, 0.14, 0.33);
+    else if (id == 18) base = black ? float3(0.26, 0.02, 0.035) : float3(0.05, 0.07, 0.26);
+    else base = float3(0.84, 0.82, 0.76);
+    float weave = 0.92 + 0.08 * sin(o.x * 2600.0) * sin(o.y * 2600.0);
+    albedo = base * (0.85 + 0.25 * n1) * weave;
+    rough = id == 18 ? 0.7 : 0.88;
+    wrap = 0.35;
+    float NoV = saturate(dot(N, V));
+    emissive += base * pow(1.0 - NoV, 3.0) * (id == 18 ? 0.5 : 0.18);  // fabric sheen
+    specOcc = 0.5;
+  } else if (id == 6) {  // skin
+    albedo = float3(0.60, 0.40, 0.30) * (0.92 + 0.12 * n1);
+    rough = 0.6;
+    wrap = 0.45;
+    sss = float3(1.0, 0.4, 0.25) * 1.0;
+  } else if (id == 7) {  // hair: a colour per figure
+    float h = hash13(floor(texOffset * 3.0) + 0.5);
+    float3 c = h < 0.3 ? float3(0.12, 0.07, 0.035) : (h < 0.55 ? float3(0.32, 0.17, 0.07) :
+               (h < 0.75 ? float3(0.55, 0.42, 0.22) : float3(0.6, 0.58, 0.55)));
+    float strand = noise.sample(sNoise, float3(o.x * 60.0, o.y * 8.0, o.z * 60.0)).r;
+    albedo = c * (0.7 + 0.5 * strand);
+    rough = 0.55;
+  } else if (id == 8) {  // horse coat
+    if (black) {
+      albedo = float3(0.035, 0.03, 0.028) * (0.8 + 0.4 * n1);
+      rough = 0.38;
+    } else {
+      float dap = smoothstep(0.45, 0.62, noise.sample(sNoise, o * 7.0 + texOffset * 0.1).g);
+      albedo = mix(float3(0.66, 0.64, 0.61), float3(0.42, 0.41, 0.40), dap * 0.6) * (0.92 + 0.1 * n2);
+      rough = 0.5;
+    }
+    wrap = 0.2;
+  } else if (id == 9) {  // leather
+    albedo = float3(0.21, 0.115, 0.06) * (0.75 + 0.4 * n1);
+    rough = 0.5 + 0.15 * n2;
+  } else if (id == 10) {  // ermine
+    float2 q = float2(o.x + o.z, o.y) / 0.04;
+    q.x += 0.5 * gmod(floor(q.y), 2.0);
+    float spot = 1.0 - smoothstep(0.08, 0.14, length(fract(q) - 0.5) - 0.0);
+    albedo = mix(float3(0.9, 0.89, 0.85) * (0.9 + 0.1 * n2), float3(0.02), spot);
+    rough = 0.95;
+    wrap = 0.4;
+  } else if (id == 11) {  // gems
+    albedo = black ? float3(0.6, 0.02, 0.04) : float3(0.05, 0.12, 0.7);
+    rough = 0.06;
+    emissive += albedo * 0.25;
+  } else if (id == 14) {  // dragon scales
+    float2 q = float2(atan2(o.x, o.z) * 0.08 + o.x * 0.3, o.y) / 0.022;
+    q.x += 0.5 * gmod(floor(q.y), 2.0);
+    float2 f = fract(q) - float2(0.5, 0.2);
+    float sc = smoothstep(0.55, 0.2, length(f * float2(1.0, 1.4)));
+    float3 base = black ? float3(0.09, 0.022, 0.02) : float3(0.42, 0.30, 0.08);
+    albedo = base * (0.55 + 0.6 * sc) * (0.85 + 0.3 * n1);
+    metal = black ? 0.2 : 0.55;
+    rough = 0.35 + 0.2 * (1.0 - sc);
+    N = normalize(N + float3(f.x, 0.0, f.y) * 0.5 * sc);
+  } else if (id == 15) {  // wing membrane
+    albedo = (black ? float3(0.22, 0.03, 0.025) : float3(0.5, 0.27, 0.1)) * (0.8 + 0.3 * n1);
+    rough = 0.6;
+    wrap = 0.6;
+    sss = black ? float3(1.0, 0.2, 0.1) * 2.0 : float3(1.0, 0.6, 0.2) * 2.0;
+  } else if (id == 16) {  // horn, teeth, claws
+    albedo = float3(0.82, 0.76, 0.62) * (0.85 + 0.2 * n1);
+    rough = 0.38;
+  } else if (id == 17) {  // dragon eye
+    albedo = float3(0.05);
+    rough = 0.1;
+    emissive += float3(4.0, 2.2, 0.4);
+  } else if (id == 19) {  // shadowy interior
+    albedo = float3(0.012, 0.01, 0.009);
+    rough = 0.95;
+    specOcc = 0.0;
+  } else if (id == 22) {  // mane and tail
+    float strand = noise.sample(sNoise, float3(o.x * 70.0, o.y * 6.0, o.z * 70.0)).r;
+    albedo = (black ? float3(0.025, 0.022, 0.02) : float3(0.72, 0.70, 0.66)) * (0.65 + 0.6 * strand);
+    rough = 0.5;
+  } else if (id == 21) {  // slate roof: overlapping shingles
+    float row = floor(o.y / 0.022);
+    float u = atan2(o.x, o.z) * 0.12 / 0.018 + 0.5 * gmod(row, 2.0);
+    float edge = smoothstep(0.75, 1.0, fract(o.y / 0.022)) +
+                 0.6 * (1.0 - smoothstep(0.0, 0.08, abs(fract(u) - 0.5) - 0.42));
+    float3 base = black ? float3(0.07, 0.07, 0.08) : float3(0.22, 0.24, 0.27);
+    albedo = base * (0.8 + 0.3 * hash13(float3(floor(u), row, 3.0))) * (1.0 - 0.45 * saturate(edge));
+    rough = 0.55;
+  }
+  // fresh fracture faces: the plaster inside the paint
+  if (aux > 0.0) {
+    float3 broken = black ? float3(0.11, 0.105, 0.1) : float3(0.84, 0.82, 0.78);
+    albedo = mix(albedo, broken * (0.85 + 0.3 * n3), aux);
+    rough = mix(rough, 0.85, aux);
+    metal = mix(metal, 0.0, aux);
+    sss *= 1.0 - aux;
+  }
+}
+
 fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], LIGHT_BINDINGS,
                          constant DrawU& d [[buffer(1)]], texture3d<float> noise [[texture(5)]]) {
   float2 fragCoord = in.position.xy;
@@ -364,6 +553,7 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
   if (!front) N = -N;
   float3 V = normalize(u.camPos - in.world);
   float3 emissive = float3(0.0);
+  float specOcc = 1.0;
   if (kDissolve && d.dissolve > 0.0) {
     float edge = dissolveField(in.obj, d.texOffset, noise) - d.dissolve;
     if (edge < 0.0) discard_fragment();
@@ -420,12 +610,29 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
       albedo = float3(0.06, 0.03, 0.02);
       rough = 0.55;
     }
-  } else {
+  } else if (d.mat == 3) {
     float g = noise.sample(sNoise, in.obj * 6.0).r;
     albedo = float3(0.06, 0.06, 0.065) * (0.7 + 0.6 * g);
     metalness = 0.85;
     rough = 0.42 + 0.2 * g;
     emissive += float3(1.0, 0.33, 0.07) * d.heat * (0.6 + 0.8 * g) * 4.0;
+  } else {
+    medievalSurface(int(in.mat + 0.5), d.team == 1, in.obj, normalize(in.objN), in.aux, d.texOffset, V, noise, albedo,
+                    rough, metalness, wrap, sss, N, emissive, specOcc);
+    if (d.stone > 0.0) {  // turning to salt: pale, crystalline, glittering
+      float g = noise.sample(sNoise, in.obj * 18.0 + d.texOffset * 0.3).r;
+      float front = smoothstep(0.0, 0.15, d.stone * 1.3 - (1.0 - saturate(in.obj.y / 1.3)) * 0.3 - g * 0.15);
+      albedo = mix(albedo, float3(0.88, 0.87, 0.84) * (0.85 + 0.25 * g), front);
+      rough = mix(rough, 0.75, front);
+      metalness = mix(metalness, 0.0, front);
+      wrap = mix(wrap, 0.3, front);
+      emissive += float3(1.0, 0.95, 0.85) * front * pow(g, 12.0) * 6.0 * d.stone;
+    }
+    if (d.heat > 0.0) {  // scorched by dragon fire
+      float g = noise.sample(sNoise, in.obj * 5.0 + d.texOffset * 0.2).r;
+      albedo *= 1.0 - 0.85 * saturate(d.heat * 1.5);
+      emissive += float3(1.0, 0.3, 0.05) * saturate(d.heat * 1.4 - 0.3) * (0.4 + 1.2 * g) * 5.0;
+    }
   }
   if (d.crack > 0.0) {
     float c = noise.sample(sNoise, in.obj * 1.4 + d.texOffset * 0.2).a;
@@ -456,7 +663,7 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
   s.ao = ao;
   s.wrap = wrap;
   s.sss = sss;
-  s.specOcc = 1.0;
+  s.specOcc = specOcc;
   float3 col = shadeSurface(s, sh, thick, LIGHT_ARGS) + emissive;
   return float4(col, 1.0);
 }

@@ -41,6 +41,13 @@ final class GameController: NSObject, MTKViewDelegate {
   private let queue: MTLCommandQueue
   private let lib = Library()
   private let progress = BuildProgress()
+  // the medieval army (built in the background the first time it is chosen)
+  private let mlib = MedievalLibrary()
+  private let mprogress = BuildProgress()
+  private var mReady = false     // mlib is complete (set on the main thread)
+  private var mBuilding = false  // a background build is running
+  private(set) var pieceSet = 0  // 0 Living Marble, 1 medieval
+  private var pendingSet = -1    // switch to this set once no move is being animated
   private var boardAlbedo = TexImage(), boardDetail = TexImage()
   private var assetsReady = false
   private var loading = true
@@ -86,7 +93,7 @@ final class GameController: NSObject, MTKViewDelegate {
     queue = q
     renderer = r
     view = GameView(frame: CGRect(x: 0, y: 0, width: o.width, height: o.height), device: dev)
-    fixedStep = !o.shotPath.isEmpty || !o.recordDir.isEmpty || o.battle >= 0
+    fixedStep = !o.shotPath.isEmpty || !o.recordDir.isEmpty || o.battle >= 0 || !o.shotTimes.isEmpty
     super.init()
 
     model.gfxPreset = clamp(o.gfxPreset, 0, 3)
@@ -112,6 +119,7 @@ final class GameController: NSObject, MTKViewDelegate {
       print("[audio] no audio device - running silent")
     }
     world.lib = lib
+    world.mlib = mlib
     world.reset()
     loadAssets()
 #if os(macOS)
@@ -133,18 +141,61 @@ final class GameController: NSObject, MTKViewDelegate {
 
   private func loadAssets() {
     let lib = self.lib, progress = self.progress, quality = opt.quality
+    let mlib = self.mlib, medieval = opt.pieces == 1
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
       MeshGen.buildLibrary(lib, quality: quality, progress: progress)
       progress.stage = "Inlaying the board"
       let res = quality == 0 ? 1024 : (quality == 1 ? 2048 : 4096)
       let board = Textures.bakeBoard(res: res, half: lib.boardHalf)
+      if medieval {
+        // starting with the medieval army: raise it before the game begins
+        progress.stage = "Raising the medieval army"
+        Medieval.buildLibrary(mlib, quality: quality, progress: nil)
+      }
       DispatchQueue.main.async {
         guard let self else { return }
         self.boardAlbedo = board.albedo
         self.boardDetail = board.detail
+        if medieval { self.mReady = true }
         self.assetsReady = true
       }
     }
+  }
+
+  private func startMedievalBuild() {
+    if mBuilding || mReady { return }
+    mBuilding = true
+    let mlib = self.mlib, mprogress = self.mprogress, quality = opt.quality
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      Medieval.buildLibrary(mlib, quality: quality, progress: mprogress)
+      DispatchQueue.main.async { self?.mReady = true }
+    }
+  }
+
+  /// 0 Living Marble, 1 medieval (built in the background on first use).
+  func setPieceSet(_ which: Int) {
+    let s = which == 1 ? 1 : 0
+    model.pieceSet = s
+    if s == pieceSet && pendingSet < 0 { return }
+    if s == 1 && !renderer.medievalReady { startMedievalBuild() }
+    pendingSet = s
+  }
+
+  /// Swaps every piece for its counterpart in the other army; they materialise in place.
+  private func applyPieceSet(_ s: Int) {
+    pieceSet = s
+    pendingSet = -1
+    world.pieceSet = s
+    world.stopFidgets()
+    for a in world.actors where a.alive {
+      a.set = s
+      a.tilt = quat.identity
+      a.resetControls()
+      a.dissolve = 1
+      a.dissolveVel = -world.fx.rnd(1.1, 1.6)
+      a.dissolveColor = s == 1 ? vec3(1.0, 0.62, 0.25) : vec3(1.0, 0.75, 0.35)
+    }
+    world.sound(.chime, 0.6, vec3(0), s == 1 ? 0.75 : 1)
   }
 
   // ---------------------------------------------------------------------------
@@ -596,6 +647,12 @@ final class GameController: NSObject, MTKViewDelegate {
     boardDetail = TexImage()
     loading = false
     model.loading = false
+    if mReady {
+      renderer.uploadMedieval(mlib)
+      pieceSet = 1
+      world.pieceSet = 1
+      model.pieceSet = 1
+    }
     if opt.hasCam {
       world.cam.yaw = opt.camYaw
       world.cam.pitch = opt.camPitch
@@ -604,7 +661,7 @@ final class GameController: NSObject, MTKViewDelegate {
     }
     if opt.battle >= 0 {
       setupBattleDemo()
-    } else if !opt.shotPath.isEmpty || !opt.recordDir.isEmpty {
+    } else if !opt.shotPath.isEmpty || !opt.recordDir.isEmpty || !opt.shotTimes.isEmpty {
       setupScenario()
       model.mode = opt.demo ? .watch : .twoPlayer
       if opt.forceMove.count >= 4 {
@@ -668,6 +725,13 @@ final class GameController: NSObject, MTKViewDelegate {
       }
     }
 
+    // the medieval army finished building in the background
+    if mBuilding && mReady {
+      mBuilding = false
+      renderer.uploadMedieval(mlib)
+    }
+    if pendingSet >= 0 && anims.isEmpty && (pendingSet == 0 || renderer.medievalReady) { applyPieceSet(pendingSet) }
+
     handleInput(dt)
     world.cinematic = model.cinematic
     let sdt = world.beginFrame(dt)
@@ -695,7 +759,8 @@ final class GameController: NSObject, MTKViewDelegate {
       }
     }
     updateGame(sdt)
-    world.fidgetAllowed = anims.isEmpty && !model.promoPending && opt.battle < 0 && opt.shotPath.isEmpty
+    world.fidgetAllowed = anims.isEmpty && !model.promoPending && opt.battle < 0 && opt.shotPath.isEmpty &&
+      opt.shotTimes.isEmpty
     world.excludeFidget = selected >= 0 ? world.actorAt[selected] : -1
     world.simulate(sdt)
     world.cam.evaluate(dt, world.trauma, Float(CACurrentMediaTime() - startTime))
@@ -720,7 +785,7 @@ final class GameController: NSObject, MTKViewDelegate {
       shots.append(p)
       userShot = p
     }
-    if opt.battle >= 0 {
+    if opt.battle >= 0 || !opt.shotTimes.isEmpty {
       battleTime += sdt
       while nextShot < opt.shotTimes.count && battleTime >= opt.shotTimes[nextShot] {
         shots.append(String(format: "%@_%02d.png", opt.shotPrefix, nextShot))
@@ -729,9 +794,9 @@ final class GameController: NSObject, MTKViewDelegate {
       if !opt.recordDir.isEmpty { shots.append(String(format: "%@/frame_%04d.png", opt.recordDir, frameCount)) }
       let shotsDone = nextShot >= opt.shotTimes.count
       if anims.isEmpty && battleTime > 1 { idleAfter += sdt }
-      if (shotsDone && opt.recordDir.isEmpty) || idleAfter > (opt.recordDir.isEmpty ? 0 : 1.3) || frameCount > 3000 {
-        quitRequested = true
-      }
+      // a staged battle ends with its animation; timed shots of a move wait for every shot
+      let idleQuit = opt.battle >= 0 && idleAfter > (opt.recordDir.isEmpty ? 0 : 1.3)
+      if (shotsDone && opt.recordDir.isEmpty) || idleQuit || frameCount > 3000 { quitRequested = true }
     } else if !opt.recordDir.isEmpty {
       shots.append(String(format: "%@/frame_%04d.png", opt.recordDir, frameCount))
       if frameCount >= opt.frames { quitRequested = true }
@@ -770,7 +835,8 @@ final class GameController: NSObject, MTKViewDelegate {
     sv.time = world.time
     sv.exposure = model.exposure
     sv.flash = world.flash
-    world.buildDrawItems(renderer.pieces, renderer.sword, renderer.cannonball, &sv.items)
+    world.buildDrawItems(renderer.pieces, renderer.medievalReady ? renderer.medieval : nil, renderer.sword,
+                         renderer.cannonball, &sv.items)
     world.collectLights(&sv.lights)
     world.fx.collect(&sv.particles)
     world.collectOccluders(&sv.occluders)
@@ -811,6 +877,8 @@ final class GameController: NSObject, MTKViewDelegate {
     set(\.bannerPermanent, bannerTime > 1e8)
     set(\.bannerAlpha, showBanner ? Double(min(1, bannerTime)) : 0)
     if frameCount % 30 == 0 { set(\.fps, Int(fps.rounded())) }
+    set(\.medievalBuilding, mBuilding)
+    if mBuilding { set(\.medievalProgress, min(1, Double(mprogress.done) / Double(max(1, mprogress.total)))) }
   }
 
   private func clear(_ cb: MTLCommandBuffer, _ target: MTLTexture) {
@@ -948,6 +1016,7 @@ extension GameController: NSMenuItemValidation {
     if let m = Mode(rawValue: sender.tag) { setMode(m) }
   }
   @objc func levelAction(_ sender: NSMenuItem) { model.aiLevel = sender.tag }
+  @objc func piecesAction(_ sender: NSMenuItem) { if !loading { setPieceSet(sender.tag) } }
   @objc func qualityAction(_ sender: NSMenuItem) { applyGraphicsPreset(sender.tag) }
 
   func validateMenuItem(_ item: NSMenuItem) -> Bool {
@@ -963,6 +1032,9 @@ extension GameController: NSMenuItemValidation {
       return model.mode != .twoPlayer
     case #selector(qualityAction(_:)):
       item.state = model.gfxPreset == item.tag ? .on : .off
+    case #selector(piecesAction(_:)):
+      item.state = model.pieceSet == item.tag ? .on : .off
+      return !loading
     case #selector(toggleBattlesAction(_:)):
       item.state = model.battles ? .on : .off
     case #selector(toggleCinematicAction(_:)):

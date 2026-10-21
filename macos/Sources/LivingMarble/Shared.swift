@@ -32,6 +32,23 @@ enum Sfx: Int, CaseIterable {
   case mate      // checkmate gong
   case debris    // small chunk bounce
   case rumble    // low rumble
+  // the medieval army
+  case hymn      // pipe organ and choir: the Dies irae
+  case organ     // one dark organ chord
+  case thunder   // lightning crack and rolling thunder
+  case wind      // storm wind
+  case roar      // dragon roar
+  case fire      // dragon fire breath
+  case chain     // drawbridge chains and creaking timber
+  case grind     // stone grinding as the gatehouse slides
+  case stomp     // a giant stone footstep
+  case hoof      // a hoof on the board
+  case neigh     // a horse's whinny
+  case bell      // church bell
+  case splinter  // a lance shattering
+  case armor     // armoured footstep
+  case slide     // a throne sliding over the board
+  case bite      // jaws crunching stone
 }
 
 /// CPU-side image (2D or 3D), 8 bits per channel.

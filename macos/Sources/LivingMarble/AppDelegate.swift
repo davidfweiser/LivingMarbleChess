@@ -96,6 +96,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let oppItem = NSMenuItem(title: "Opponent", action: nil, keyEquivalent: "")
     oppItem.submenu = opponent
     game.addItem(oppItem)
+    let pieces = NSMenu(title: "Pieces")
+    for (i, name) in ["Living Marble", "Medieval"].enumerated() {
+      add(pieces, name, #selector(GameController.piecesAction(_:)), tag: i, target: c)
+    }
+    let piecesItem = NSMenuItem(title: "Pieces", action: nil, keyEquivalent: "")
+    piecesItem.submenu = pieces
+    game.addItem(piecesItem)
     game.addItem(.separator())
     // single-letter shortcuts are handled by the game itself; listing them documents them
     add(game, "Battle Animations", #selector(GameController.toggleBattlesAction(_:)), "b", [], target: c)

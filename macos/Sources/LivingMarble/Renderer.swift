@@ -44,6 +44,9 @@ extension Renderer {
     var heat: Float = 0
     var groundAO: Float = 1
     var mat: Int32 = 0
+    var team: Int32 = 0       // medieval: 0 white army, 1 black army
+    var boneCount: Int32 = 0  // > 0: skinned (bones in vertex buffer 3)
+    var stone: Float = 0      // medieval: turned to salt
 
     init() {}
     init(_ it: DrawItem) {
@@ -59,6 +62,9 @@ extension Renderer {
       heat = it.heat
       groundAO = it.groundAO ? 1 : 0
       mat = it.material.rawValue
+      team = it.team
+      boneCount = Int32(min(it.bones.count, Medieval.maxBones))
+      stone = it.stone
     }
   }
 
@@ -195,6 +201,10 @@ final class Renderer {
   var pieces = (0..<Kind.count).map { _ in PieceGpu() }
   var sword = GpuMesh(), cannonball = GpuMesh(), board = GpuMesh()
   var libraryReady = false
+  var medieval = (0..<MAsset.count).map { _ in PieceGpu() }
+  var medievalReady = false
+  /// Bound as the bone palette of meshes that are not skinned.
+  private var restBones = [mat4.identity]
 
   // Shadow depth bias (GL: glPolygonOffset(1.5, 3.0) on a 24-bit buffer). Metal's
   // constant unit on depth32Float is 2^(exponent - 23) of the primitive's depth: 2^-25
@@ -261,7 +271,7 @@ final class Renderer {
     memoryless = device.supportsFamily(.apple1)
     info = "\(device.name) | Metal | \(device.hasUnifiedMemory ? "unified memory" : "discrete memory")"
 
-    // Vertex: pos float3 @0, nrm float3 @16, ao float @32, aux float @36, stride 48
+    // Vertex: pos float3 @0, nrm float3 @16, ao float @32, aux float @36, bones float @40, mat float @44, stride 48
     meshLayout.attributes[0].format = .float3
     meshLayout.attributes[0].offset = 0
     meshLayout.attributes[1].format = .float3
@@ -270,7 +280,11 @@ final class Renderer {
     meshLayout.attributes[2].offset = 32
     meshLayout.attributes[3].format = .float
     meshLayout.attributes[3].offset = 36
-    for i in 0..<4 { meshLayout.attributes[i].bufferIndex = 0 }
+    meshLayout.attributes[4].format = .float
+    meshLayout.attributes[4].offset = 40
+    meshLayout.attributes[5].format = .float
+    meshLayout.attributes[5].offset = 44
+    for i in 0..<6 { meshLayout.attributes[i].bufferIndex = 0 }
     meshLayout.layouts[0].stride = MemoryLayout<Vertex>.stride
 
     do {
@@ -607,6 +621,25 @@ final class Renderer {
     libraryReady = true
   }
 
+  func uploadMedieval(_ lib: MedievalLibrary) {
+    for k in 0..<MAsset.count {
+      let A = lib.asset[k]
+      medieval[k].lod0.upload(A.lod0, device: device)
+      medieval[k].lod1.upload(A.lod1, device: device)
+      medieval[k].shards = A.shards.map { f in
+        let g = GpuMesh()
+        g.upload(f.mesh, device: device)
+        return g
+      }
+      medieval[k].halves = A.halves.map { f in
+        let g = GpuMesh()
+        g.upload(f.mesh, device: device)
+        return g
+      }
+    }
+    medievalReady = true
+  }
+
   func uploadBoardTextures(albedo: TexImage, detail: TexImage, half: Float) {
     // trilinear + 8x anisotropy comes from the sBoard sampler in the shader
     if let a = uploadImage(albedo, format: .rgba8Unorm_srgb, mipmapped: true, label: "board albedo") { boardAlbedo = a }
@@ -714,7 +747,15 @@ final class Renderer {
       }
       enc.setVertexBytes(&du, length: MemoryLayout<DrawUniforms>.stride, index: 1)
       enc.setFragmentBytes(&du, length: MemoryLayout<DrawUniforms>.stride, index: 1)
+      setBones(enc, du.boneCount > 0 ? it.bones : restBones, Int(du.boneCount))
       draw(enc, m)
+    }
+  }
+
+  /// The skinning palette of the next draw (vertex buffer 3).
+  @inline(__always) private func setBones(_ enc: MTLRenderCommandEncoder, _ bones: [mat4], _ count: Int) {
+    bones.withUnsafeBytes { b in
+      enc.setVertexBytes(b.baseAddress!, length: max(1, count) * MemoryLayout<mat4>.stride, index: 3)
     }
   }
 
@@ -722,6 +763,7 @@ final class Renderer {
     var du = DrawUniforms()
     enc.setVertexBytes(&du, length: MemoryLayout<DrawUniforms>.stride, index: 1)
     enc.setFragmentBytes(&du, length: MemoryLayout<DrawUniforms>.stride, index: 1)
+    setBones(enc, restBones, 1)
     draw(enc, board)
   }
 

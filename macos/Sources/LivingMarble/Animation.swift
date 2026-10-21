@@ -55,6 +55,7 @@ struct Spring1 {
 // ---------------------------------------------------------------------------
 final class Actor {
   var id = -1, kind = 0, color = 0, square = -1
+  var set = 0  // 0 marble, 1 medieval
   var alive = true, visible = true
   var pos = vec3(0)
   var yaw: Float = 0, yawTarget: Float = 0, baseYaw: Float = 0, yawRate: Float = 9
@@ -71,6 +72,7 @@ final class Actor {
   var dissolve: Float = 0
   var dissolveColor = vec3(1.0, 0.8, 0.4)
   var texOffset = vec3(0)
+  var stone: Float = 0  // turned to salt
   // behaviour
   var idleWeight: Float = 1
   var tremble: Float = 0
@@ -85,18 +87,40 @@ final class Actor {
   var first = true
   var bx = Spring1(), bz = Spring1(), sq = Spring1(), tw = Spring1()
   var rig = vec4(0, 0, 1, 0)
+  // medieval figures: what the animations ask for, and the resulting skeleton pose
+  var ctl = MControls()
+  var pose = MPose()
+  var heat: Float = 0  // scorched by dragon fire
+  // throne (medieval bishop, queen and king): follows the figure unless it got up
+  var seatFree = false
+  var seatPos = vec3(0)
+  var seatYaw: Float = 0
+  var hasSeat: Bool { self.set == 1 && Medieval.throned(kind) }
+
+  /// The figure's resting pose.
+  func resetControls() {
+    let idle = ctl.idle
+    ctl = MControls()
+    ctl.idle = idle
+    ctl.sit = Medieval.throned(kind) ? 1 : 0
+    seatFree = false
+    seatPos = pos
+    seatYaw = yaw
+    heat = 0
+    Medieval.buildPose(kind, ctl, &pose)
+  }
 
   /// A field-by-field copy (C++ copied actors by value).
   func copy() -> Actor {
     let a = Actor()
-    a.id = id; a.kind = kind; a.color = color; a.square = square
+    a.id = id; a.kind = kind; a.color = color; a.square = square; a.set = set
     a.alive = alive; a.visible = visible
     a.pos = pos
     a.yaw = yaw; a.yawTarget = yawTarget; a.baseYaw = baseYaw; a.yawRate = yawRate
     a.poseBend = poseBend; a.poseSquash = poseSquash; a.poseTwist = poseTwist
     a.tilt = tilt; a.tiltPivot = tiltPivot; a.scale = scale
     a.glow = glow; a.crack = crack; a.crackColor = crackColor
-    a.dissolve = dissolve; a.dissolveColor = dissolveColor; a.texOffset = texOffset
+    a.dissolve = dissolve; a.dissolveColor = dissolveColor; a.texOffset = texOffset; a.stone = stone
     a.idleWeight = idleWeight; a.tremble = tremble
     a.selected = selected; a.inCheck = inCheck
     a.phase = phase; a.selectT = selectT; a.bob = bob; a.prevSelS = prevSelS
@@ -105,11 +129,13 @@ final class Actor {
     a.prevPos = prevPos; a.vel = vel; a.accS = accS; a.first = first
     a.bx = bx; a.bz = bz; a.sq = sq; a.tw = tw
     a.rig = rig
+    a.ctl = ctl; a.pose = pose; a.heat = heat
+    a.seatFree = seatFree; a.seatPos = seatPos; a.seatYaw = seatYaw
     return a
   }
 
-  func height() -> Float { MeshGen.pieceHeight(kind) * scale }
-  func radius() -> Float { MeshGen.pieceRadius(kind) * scale }
+  func height() -> Float { (set == 1 ? Medieval.pieceHeight(kind) : MeshGen.pieceHeight(kind)) * scale }
+  func radius() -> Float { (set == 1 ? Medieval.pieceRadius(kind) : MeshGen.pieceRadius(kind)) * scale }
   func forward() -> vec3 { vec3(sin(yaw), 0, cos(yaw)) }
 
   func update(_ dt: Float, _ t: Float, _ audio: Audio?) {
@@ -171,6 +197,14 @@ final class Actor {
     }
     let b = vec2(bx.x, bz.x)
     rig = vec4(length(b), atan2(b.y, b.x), clamp(sq.x, 0.35, 1.9), tw.x)
+    if set == 1 {
+      ctl.idle += dt
+      Medieval.buildPose(kind, ctl, &pose)
+      if !seatFree {
+        seatPos = pos
+        seatYaw = yaw
+      }
+    }
   }
 
   /// Snap the rig to rest (before shattering).
@@ -188,13 +222,13 @@ final class Actor {
 
   /// Without tilt.
   func rigidModel() -> mat4 {
-    var m = translate(mat4.identity, pos + vec3(0, bob, 0))
+    var m = translate(mat4.identity, pos + vec3(0, set == 1 ? bob * 0.3 : bob, 0))
     m = rotate(m, yaw, vec3(0, 1, 0))
     return m * mat4(diagonal: vec4(scale, scale, scale, 1))
   }
 
   func model() -> mat4 {
-    var m = translate(mat4.identity, pos + vec3(0, bob, 0))
+    var m = translate(mat4.identity, pos + vec3(0, set == 1 ? bob * 0.3 : bob, 0))
     m = rotate(m, yaw, vec3(0, 1, 0))
     if abs(tilt.w) < 0.99999 {
       m = translate(m, tiltPivot * scale)
@@ -207,6 +241,7 @@ final class Actor {
 
 final class Chunk {
   var kind = 0, color = 0, index = 0
+  var set = 0  // 1: 'kind' is a medieval asset
   var half = false
   var pos = vec3(0), v = vec3(0), w = vec3(0)
   var rot = quat.identity
@@ -231,6 +266,27 @@ final class Prop {
   var heat: Float = 0
   var alive = true
   var id = 0
+}
+
+/// A skinned creature or object that is not a chessman (the dragon).
+final class Puppet {
+  var asset = 0, color = 0, id = 0
+  var pos = vec3(0)
+  var yaw: Float = 0, scale: Float = 1
+  var tilt = quat.identity  // applied after the yaw (a flying spear's pitch)
+  var ctl = MControls()
+  var pose = MPose()
+  var dissolve: Float = 0
+  var glow = vec4(0)
+  var texOffset = vec3(0)
+  var alive = true
+
+  func model() -> mat4 {
+    var m = translate(mat4.identity, pos)
+    m = rotate(m, yaw, vec3(0, 1, 0))
+    m = m * mat4_cast(tilt)
+    return m * mat4(diagonal: vec4(scale, scale, scale, 1))
+  }
 }
 
 struct GroundRing {
@@ -351,6 +407,10 @@ protocol Anim: AnyObject {
 // ---------------------------------------------------------------------------
 final class World {
   var lib = Library()
+  var mlib = MedievalLibrary()
+  var pieceSet = 0  // 0 Living Marble, 1 medieval
+  var puppets: [Puppet] = []
+  var nextPuppetId = 1
   var audio: Audio?
   var actors: [Actor] = []
   var actorAt = [Int](repeating: -1, count: 64)
@@ -375,6 +435,25 @@ final class World {
   var excludeFidget = -1
 
   func at(_ square: Int) -> Actor? { actorAt[square] >= 0 ? actors[actorAt[square]] : nil }
+  func puppet(_ id: Int) -> Puppet? { puppets.first { $0.id == id } }
+  func addPuppet(_ asset: Int, _ color: Int) -> Int {
+    let p = Puppet()
+    p.asset = asset
+    p.color = color
+    p.id = nextPuppetId
+    nextPuppetId += 1
+    p.texOffset = vec3(fx.rnd(-20, 20), fx.rnd(-20, 20), fx.rnd(-20, 20))
+    Medieval.buildPose(asset, p.ctl, &p.pose)
+    puppets.append(p)
+    return p.id
+  }
+  func seatModel(_ a: Actor) -> mat4 {
+    var m = translate(mat4.identity, a.seatPos)
+    m = rotate(m, a.seatYaw, vec3(0, 1, 0))
+    let s = a.scale * Medieval.seatScale(a.kind)
+    return m * mat4(diagonal: vec4(s, s, s, 1))
+  }
+  func assetsOf(_ c: Chunk) -> PieceAssets { c.set == 1 ? mlib.asset[c.kind] : lib.piece[c.kind] }
   func shake(_ amount: Float) { trauma = min(1, trauma + amount) }
   func slowmo(_ scale: Float, _ duration: Float) {
     slowTarget = scale
@@ -390,6 +469,7 @@ final class World {
 
   func reset() {
     actors.removeAll()
+    puppets.removeAll()
     for i in 0..<64 { actorAt[i] = -1 }
     fx.clear()
     chunks.removeAll()
@@ -415,11 +495,14 @@ final class World {
       a.kind = (p & 7) - 1
       a.color = p >> 3
       a.square = s
+      a.set = pieceSet
       a.pos = squareCenter(s)
       a.baseYaw = a.color == 0 ? kPI : 0
       a.yaw = a.baseYaw
       a.yawTarget = a.baseYaw
       a.phase = fx.rnd(0, 100)
+      a.ctl.idle = fx.rnd(0, 100)
+      a.resetControls()
       a.texOffset = vec3(fx.rnd(-20, 20), fx.rnd(-20, 20), fx.rnd(-20, 20))
       if materialize {
         a.dissolve = 1
@@ -451,8 +534,59 @@ final class World {
     return p.id
   }
 
+  /// Break a medieval asset (e.g. a throne) drawn with model matrix M.
+  func shatterAsset(_ asset: Int, _ color: Int, _ M: mat4, _ R: quat, _ vel: vec3, _ texOffset: vec3, _ impact: vec3,
+                    _ impulse: vec3, _ explode: Float, _ upBias: Float, _ spin: Float, _ glow: Float,
+                    _ glowColor: vec3) {
+    let A = mlib.asset[asset]
+    let sc = length(vec3(M.columns.0))
+    let center = vec3(M * vec4(0, A.height * 0.5, 0, 1))
+    for (i, f) in A.shards.enumerated() {
+      let c = Chunk()
+      c.set = 1
+      c.kind = asset
+      c.color = color
+      c.index = i
+      c.pos = vec3(M * vec4(f.centroid, 1))
+      c.rot = R
+      c.radius = f.radius * sc
+      c.mass = max(f.volume, 1e-4)
+      c.inertia = 0.4 * c.mass * c.radius * c.radius
+      let dir = normalize(c.pos - center + fx.rndDir() * 0.05)
+      let fall = exp(-length(c.pos - impact) * 2.2)
+      c.v = vel * 0.5 + dir * explode * fx.rnd(0.5, 1.2) + impulse * fall * fx.rnd(0.7, 1.3) +
+        vec3(0, upBias * fx.rnd(0.4, 1.2), 0)
+      c.w = fx.rndDir() * spin * fx.rnd(0.3, 1.0)
+      c.texOffset = texOffset
+      c.glow = glow
+      c.glowColor = glowColor
+      chunks.append(c)
+    }
+  }
+
   /// Shatter an actor into Voronoi chunks.
   func shatter(_ a: Actor, _ impact: vec3, _ impulse: vec3, _ explode: Float, _ upBias: Float, _ spin: Float = 6) {
+    if a.set == 1 {
+      a.neutralize()
+      let M = a.model()
+      let R = a.rotation()
+      let glow: Float = a.crack > 0.05 ? 1 : 0
+      shatterAsset(a.kind, a.color, M, R, a.vel, a.texOffset, impact, impulse, explode, upBias, spin, glow, a.crackColor)
+      if a.hasSeat && !a.seatFree {
+        shatterAsset(Medieval.seatAsset(a.kind), a.color, seatModel(a), angleAxis(a.seatYaw, vec3(0, 1, 0)), a.vel,
+                     a.texOffset + vec3(3.1), impact, impulse, explode * 0.8, upBias * 0.7, spin * 0.7, glow,
+                     a.crackColor)
+      }
+      a.alive = false
+      a.visible = false
+      let center = vec3(M * vec4(0, a.height() * 0.5 / max(a.scale, 1e-3), 0, 1))
+      let tint = a.color == 0 ? vec3(0.62, 0.60, 0.57) : vec3(0.22, 0.21, 0.2)
+      fx.dust(vec3(center.x, 0.05, center.z), 16, 0.3, 1.2, tint)
+      fx.smoke(center, 6, 0.2, 0.3, a.color == 0 ? 0.1 : 0.6)
+      fx.chips(center, 45, 3.2, a.color == 1)
+      sound(.shatter, 1, center, fx.rnd(0.92, 1.08))
+      return
+    }
     let A = lib.piece[a.kind]
     a.neutralize()
     let M = a.model()
@@ -489,7 +623,7 @@ final class World {
 
   /// Slice an actor in two along its slice plane.
   func slice(_ a: Actor, _ sep: Float) {
-    let A = lib.piece[a.kind]
+    let A = a.set == 1 ? mlib.asset[a.kind] : lib.piece[a.kind]
     a.neutralize()
     let M = a.model()
     let R = a.rotation()
@@ -499,6 +633,7 @@ final class World {
     td = length(td) > 1e-3 ? normalize(td) : vec3(0, -1, 0)
     for (i, f) in A.halves.enumerated() {
       let c = Chunk()
+      c.set = a.set
       c.kind = a.kind
       c.color = a.color
       c.index = i
@@ -519,6 +654,11 @@ final class World {
       c.glow = 1
       c.glowColor = vec3(1.0, 0.75, 0.35)
       chunks.append(c)
+    }
+    // a throne under a figure that is cut in two breaks apart as well
+    if a.hasSeat && !a.seatFree {
+      shatterAsset(Medieval.seatAsset(a.kind), a.color, seatModel(a), angleAxis(a.seatYaw, vec3(0, 1, 0)), a.vel,
+                   a.texOffset + vec3(3.1), a.pos + vec3(0, 0.5, 0), vec3(0, -1.0, 0), 1.0, 0.5, 5.0, 0.0, vec3(1.0))
     }
     a.alive = false
     a.visible = false
@@ -568,7 +708,9 @@ final class World {
       let onBoard = abs(c.pos.x) < 4.62 && abs(c.pos.z) < 4.62 && c.pos.y > -0.1
       if !onBoard { continue }
       let floorY: Float = 0
-      let hull = c.half ? lib.piece[c.kind].halves[c.index].hull : lib.piece[c.kind].shards[c.index].hull
+      let hull = c.set == 1
+        ? (c.half ? mlib.asset[c.kind].halves[c.index].hull : mlib.asset[c.kind].shards[c.index].hull)
+        : (c.half ? lib.piece[c.kind].halves[c.index].hull : lib.piece[c.kind].shards[c.index].hull)
       var maxPen: Float = 0
       var contact = false
       for hp in hull {
@@ -666,6 +808,14 @@ final class World {
 
   func stopFidgets() {
     for a in actors where a.fidgetT >= 0 {
+      if a.set == 1 {
+        a.ctl.headYaw = 0
+        a.ctl.headPitch = 0
+        a.ctl.lean = 0
+        a.ctl.twist = 0
+        a.ctl.armL = vec3(0)
+        a.ctl.armR = vec3(0)
+      }
       a.fidgetT = -1
       a.yawTarget = a.baseYaw
       a.poseSquash = 1
@@ -700,6 +850,52 @@ final class World {
       a.fidgetT += dt
       let t = a.fidgetT
       var end: Float = 1
+      if a.set == 1 {
+        // medieval figures don't hop: they look about, shift their weight, toss their heads
+        switch a.fidgetType {
+        case 0:  // a glance to one side
+          end = 2.2
+          let u = sin(clamp(t / end, 0, 1) * kPI)
+          if a.kind == Kind.knight {
+            a.ctl.headYaw = a.fidgetDir * 0.5 * u
+            a.ctl.neck = -0.2 * u
+          } else if a.kind == Kind.rook {
+            a.ctl.idle += dt * 3  // the banner catches a gust
+          } else {
+            a.ctl.headYaw = a.fidgetDir * 0.6 * u
+            a.ctl.twist = a.fidgetDir * 0.12 * u
+          }
+        case 1:  // horse: toss of the head and a pawing hoof; others: shift weight, adjust grip
+          end = 1.3
+          let u = clamp(t / end, 0, 1)
+          if a.kind == Kind.knight {
+            a.ctl.headPitch = -0.35 * sin(u * kPI * 2) * (1 - u)
+            a.ctl.tail = u * 6
+          } else if a.kind == Kind.pawn {
+            a.ctl.armR = vec3(0.25 * sin(u * kPI), 0, 0)
+            a.ctl.lean = -0.04 * sin(u * kPI)
+          } else {
+            a.ctl.lean = 0.05 * sin(u * kPI)
+            a.ctl.headPitch = 0.12 * sin(u * kPI)
+          }
+        default:  // stretch, look up
+          end = 1.6
+          let u = sin(clamp(t / end, 0, 1) * kPI)
+          a.ctl.lean = -0.06 * u
+          a.ctl.headPitch = -0.25 * u
+          if a.kind == Kind.knight { a.ctl.neck = 0.3 * u }
+        }
+        if t >= end {
+          a.fidgetT = -1
+          a.ctl.headYaw = 0
+          a.ctl.headPitch = 0
+          a.ctl.lean = 0
+          a.ctl.twist = 0
+          a.ctl.neck = 0
+          a.ctl.armR = vec3(0)
+        }
+        continue
+      }
       switch a.fidgetType {
       case 0:  // glance to one side and back
         end = 1.8
@@ -753,6 +949,11 @@ final class World {
       }
     }
     for a in actors where a.alive { a.update(dt, time, audio) }
+    for p in puppets {
+      p.ctl.idle += dt
+      Medieval.buildPose(p.asset, p.ctl, &p.pose)
+    }
+    puppets.removeAll { !$0.alive }
     fx.update(dt)
     updateChunks(dt)
     for i in lights.indices { lights[i].life -= dt }
@@ -762,9 +963,53 @@ final class World {
     props.removeAll { !$0.alive }
   }
 
-  func buildDrawItems(_ pieces: [PieceGpu], _ sword: GpuMesh, _ cannonball: GpuMesh, _ out: inout [DrawItem]) {
+  /// medieval: the medieval set's meshes once they are on the GPU (nil until then).
+  func buildDrawItems(_ pieces: [PieceGpu], _ medieval: [PieceGpu]?, _ sword: GpuMesh, _ cannonball: GpuMesh,
+                      _ out: inout [DrawItem]) {
     for a in actors {
       if !a.alive || !a.visible || a.dissolve >= 0.999 { continue }
+      if a.set == 1 {
+        guard let mg = medieval else { continue }
+        var d = DrawItem()
+        d.mesh = mg[a.kind].lod0
+        d.meshLow = mg[a.kind].lod1
+        d.model = a.model()
+        // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
+        d.rig = vec4(a.rig.x * 0.3, a.rig.y, 1 + (a.rig.z - 1) * 0.12, a.rig.w * 0.25)
+        d.rigH = a.height() / max(a.scale, 1e-3)
+        d.material = .medieval
+        d.team = Int32(a.color)
+        d.bones = a.pose.active
+        d.texOffset = a.texOffset
+        d.glow = a.glow
+        d.crack = a.crack
+        d.crackColor = a.crackColor
+        d.dissolve = a.dissolve
+        d.dissolveColor = a.dissolveColor
+        d.heat = a.heat
+        d.stone = a.stone
+        out.append(d)
+        if a.kind == Kind.rook && a.ctl.legs > 0.001 {
+          var l = d
+          l.mesh = mg[MAsset.legs].lod0
+          l.meshLow = mg[MAsset.legs].lod1
+          l.rig = vec4(0, 0, 1, 0)
+          out.append(l)
+        }
+        if a.hasSeat {
+          let sa = Medieval.seatAsset(a.kind)
+          var t = d
+          t.mesh = mg[sa].lod0
+          t.meshLow = mg[sa].lod1
+          t.model = seatModel(a)
+          t.rig = a.seatFree ? vec4(0, 0, 1, 0) : d.rig
+          t.bones = []
+          t.texOffset = a.texOffset + vec3(3.1)
+          if a.seatFree { t.glow = vec4(0) }
+          out.append(t)
+        }
+        continue
+      }
       var d = DrawItem()
       d.mesh = pieces[a.kind].lod0
       d.meshLow = pieces[a.kind].lod1
@@ -781,18 +1026,41 @@ final class World {
       out.append(d)
     }
     for c in chunks {
-      let v = c.half ? pieces[c.kind].halves : pieces[c.kind].shards
+      var P = pieces[c.kind]
+      if c.set == 1 {
+        guard let mg = medieval else { continue }
+        P = mg[c.kind]
+      }
+      let v = c.half ? P.halves : P.shards
       if c.index >= v.count { continue }
       var d = DrawItem()
       d.mesh = v[c.index]
       d.meshLow = v[c.index]
       d.model = translate(mat4.identity, c.pos) * mat4_cast(c.rot)
-      d.material = c.color == 0 ? .white : .black
+      d.material = c.set == 1 ? .medieval : (c.color == 0 ? .white : .black)
+      d.team = Int32(c.color)
       d.texOffset = c.texOffset
       d.glow = vec4(c.glowColor, c.glow * 1.2)
       d.dissolve = c.dissolve
       d.dissolveColor = c.color == 0 ? vec3(0.9, 0.85, 0.75) : vec3(0.6, 0.5, 0.4)
       out.append(d)
+    }
+    if let mg = medieval {
+      for p in puppets where p.dissolve < 0.999 {
+        var d = DrawItem()
+        d.mesh = mg[p.asset].lod0
+        d.meshLow = mg[p.asset].lod1
+        d.model = p.model()
+        d.rigH = 1
+        d.material = .medieval
+        d.team = Int32(p.color)
+        d.bones = p.pose.active
+        d.texOffset = p.texOffset
+        d.glow = p.glow
+        d.dissolve = p.dissolve
+        d.dissolveColor = vec3(1.0, 0.5, 0.15)
+        out.append(d)
+      }
     }
     for p in props {
       var d = DrawItem()
@@ -842,6 +1110,7 @@ final class World {
       if !a.alive || !a.visible { continue }
       let s = exp(-max(0, a.pos.y + a.bob) / 0.12) * (1 - a.dissolve)
       out.append(vec4(a.pos.x, a.pos.z, a.radius() * 1.05, s))
+      if a.hasSeat && a.seatFree { out.append(vec4(a.seatPos.x, a.seatPos.z, 0.3, 1 - a.dissolve)) }
     }
     for c in chunks {
       if out.count >= 32 { break }

@@ -28,6 +28,7 @@ struct Options {
   var selectSq = ""           // e.g. e2, pre-select a piece (screenshots)
   var loadingShot = ""        // capture the loading screen
   var scenario = 0            // canned positions for screenshots
+  var pieces = 0              // 0 Living Marble, 1 medieval
   var dumpSfx = ""
 
   static let usage = """
@@ -40,12 +41,14 @@ struct Options {
       --demo                  watch the AI play itself
       --level 0..4            AI strength
       --fen "<fen>"           start from a position
+      --pieces marble|medieval  which army to play with (default marble)
       --mute                  no sound
       --selftest              verify the move generator (perft)
 
      capture tools:
       --shot file.png [--frames N] [--scenario 0|1|2]
       --battle K --shots t1,t2,... [--prefix name]   (K: 0 pawn .. 5 king)
+      --fen "<fen>" --move e2e4 --shots t1,t2,...   (screenshots of any move)
       --style S               force battle style S (0..2) instead of a random one
       --record dir [--frames N]
       --camera yaw,pitch,dist
@@ -80,6 +83,9 @@ struct Options {
       case "--demo": o.demo = true
       case "--fen": o.fen = next()
       case "--mute": o.noAudio = true
+      case "--pieces":
+        let v = next()
+        o.pieces = (v == "medieval" || v == "1") ? 1 : 0
       case "--selftest": o.selftest = true
       case "--shot": o.shotPath = next()
       case "--frames": o.frames = Int(next()) ?? o.frames

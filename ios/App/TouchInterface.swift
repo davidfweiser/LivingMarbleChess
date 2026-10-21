@@ -71,7 +71,7 @@ struct TouchHUDView: View {
     }
     .sheet(isPresented: $showSettings) { SettingsSheet(controller: controller, model: model) }
     .sheet(isPresented: $showMoves) { MovesSheet(model: model) }
-    .sheet(isPresented: $model.showHelp) { HelpSheet() }
+    .sheet(isPresented: $model.showHelp) { HelpSheet(pieceSet: model.pieceSet) }
     .task(id: model.screenshotsSaved) {
       guard model.screenshotsSaved > 0 else { return }
       withAnimation { shotSaved = true }
@@ -218,6 +218,13 @@ private struct SettingsSheet: View {
             ForEach(kAILevels.indices, id: \.self) { Text(kAILevels[$0].name).tag($0) }
           }
           .disabled(model.mode == .twoPlayer)
+          Picker("Pieces", selection: Binding(get: { model.pieceSet }, set: { controller.setPieceSet($0) })) {
+            Text("Living Marble").tag(0)
+            Text("Medieval").tag(1)
+          }
+          if model.medievalBuilding {
+            ProgressView("Raising the medieval army...", value: model.medievalProgress)
+          }
           Toggle("Battle animations", isOn: $model.battles)
           Toggle("Cinematic camera", isOn: $model.cinematic)
           if model.mode == .twoPlayer {
@@ -255,7 +262,7 @@ private struct SettingsSheet: View {
             dismiss()
           }
           Button("Save Screenshot") { controller.requestScreenshot() }
-          NavigationLink("Controls and Battles") { HelpList() }
+          NavigationLink("Controls and Battles") { HelpList(pieceSet: model.pieceSet) }
         } footer: {
           Text("Screenshots show just the board and go to the Files app, in Living Marble.")
         }
@@ -326,11 +333,12 @@ private struct MoveList: View {
 }
 
 private struct HelpSheet: View {
+  let pieceSet: Int
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
     NavigationStack {
-      HelpList()
+      HelpList(pieceSet: pieceSet)
         .toolbar {
           ToolbarItem(placement: .confirmationAction) {
             Button("Done") { dismiss() }
@@ -342,6 +350,7 @@ private struct HelpSheet: View {
 }
 
 private struct HelpList: View {
+  let pieceSet: Int  // whose battles to list: 0 Living Marble, 1 medieval
   private let touch = [
     "Tap a piece, then a glowing square to move it, or drag the piece onto the square",
     "Drag anywhere else to turn the board, even to look at it from underneath",
@@ -368,7 +377,7 @@ private struct HelpList: View {
         ForEach(0..<Kind.count, id: \.self) { k in
           VStack(alignment: .leading, spacing: 3) {
             Text(pieces[k]).font(.headline).foregroundStyle(Palette.gold)
-            Text("\(battleStyleName(k, 0)), \(battleStyleName(k, 1)), \(battleStyleName(k, 2))")
+            Text("\(battleStyleName(k, 0, pieceSet)), \(battleStyleName(k, 1, pieceSet)), \(battleStyleName(k, 2, pieceSet))")
               .foregroundStyle(.secondary)
           }
         }

@@ -18,6 +18,7 @@ final class GameModel {
   var slowOrbit = false
   var volume: Float = 0.8
   var gfxPreset = 2
+  var pieceSet = 0  // 0 Living Marble, 1 medieval (what the picker shows: the set being switched to)
   var exposure: Float = 1
   var showUI = true
   var showHelp = false
@@ -37,6 +38,8 @@ final class GameModel {
   var promoPending = false
   var fps = 0
   var audioOK = false
+  var medievalBuilding = false  // the medieval army is being sculpted in the background
+  var medievalProgress: Double = 0
   var screenshotsSaved = 0  // counts saved screenshots (the touch interface confirms each)
 }
 
@@ -260,6 +263,15 @@ private struct ControlPanel: View {
         ForEach(kAILevels.indices, id: \.self) { Text(kAILevels[$0].name).tag($0) }
       }
       .disabled(model.mode == .twoPlayer)
+      Picker("Pieces", selection: Binding(get: { model.pieceSet }, set: { controller.setPieceSet($0) })) {
+        Text("Living Marble").tag(0)
+        Text("Medieval").tag(1)
+      }
+      if model.medievalBuilding {
+        Text("Raising the medieval army... \(Int(model.medievalProgress * 100))%")
+          .font(.system(size: 12))
+          .foregroundStyle(Palette.dim)
+      }
 
       Toggle("Battle animations", isOn: $model.battles)
       Toggle("Cinematic camera", isOn: $model.cinematic)
@@ -381,7 +393,8 @@ private struct HelpPanel: View {
         .foregroundStyle(Palette.gold)
         .padding(.top, 10)
       ForEach(0..<Kind.count, id: \.self) { k in
-        bullet("\(pieces[k]): \(battleStyleName(k, 0)), \(battleStyleName(k, 1)), \(battleStyleName(k, 2))")
+        let s = model.pieceSet
+        bullet("\(pieces[k]): \(battleStyleName(k, 0, s)), \(battleStyleName(k, 1, s)), \(battleStyleName(k, 2, s))")
       }
     }
     .font(.system(size: 13))

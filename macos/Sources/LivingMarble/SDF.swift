@@ -208,6 +208,7 @@ struct MeshOptions {
   var newtonSteps = 2
   var aux: SDFFn? = nil          // optional per-vertex aux attribute
   var normalField: SDFFn? = nil  // optional field used for normals/projection (defaults to f)
+  var skin: ((inout Vertex) -> Void)? = nil  // optional: fills bones/mat from the final position
 }
 
 /// Surface nets over a grid with 4^3 blocks: the field is sampled on a coarse
@@ -315,7 +316,7 @@ func polygonize(_ f: SDFFn, _ o: MeshOptions) -> MeshData {
 
   // --- project vertices onto the surface, compute normals / AO / aux ---
   // (nf: the field used for projection and normals, defaults to f)
-  let aux = o.aux
+  let aux = o.aux, skin = o.skin
   let ge = h * 0.25
   let nsteps = o.newtonSteps, computeAO = o.computeAO, aoRadius = o.aoRadius
   let aoDist = SIMD8<Float>(0.05, 0.14, 0.3, 0.55, 1.0, 0, 0, 0)
@@ -354,6 +355,7 @@ func polygonize(_ f: SDFFn, _ o: MeshOptions) -> MeshData {
             vt.ao = clamp(1 - 1.35 * occ / wsum, 0, 1)
           }
           if let aux = aux { vt.aux = aux(vt.pos) }
+          if let skin = skin { skin(&vt) }
           vp[i] = vt
         }
       }
