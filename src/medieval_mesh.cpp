@@ -1611,7 +1611,7 @@ float seatHeight(int kind) { return 0.30f * seatedScale(kind); }
 void buildLibrary(Library& lib, int quality, meshgen::BuildProgress* prog) {
   quality = std::max(0, std::min(2, quality));
   if (prog) {
-    prog->total = 10;
+    prog->total = 9;
     prog->done = 0;
   }
   auto tick = [&](const char* s) {

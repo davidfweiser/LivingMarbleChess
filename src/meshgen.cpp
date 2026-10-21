@@ -332,8 +332,18 @@ void volumeCentroid(const MeshData& m, float& vol, vec3& c) {
     vol += v;
     c += v * (a + b + d) / 4.0f;
   }
-  if (std::fabs(vol) > 1e-9f) c /= vol;
-  else {
+  bool ok = std::fabs(vol) > 1e-9f;
+  if (ok) {
+    c /= vol;
+    // a nearly flat fragment can put the integral's centroid far outside it
+    vec3 lo(1e9f), hi(-1e9f);
+    for (const auto& x : m.v) {
+      lo = glm::min(lo, x.pos);
+      hi = glm::max(hi, x.pos);
+    }
+    ok = glm::all(glm::greaterThanEqual(c, lo - 0.01f)) && glm::all(glm::lessThanEqual(c, hi + 0.01f));
+  }
+  if (!ok) {
     c = vec3(0);
     for (const auto& x : m.v) c += x.pos;
     if (!m.v.empty()) c /= (float)m.v.size();
@@ -411,7 +421,9 @@ std::vector<Fragment> voronoiShatter(const Fn& F, const vec3& lo, const vec3& hi
   std::vector<vec3> seeds;
   float minD = 0.10f;
   for (int tries = 0; tries < 20000 && (int)seeds.size() < nSeeds; ++tries) {
-    vec3 p(glm::mix(lo.x, hi.x, U(rng)), glm::mix(lo.y, hi.y, U(rng)), glm::mix(lo.z, hi.z, U(rng)));
+    // drawn in a fixed order (argument evaluation order differs between compilers)
+    float ux = U(rng), uy = U(rng), uz = U(rng);
+    vec3 p(glm::mix(lo.x, hi.x, ux), glm::mix(lo.y, hi.y, uy), glm::mix(lo.z, hi.z, uz));
     if (F(p) > -0.02f) continue;
     bool ok = true;
     for (const vec3& s : seeds)

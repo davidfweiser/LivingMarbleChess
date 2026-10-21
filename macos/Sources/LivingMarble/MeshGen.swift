@@ -359,9 +359,18 @@ enum MeshGen {
         }
       }
     }
-    if abs(vol) > 1e-9 {
+    var ok = abs(vol) > 1e-9
+    if ok {
       c /= vol
-    } else {
+      // a nearly flat fragment can put the integral's centroid far outside it
+      var lo = vec3(1e9), hi = vec3(-1e9)
+      for x in m.v {
+        lo = vmin(lo, x.pos)
+        hi = vmax(hi, x.pos)
+      }
+      ok = all(c .>= lo - 0.01) && all(c .<= hi + 0.01)
+    }
+    if !ok {
       c = vec3(0)
       for x in m.v { c += x.pos }
       if !m.v.isEmpty { c /= Float(m.v.count) }

@@ -1439,7 +1439,7 @@ extension Medieval {
   static func buildLibrary(_ lib: MedievalLibrary, quality qIn: Int, progress prog: BuildProgress?) {
     let quality = max(0, min(2, qIn))
     if let prog {
-      prog.total = 10
+      prog.total = 9
       prog.done = 0
     }
     func tick(_ s: String) {
