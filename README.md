@@ -130,8 +130,8 @@ suits with magenta lights.
 
 Waiting aliens fidget: they look about with their antennae swivelling, hop
 nervously and yawn; saucers bob and whirl their light rings, tripods shift
-their weight and peer about. When castling, the overlord's throne
-swings out in an arc while the tripod strides past. A promoted little green
+their weight and peer about. When castling, the tripod strides past and the
+overlord's throne swings round in an arc behind it. A promoted little green
 man becomes a queen in a pillar of light; a mated overlord's throne sputters,
 drops to the board and shatters.
 
