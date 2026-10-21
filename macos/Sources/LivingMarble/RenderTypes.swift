@@ -47,6 +47,8 @@ struct DrawItem {
   var reflect = true
   var groundAO = true
   var glass = false       // see-through (drawn blended after everything solid)
+  var ghost: Float = 0    // > 0: a translucent ghost (its opacity), drawn after everything solid
+  var ghostId: Int32 = -1 // the items of one ghost share an id
   var bones: [mat4] = []  // skinned meshes (medieval and alien figures), at most Medieval.maxBones
   var team: Int32 = 0     // medieval / aliens: 0 white army, 1 black army
 }

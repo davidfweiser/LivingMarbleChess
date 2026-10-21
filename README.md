@@ -55,18 +55,19 @@ into its new self inside a pillar of light.
 ## The ghosts
 
 A captured piece doesn't stay gone. A moment after it dies, its ghost slowly
-takes shape out of rising wisps (with a ghostly "oooOOOooo") and joins its
-army's row of ghosts floating at the side of the board — White's along the
-a-file, Black's along the h-file, each row starting from its own end. They are
-the pieces themselves, smaller and see-through, glowing pale cyan (White) or
-lavender (Black) at the edges and fading away towards their feet. This works
-the same for the marble, medieval and alien armies (switching armies switches
-the ghosts too).
+and silently takes shape out of rising wisps and joins its army's row of
+ghosts floating at the side of the board — White's along the a-file, Black's
+along the h-file, each row starting from its own end. They are the pieces
+themselves in their own colours, smaller and see-through (you can see the
+board through them), fading away towards their feet. This works the same for
+the marble, medieval and alien armies (switching armies switches the ghosts
+too).
 
 The ghosts bob in the air and turn to watch whoever is on the move. When their
-side captures a piece, gives check or mates, they jump for joy with a far-off
-ghostly cheer: arms and spears in the air, mouths open, antennae up, the
-knight's horse rears, the saucer's lights whirl, marble ghosts hop and wiggle.
+side captures a piece, gives check or mates, they jump for joy: arms and
+spears in the air, mouths open, antennae up, the knight's horse rears, the
+saucer's lights whirl, marble ghosts hop and wiggle. The only sound they make
+is a soft, far-off cheer when one of their teammates takes out an opponent.
 When their side loses a piece they hang their heads, and now and then one
 gives a little wave to urge the others on. Taking a move back brings the
 captured piece back to life and its ghost disappears.

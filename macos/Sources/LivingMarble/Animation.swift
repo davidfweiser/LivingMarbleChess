@@ -89,6 +89,7 @@ final class Actor {
   var phase: Float = 0
   var selectT: Float = 0, bob: Float = 0, prevSelS: Float = 0
   var dissolveVel: Float = 0  // automatic dissolve change per second (materialise / vanish)
+  var ghostOnDeath = false  // captured: comes back as a ghost once it has died
   var fidgetT: Float = -1, fidgetDir: Float = 1
   var fidgetType = 0
   // secondary motion
@@ -134,6 +135,7 @@ final class Actor {
     a.selected = selected; a.inCheck = inCheck
     a.phase = phase; a.selectT = selectT; a.bob = bob; a.prevSelS = prevSelS
     a.dissolveVel = dissolveVel
+    a.ghostOnDeath = ghostOnDeath
     a.fidgetT = fidgetT; a.fidgetDir = fidgetDir; a.fidgetType = fidgetType
     a.prevPos = prevPos; a.vel = vel; a.accS = accS; a.first = first
     a.bx = bx; a.bz = bz; a.sq = sq; a.tw = tw
@@ -308,6 +310,22 @@ final class Puppet {
   }
 }
 
+/// A captured piece come back as a ghost: it floats at its army's side of the
+/// board, watches the game and cheers its team on.
+final class Ghost {
+  let body = Actor()     // what it looks like (kind, colour, army) and its pose
+  var slot = 0           // its place in its army's row
+  var delay: Float = 0   // before it starts to appear
+  var appear: Float = 0  // 0..1: it fades in slowly
+  var cheer: Float = 0   // seconds of cheering left
+  var cheerPower: Float = 1
+  var droop: Float = 0   // seconds of moping left (its army lost a piece)
+  var wave: Float = 0    // seconds left of a little "come on!" now and then
+  var nextWave: Float = 4
+  var cheerS: Float = 0, droopS: Float = 0, waveS: Float = 0  // the same, eased in and out
+  var t: Float = 0
+}
+
 struct GroundRing {
   var pos: vec3, color: vec3
   var speed: Float, life: Float, maxLife: Float, width: Float
@@ -453,6 +471,9 @@ final class World {
   var fidgetAllowed = false
   var fidgetTimer: Float = 2
   var excludeFidget = -1
+  // the captured pieces' ghosts, watching from the sides of the board
+  var ghosts: [Ghost] = []
+  var ghostFocus = vec3(0)  // what they are watching
 
   func at(_ square: Int) -> Actor? { actorAt[square] >= 0 ? actors[actorAt[square]] : nil }
   func puppet(_ id: Int) -> Puppet? { puppets.first { $0.id == id } }
@@ -505,6 +526,8 @@ final class World {
     slowTarget = 1
     slowTimer = 0
     flash = vec3(0)
+    ghosts.removeAll()
+    ghostFocus = vec3(0)
   }
 
   func spawnFromBoard(_ sq: SIMD64<UInt8>, _ materialize: Bool) {
@@ -1036,6 +1059,177 @@ final class World {
   }
 
   /// Physics, particles, lights, actors.
+  // ---------------------------------------------------------------------------
+  // Ghosts: the captured pieces float in a row at their army's side of the
+  // board (White's along the a-file, Black's along the h-file, each starting
+  // from its own end), watching the game and cheering their army on.
+  // ---------------------------------------------------------------------------
+  static let ghostScale: Float = 0.7
+  static let ghostLight = vec3(0.9, 0.93, 1.0)  // the pale light of their wisps and sparkles
+
+  static func ghostSpot(_ color: Int, _ slot: Int) -> vec3 {
+    let side: Float = color == 0 ? -1 : 1
+    let row = Float(slot / 15), i = Float(slot % 15)
+    return vec3(side * (5.1 + 0.6 * row), 0.12, -side * (3.64 - 0.52 * i))
+  }
+
+  func addGhost(_ kind: Int, _ color: Int, _ delay: Float, _ instant: Bool = false) {
+    let g = Ghost()
+    for o in ghosts where o.body.color == color { g.slot += 1 }
+    let a = g.body
+    a.kind = kind
+    a.color = color
+    a.set = pieceSet
+    a.pos = World.ghostSpot(color, g.slot)
+    a.baseYaw = color == 0 ? 0.5 * kPI : -0.5 * kPI  // facing the board
+    a.yaw = a.baseYaw
+    a.yawTarget = a.baseYaw
+    a.scale = World.ghostScale
+    a.phase = fx.rnd(0, 100)
+    a.ctl.idle = fx.rnd(0, 100)
+    a.resetControls()
+    a.texOffset = vec3(fx.rnd(-20, 20), fx.rnd(-20, 20), fx.rnd(-20, 20))
+    g.delay = delay
+    g.appear = instant ? 1 : 0
+    g.nextWave = fx.rnd(4, 10)
+    ghosts.append(g)
+  }
+
+  /// aloud: a capture (a soft cheer from the sidelines).
+  func cheerGhosts(_ color: Int, _ power: Float, _ seconds: Float, aloud: Bool = false) {
+    var n = 0
+    var at = vec3(0)
+    for g in ghosts where g.body.color == color {
+      g.cheer = max(g.cheer, seconds * fx.rnd(0.8, 1.1))  // they don't all stop at once
+      g.cheerPower = power
+      g.droop = 0
+      if g.appear > 0.3 {
+        n += 1
+        at += g.body.pos
+      }
+    }
+    // a soft cheer from the sidelines (only when their side takes a piece)
+    if aloud && n > 0 { sound(.cheer, min(0.08 + 0.02 * Float(n), 0.18), at / Float(n), fx.rnd(0.95, 1.08)) }
+  }
+
+  func droopGhosts(_ color: Int, _ seconds: Float) {
+    for g in ghosts where g.body.color == color {
+      g.droop = max(g.droop, seconds)
+      g.cheer = 0
+    }
+  }
+
+  private func updateGhosts(_ dt: Float) {
+    if ghosts.isEmpty { return }
+    // they watch whoever is on the move
+    var target = ghostFocus
+    var best: Float = 0.25
+    for a in actors where a.alive && a.visible {
+      let v = length(vec2(a.vel.x, a.vel.z))
+      if v > best {
+        best = v
+        target = a.pos
+      }
+    }
+    ghostFocus += (target - ghostFocus) * (1 - exp(-dt * 2.5))
+    for g in ghosts {
+      let a = g.body
+      if a.set != pieceSet {  // the armies were switched
+        a.set = pieceSet
+        a.resetControls()
+      }
+      let light = World.ghostLight
+      let home = World.ghostSpot(a.color, g.slot)
+      if g.delay > 0 {  // it appears without a sound
+        g.delay -= dt
+        continue
+      }
+      g.t += dt
+      if g.appear < 1 {
+        // it takes shape slowly, out of rising wisps
+        g.appear = min(1, g.appear + dt / 4.5)
+        if fx.rnd() < dt * 22 * (1 - g.appear) {
+          var p = Particle()
+          let px = fx.rnd(-0.2, 0.2), py = fx.rnd(0, 0.55), pz = fx.rnd(-0.2, 0.2)
+          p.pos = home + vec3(px, py, pz)
+          p.vel = vec3(0, fx.rnd(0.15, 0.4), 0)
+          p.size = fx.rnd(0.01, 0.024)
+          p.color = light * fx.rnd(0.8, 1.6)
+          p.colorEnd = light * 0.2
+          p.opacity = 0
+          p.maxLife = fx.rnd(0.8, 1.6)
+          p.type = .glow
+          p.drag = 0.5
+          p.fadeIn = 0.3
+          fx.add(p)
+        }
+      }
+      // cheering, moping and the odd "come on!", eased in and out
+      g.cheer = max(0, g.cheer - dt)
+      g.droop = max(0, g.droop - dt)
+      if g.cheer <= 0 && g.droop <= 0 && g.appear >= 1 {
+        g.nextWave -= dt
+        if g.nextWave <= 0 {
+          g.wave = 1.6
+          g.nextWave = fx.rnd(5, 12)
+        }
+      }
+      g.wave = max(0, g.wave - dt)
+      let kf = 1 - exp(-dt * 6), ks = 1 - exp(-dt * 3)
+      g.cheerS += ((g.cheer > 0 ? g.cheerPower : 0) - g.cheerS) * kf
+      g.droopS += ((g.droop > 0 ? 1 : 0) - g.droopS) * ks
+      g.waveS += ((g.wave > 0 ? 1 : 0) - g.waveS) * kf
+      let cs = g.cheerS, ds = g.droopS, ws = g.waveS
+      let ph = a.phase
+      // float, bob, and jump for joy
+      let rise = 1 - easeOut(g.appear)
+      let bob = 0.035 * sin(g.t * 1.4 + ph)
+      let hop = 0.16 * abs(sin(g.t * 8 + ph)) * cs + 0.05 * abs(sin(g.t * 5 + ph)) * ws
+      a.pos = home + vec3(0, bob - 0.4 * rise + hop - 0.06 * ds, 0)
+      // turn to watch the action (but stay facing the board)
+      let off = clamp(wrapAngle(faceAngle(ghostFocus - home) - a.baseYaw), -1.2, 1.2)
+      a.yawTarget = a.baseYaw + off
+      a.yawRate = 3
+      // the marble rig: a wiggle when cheering, a bow when moping
+      a.poseSquash = 1 + 0.1 * sin(g.t * 16 + ph) * cs
+      a.poseTwist = 0.35 * sin(g.t * 7 + ph) * cs
+      a.poseBend = vec2(0.12 * sin(g.t * 4 + ph) * (cs + ws), 0.25 * ds)
+      // the figures: arms up, mouths open, antennae up - or heads down
+      let wv = sin(g.t * 11 + ph)
+      a.ctl.armL = vec3(2.7 - 0.25 * wv, 0.35, 0.3) * cs
+      a.ctl.armR = vec3(2.7 + 0.25 * wv, 0.35, 0.3) * cs
+        + vec3(2.5, 0.4 + 0.3 * sin(g.t * 9), 0.4) * ws * (1 - cs)
+      a.ctl.headPitch = -0.25 * cs + 0.45 * ds
+      a.ctl.lean = -0.1 * cs + 0.25 * ds
+      a.ctl.jaw = 0.7 * cs
+      a.ctl.perk = cs - ds
+      if a.set == 1 && a.kind == Kind.knight { a.ctl.rear = 0.5 * cs }  // the horse rears
+      if a.set == 1 && a.kind == Kind.rook { a.ctl.bridge = 0.35 * abs(sin(g.t * 6 + ph)) * cs }
+      if a.set == 2 && a.kind == Kind.knight { a.ctl.spin += dt * (2 + 14 * cs) }
+      if a.set == 2 && a.kind == Kind.rook { a.ctl.crouch = 0.3 * abs(sin(g.t * 8 + ph)) * cs }
+      // a faint pale glow, brighter when cheering, and it materialises out of the wisps
+      a.glow = vec4(light, 0.1 + 0.45 * cs + 0.15 * ws)
+      a.dissolve = (1 - g.appear) * 0.85
+      a.dissolveColor = light * 1.5
+      if cs > 0.3 && fx.rnd() < dt * 5 * cs {
+        var p = Particle()
+        let px = fx.rnd(-0.12, 0.12), pz = fx.rnd(-0.12, 0.12)
+        p.pos = a.pos + vec3(px, a.height() * 0.9, pz)
+        p.vel = vec3(0, fx.rnd(0.3, 0.7), 0)
+        p.size = fx.rnd(0.008, 0.018)
+        p.color = light * 2
+        p.colorEnd = light * 0.3
+        p.opacity = 0
+        p.maxLife = fx.rnd(0.6, 1.1)
+        p.type = .glow
+        p.drag = 0.8
+        p.fadeIn = 0.1
+        fx.add(p)
+      }
+      a.update(dt, time, audio)
+    }
+  }
+
   func simulate(_ dt: Float) {
     updateFidgets(dt)
     // dust motes drifting through the pool of light
@@ -1058,6 +1252,14 @@ final class World {
       }
     }
     for a in actors where a.alive { a.update(dt, time, audio) }
+    // the fallen come back as ghosts; their army mourns, the other cheers
+    for a in actors where a.ghostOnDeath && !a.alive {
+      a.ghostOnDeath = false
+      addGhost(a.kind, a.color, 1.4)
+      cheerGhosts(a.color ^ 1, 1.0, 2.6, aloud: true)
+      droopGhosts(a.color, 3.0)
+    }
+    updateGhosts(dt)
     for p in puppets {
       p.ctl.idle += dt
       figurePose(p.set, p.asset, p.ctl, &p.pose)
@@ -1072,84 +1274,106 @@ final class World {
     props.removeAll { !$0.alive }
   }
 
-  /// medieval: the medieval set's meshes once they are on the GPU (nil until then).
-  /// `figures(set)`: the GPU meshes of a skinned set (1 medieval, 2 aliens) once uploaded, else nil.
-  func buildDrawItems(_ pieces: [PieceGpu], _ figures: (Int) -> [PieceGpu]?, _ sword: GpuMesh, _ cannonball: GpuMesh,
-                      _ out: inout [DrawItem]) {
-    for a in actors {
-      if !a.alive || !a.visible || a.dissolve >= 0.999 { continue }
-      if a.set != 0 {
-        guard let G = figures(a.set) else { continue }
-        var d = DrawItem()
-        d.mesh = G[a.kind].lod0
-        d.meshLow = G[a.kind].lod1
-        d.model = a.model()
-        if a.set == 1 {
-          // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
-          d.rig = vec4(a.rig.x * 0.3, a.rig.y, 1 + (a.rig.z - 1) * 0.12, a.rig.w * 0.25)
-        } else {
-          // aliens are a bit rubbery (the saucer and the tripod less so)
-          let k: Float = (a.kind == Kind.knight || a.kind == Kind.rook) ? 0.4 : 0.8
-          d.rig = vec4(a.rig.x * k, a.rig.y, 1 + (a.rig.z - 1) * k, a.rig.w * k)
-        }
-        d.rigH = a.height() / max(a.scale, 1e-3)
-        d.material = a.set == 2 ? .alien : .medieval
-        d.team = Int32(a.color)
-        d.bones = a.pose.active
-        d.texOffset = a.texOffset
-        d.glow = a.glow
-        d.crack = a.crack
-        d.crackColor = a.crackColor
-        d.dissolve = a.dissolve
-        d.dissolveColor = a.dissolveColor
-        d.heat = a.heat
-        d.stone = a.stone
-        out.append(d)
-        let ga = a.set == 2 ? Alien.glassAsset(a.kind) : -1
-        if ga >= 0 {  // the saucer's canopy, the psychic's jar
-          var g = d
-          g.mesh = G[ga].lod0
-          g.meshLow = G[ga].lod1
-          g.material = .glass
-          g.glass = true
-          g.castShadow = false
-          out.append(g)
-        }
-        if a.set == 1 && a.kind == Kind.rook && a.ctl.legs > 0.001 {
-          var l = d
-          l.mesh = G[MAsset.legs].lod0
-          l.meshLow = G[MAsset.legs].lod1
-          l.rig = vec4(0, 0, 1, 0)
-          out.append(l)
-        }
-        if a.hasSeat {
-          let sa = Medieval.seatAsset(a.kind)
-          var t = d
-          t.mesh = G[sa].lod0
-          t.meshLow = G[sa].lod1
-          t.model = seatModel(a)
-          t.rig = a.seatFree ? vec4(0, 0, 1, 0) : d.rig
-          t.bones = []
-          t.texOffset = a.texOffset + vec3(3.1)
-          if a.seatFree { t.glow = vec4(0) }
-          out.append(t)
-        }
-        continue
-      }
+  /// The draw items of one figure (a chessman or a ghost).
+  private func figureItems(_ pieces: [PieceGpu], _ figures: (Int) -> [PieceGpu]?, _ a: Actor, _ out: inout [DrawItem]) {
+    if a.set != 0 {
+      guard let G = figures(a.set) else { return }
       var d = DrawItem()
-      d.mesh = pieces[a.kind].lod0
-      d.meshLow = pieces[a.kind].lod1
+      d.mesh = G[a.kind].lod0
+      d.meshLow = G[a.kind].lod1
       d.model = a.model()
-      d.rig = a.rig
-      d.rigH = MeshGen.pieceHeight(a.kind)
-      d.material = a.color == 0 ? .white : .black
+      if a.set == 1 {
+        // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
+        d.rig = vec4(a.rig.x * 0.3, a.rig.y, 1 + (a.rig.z - 1) * 0.12, a.rig.w * 0.25)
+      } else {
+        // aliens are a bit rubbery (the saucer and the tripod less so)
+        let k: Float = (a.kind == Kind.knight || a.kind == Kind.rook) ? 0.4 : 0.8
+        d.rig = vec4(a.rig.x * k, a.rig.y, 1 + (a.rig.z - 1) * k, a.rig.w * k)
+      }
+      d.rigH = a.height() / max(a.scale, 1e-3)
+      d.material = a.set == 2 ? .alien : .medieval
+      d.team = Int32(a.color)
+      d.bones = a.pose.active
       d.texOffset = a.texOffset
       d.glow = a.glow
       d.crack = a.crack
       d.crackColor = a.crackColor
       d.dissolve = a.dissolve
       d.dissolveColor = a.dissolveColor
+      d.heat = a.heat
+      d.stone = a.stone
       out.append(d)
+      let ga = a.set == 2 ? Alien.glassAsset(a.kind) : -1
+      if ga >= 0 {  // the saucer's canopy, the psychic's jar
+        var g = d
+        g.mesh = G[ga].lod0
+        g.meshLow = G[ga].lod1
+        g.material = .glass
+        g.glass = true
+        g.castShadow = false
+        out.append(g)
+      }
+      if a.set == 1 && a.kind == Kind.rook && a.ctl.legs > 0.001 {
+        var l = d
+        l.mesh = G[MAsset.legs].lod0
+        l.meshLow = G[MAsset.legs].lod1
+        l.rig = vec4(0, 0, 1, 0)
+        out.append(l)
+      }
+      if a.hasSeat {
+        let sa = Medieval.seatAsset(a.kind)
+        var t = d
+        t.mesh = G[sa].lod0
+        t.meshLow = G[sa].lod1
+        t.model = seatModel(a)
+        t.rig = a.seatFree ? vec4(0, 0, 1, 0) : d.rig
+        t.bones = []
+        t.texOffset = a.texOffset + vec3(3.1)
+        if a.seatFree { t.glow = vec4(0) }
+        out.append(t)
+      }
+      return
+    }
+    var d = DrawItem()
+    d.mesh = pieces[a.kind].lod0
+    d.meshLow = pieces[a.kind].lod1
+    d.model = a.model()
+    d.rig = a.rig
+    d.rigH = MeshGen.pieceHeight(a.kind)
+    d.material = a.color == 0 ? .white : .black
+    d.texOffset = a.texOffset
+    d.glow = a.glow
+    d.crack = a.crack
+    d.crackColor = a.crackColor
+    d.dissolve = a.dissolve
+    d.dissolveColor = a.dissolveColor
+    out.append(d)
+  }
+
+  /// medieval: the medieval set's meshes once they are on the GPU (nil until then).
+  /// `figures(set)`: the GPU meshes of a skinned set (1 medieval, 2 aliens) once uploaded, else nil.
+  func buildDrawItems(_ pieces: [PieceGpu], _ figures: (Int) -> [PieceGpu]?, _ sword: GpuMesh, _ cannonball: GpuMesh,
+                      _ out: inout [DrawItem]) {
+    for a in actors {
+      if !a.alive || !a.visible || a.dissolve >= 0.999 { continue }
+      figureItems(pieces, figures, a, &out)
+    }
+    for (i, g) in ghosts.enumerated() where g.appear > 0 {
+      let first = out.count
+      figureItems(pieces, figures, g.body, &out)
+      let alpha = max(0.85 * easeInOut(g.appear), 1e-3)
+      for k in first..<out.count {
+        out[k].ghost = alpha
+        out[k].ghostId = Int32(i)
+        out[k].castShadow = false
+        out[k].reflect = false
+        out[k].groundAO = false
+        out[k].team = Int32(g.body.color)
+      }
+      // no glass on a ghost: its canopy or jar would hide what is inside
+      let kept = out[first...].filter { !$0.glass }
+      out.removeSubrange(first...)
+      out.append(contentsOf: kept)
     }
     for c in chunks {
       let P: PieceGpu

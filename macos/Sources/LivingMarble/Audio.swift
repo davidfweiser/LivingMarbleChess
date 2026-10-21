@@ -1,7 +1,8 @@
 // Procedurally synthesised sound effects (no audio files), mixed in real time.
 // Every effect is built once at start-up from damped sines, filtered noise and
-// a few oscillators (the medieval army's organ, choir, thunder and the rest, and
-// the aliens' ray guns, saucers and cows, are made on a background thread right after). An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
+// a few oscillators (the medieval army's organ, choir, thunder and the rest, the
+// aliens' ray guns, saucers and cows, and the ghosts' cheer, are made
+// on a background thread right after). An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
 // resampling, volume) at 44.1 kHz and AVAudioEngine converts to the device rate.
 import AVFoundation
 #if os(macOS)
@@ -342,11 +343,12 @@ extension Audio {
       return S
     }
 
-    /// Every effect, the medieval army's and the aliens' included (for the .wav dump).
+    /// Every effect, the medieval army's, the aliens' and the ghosts' included (for the .wav dump).
     static func synthEverything() -> [Buf] {
       var S = synthAll()
       synthMedieval(&S)
       synthAlien(&S)
+      synthGhosts(&S)
       return S
     }
 
@@ -1297,6 +1299,51 @@ extension Audio {
         S[Sfx.sputter.rawValue] = b
       }
     }
+
+    // MARK: The ghosts' cheer
+
+    /// The ghosts' effect (Sfx.cheer) into S, which holds every Sfx.
+    /// Made on the background thread right after the aliens'.
+    static func synthGhosts(_ S: inout [Buf]) {
+      var r = XorShift32(s: 777)
+      do {  // CHEER: a far-off little crowd of ghosts going "yaaay!", clapping, with a shimmer
+        var b = make(2.4), v = make(2.4)
+        for _ in 0..<7 {
+          let t0 = r.next() * 0.12
+          let f0: Float = 220 + 260 * r.next()
+          let vib = r.next() * 6.28
+          addSaw(&v, t0, 1.4, { (t: Float) -> Float in
+            let up: Float = 1 + 0.35 * min(t / 0.22, 1) - 0.12 * max(0, t - 0.6)
+            let wob: Float = 1 + 0.012 * sin(t * 6.2831 * 5.5 + vib)
+            return f0 * up * wob
+          }, { (t: Float) -> Float in envAR(t, 0.06, 0.55, 0.6) * 0.3 })
+        }
+        var f1 = Biquad(), f2 = Biquad(), f3 = Biquad(), f4 = Biquad()  // the vowel "ah"
+        f1.bandpass(730, 6.0)
+        f2.bandpass(1090, 8.0)
+        f3.bandpass(2440, 12.0)
+        f4.lowpass(3500)
+        for i in b.indices {
+          let x = v[i]
+          let a1 = f1.run(x), a2 = f2.run(x) * 0.6, a3 = f3.run(x) * 0.25
+          b[i] = f4.run(a1 + a2 + a3)
+        }
+        var cf = Biquad()
+        cf.bandpass(1600, 1.1)
+        for _ in 0..<14 {
+          let t: Float = 0.1 + r.next() * 1.3
+          addNoise(&b, &r, t, 0.5, 60, cf)
+        }
+        for _ in 0..<6 {
+          let t = r.next() * 1.5
+          let f: Float = 1800 + r.next() * 1800
+          addDampedSine(&b, t, f, 0.06, 5.0)
+        }
+        reverb(&b, 0.65, 0.84, 0.3, 1.15)
+        normalize(&b, 0.55)
+        S[Sfx.cheer.rawValue] = b
+      }
+    }
   }
 
   // MARK: - Real-time mixer
@@ -1552,7 +1599,7 @@ final class Audio {
   private var engine: AVAudioEngine?
   private var source: AVAudioSourceNode?
   private var observers: [NSObjectProtocol] = []
-  // the medieval army's and the aliens' sounds, made in the background after start()
+  // the medieval army's, the aliens' and the ghosts' sounds, made in the background after start()
   private let lateSynth = DispatchGroup()
 
   init() {}
@@ -1588,13 +1635,14 @@ final class Audio {
 #endif
   }
 
-  /// Makes the medieval army's and the aliens' sounds on another thread; until
-  /// they are ready, playing one of them does nothing.
+  /// Makes the medieval army's, the aliens' and the ghosts' sounds on another
+  /// thread; until they are ready, playing one of them does nothing.
   private func synthesiseLate(_ m: Mixer) {
     DispatchQueue.global(qos: .userInitiated).async(group: lateSynth) {
       var S = [[Float]](repeating: [], count: Sfx.allCases.count)
       Synth.synthMedieval(&S)
       Synth.synthAlien(&S)
+      Synth.synthGhosts(&S)
       m.publish(S)
     }
   }
@@ -1730,7 +1778,7 @@ final class Audio {
                  "hymn", "organ", "thunder", "wind", "roar", "fire", "chain", "grind", "stomp", "hoof",
                  "neigh", "bell", "splinter", "armor", "slide", "bite", "pew", "ufo", "theremin", "beam",
                  "gibber", "slurp", "burp", "boing", "whistle", "splat", "moo", "pop", "shrink", "heatray",
-                 "horn", "twinkle", "sizzle", "hatch", "drone", "sputter"]
+                 "horn", "twinkle", "sizzle", "hatch", "drone", "sputter", "cheer"]
     let S = Synth.synthEverything()
     for (i, buf) in S.enumerated() {
       let n = UInt32(buf.count), bytes = n * 2

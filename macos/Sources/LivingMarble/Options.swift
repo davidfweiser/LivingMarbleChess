@@ -18,6 +18,7 @@ struct Options {
   var demo = false            // AI vs AI
   var noUI = false
   var hasCam = false
+  var noCinematic = false     // keep the camera still (no battle shots, no turning to the side to move)
   var camYaw: Float = 0, camPitch: Float = 0.8, camDist: Float = 12.6
   var camTX: Float = 0, camTY: Float = 0.15, camTZ: Float = 0
   var noAudio = false
@@ -46,12 +47,13 @@ struct Options {
       --selftest              verify the move generator (perft)
 
      capture tools:
-      --shot file.png [--frames N] [--scenario 0|1|2]
+      --shot file.png [--frames N] [--scenario 0|1|2|4]   (4: a gallery of ghosts)
       --battle K --shots t1,t2,... [--prefix name]   (K: 0 pawn .. 5 king)
       --fen "<fen>" --move e2e4 --shots t1,t2,...   (screenshots of any move)
       --style S               force battle style S (0..2) instead of a random one
       --record dir [--frames N]
-      --camera yaw,pitch,dist
+      --camera yaw,pitch,dist[,tx,ty,tz]
+      --no-cinematic          keep the camera still
       --no-ui
 
     """
@@ -95,6 +97,7 @@ struct Options {
       case "--prefix": o.shotPrefix = next()
       case "--record": o.recordDir = next()
       case "--no-ui": o.noUI = true
+      case "--no-cinematic": o.noCinematic = true
       case "--no-render": o.noRender = true
       case "--level": o.level = Int(next()) ?? -1
       case "--move": o.forceMove = next()

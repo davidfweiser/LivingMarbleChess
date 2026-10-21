@@ -81,6 +81,7 @@ struct DrawU {
   int team;          // medieval / aliens: 0 white army, 1 black army
   int boneCount;     // > 0: skinned
   float stone;       // medieval: turned to salt
+  float ghost;       // > 0: a translucent ghost (its opacity)
 };
 
 // board-only parameters (occluders, rings and the 8x8 state live in their own buffers)
@@ -687,6 +688,21 @@ float4 glassColor(float3 N, float3 V, bool black, float3 P, constant PassU& u, t
   return float4(env * F * 1.6 + tint * 0.025, a);
 }
 
+// A ghost: the figure in its own colours, but see-through - a little more solid
+// at the rims, fading away towards its feet, with faint bands shimmering
+// upwards (premultiplied alpha).
+float4 ghostColor(float3 lit, float3 albedo, float3 N, float3 V, float3 P, float3 obj, float ghost, float time,
+                  texture3d<float> noise) {
+  float NoV = saturate(dot(N, V));
+  float rim = pow(1.0 - NoV, 2.0);
+  float n = noise.sample(sNoise, obj * 2.0 + float3(0.0, time * 0.05, 0.0)).r;
+  float band = 0.5 + 0.5 * sin(P.y * 9.0 - time * 2.2 + n * 6.0);
+  // its own colours, lit, with a little light of their own so that dark ones still show
+  float3 c = (lit + albedo * 0.22) * 1.2 + mix(albedo, float3(1.0), 0.6) * rim * 0.6;
+  float a = ghost * saturate(0.3 + 0.45 * rim + 0.06 * band) * mix(0.2, 1.0, smoothstep(0.0, 0.3, obj.y));
+  return float4(c * a, a);
+}
+
 fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], LIGHT_BINDINGS,
                          constant DrawU& d [[buffer(1)]], texture3d<float> noise [[texture(5)]]) {
   float2 fragCoord = in.position.xy;
@@ -814,6 +830,7 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
   s.sss = sss;
   s.specOcc = specOcc;
   float3 col = shadeSurface(s, sh, thick, LIGHT_ARGS) + emissive;
+  if (d.ghost > 0.0) return ghostColor(col, albedo, N, V, in.world, in.obj, d.ghost, u.time, noise);
   return float4(col, 1.0);
 }
 """#

@@ -234,7 +234,7 @@ class World {
   std::vector<Ghost> ghosts;
   glm::vec3 ghostFocus{0};  // what they are watching
   void addGhost(int kind, int color, float delay, bool instant = false);
-  void cheerGhosts(int color, float power, float seconds);
+  void cheerGhosts(int color, float power, float seconds, bool aloud = false);  // aloud: a capture
   void droopGhosts(int color, float seconds);
   static glm::vec3 ghostSpot(int color, int slot);
 

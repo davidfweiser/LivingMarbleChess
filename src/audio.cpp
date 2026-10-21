@@ -1171,30 +1171,6 @@ void synthAlien(std::vector<Buf>& S) {
 void synthGhosts(std::vector<Buf>& S) {
   Rng r;
   r.s = 777;
-  {  // GHOST: a wavering "oooOOOooo" in a big hall, with a breath of wind
-    Buf b = make(3.0f);
-    auto freq = [](float t) {
-      float glide = 300.0f + 170.0f * std::sin(std::min(t / 1.9f, 1.0f) * 3.14159f);
-      return glide * (1.0f + 0.03f * std::sin(t * 6.2831f * 5.2f));
-    };
-    auto env = [](float t) { return envAR(t, 0.45f, 0.9f, 0.7f); };
-    addSaw(b, 0, 2.2f, freq, [env](float t) { return 0.5f * env(t); });
-    addSaw(b, 0, 2.2f, [freq](float t) { return freq(t) * 1.4983f; }, [env](float t) { return 0.18f * env(t); });
-    Biquad lp, bp;
-    lp.lowpass(700, 0.9f);
-    bp.bandpass(380, 1.4f);
-    for (float& x : b) {
-      float y = x;
-      x = lp.run(y) * 0.6f + bp.run(y) * 0.8f;
-    }
-    addSweep(b, 0, 2.2f, freq, [env](float t) { return 0.35f * env(t); });
-    Biquad wf;
-    wf.bandpass(900, 0.8f);
-    noiseShaped(b, r, 0, 2.2f, wf, 0.08f, env);
-    reverb(b, 0.7f, 0.86f, 0.35f, 1.3f);
-    normalize(b, 0.6f);
-    S[SFX_GHOST] = b;
-  }
   {  // CHEER: a far-off little crowd of ghosts going "yaaay!", clapping, with a shimmer
     Buf b = make(2.4f), v = make(2.4f);
     for (int k = 0; k < 7; ++k) {
@@ -1374,8 +1350,7 @@ bool Audio::dumpWav(const char* dir) {
                                          "bell",    "splinter", "armor",  "slide",   "bite",   "pew",
                                          "ufo",     "theremin", "beam",   "gibber",  "slurp",  "burp",   "boing",
                                          "whistle", "splat",   "moo",     "pop",     "shrink", "heatray", "horn",
-                                         "twinkle", "sizzle",  "hatch",   "drone",   "sputter", "ghost",
-                                         "cheer"};
+                                         "twinkle", "sizzle",  "hatch",   "drone",   "sputter", "cheer"};
   std::vector<Buf> S = synthEverything();
   for (int i = 0; i < SFX_COUNT; ++i) {
     std::string path = std::string(dir) + "/" + names[i] + ".wav";

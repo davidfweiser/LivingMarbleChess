@@ -609,18 +609,17 @@ vec4 glassColor(vec3 N, vec3 V, bool black) {
   return vec4(env * F * 1.6 + tint * 0.025, a);
 }
 
-// A ghost: the figure's light and shade in a pale glow of its army's colour,
-// see-through in the middle, bright at the rims, fading away towards its feet,
-// with faint bands shimmering upwards (premultiplied alpha).
+// A ghost: the figure in its own colours, but see-through - a little more solid
+// at the rims, fading away towards its feet, with faint bands shimmering
+// upwards (premultiplied alpha).
 vec4 ghostColor(vec3 lit, vec3 albedo, vec3 N, vec3 V) {
-  vec3 tint = uTeam == 1 ? vec3(0.78, 0.62, 1.0) : vec3(0.62, 0.9, 1.0);
   float NoV = saturate(dot(N, V));
   float rim = pow(1.0 - NoV, 2.0);
-  float lum = dot(lit, vec3(0.3, 0.59, 0.11));
   float n = texture(uNoise, vObj * 2.0 + vec3(0.0, uTime * 0.05, 0.0)).r;
   float band = 0.5 + 0.5 * sin(vWorld.y * 9.0 - uTime * 2.2 + n * 6.0);
-  vec3 c = tint * (0.18 + 0.6 * sqrt(saturate(lum))) + lit * 0.12 + albedo * tint * 0.1 + tint * rim * 1.2;
-  float a = uGhost * saturate(0.3 + 0.55 * rim + 0.07 * band) * mix(0.2, 1.0, smoothstep(0.0, 0.3, vObj.y));
+  // its own colours, lit, with a little light of their own so that dark ones still show
+  vec3 c = (lit + albedo * 0.22) * 1.2 + mix(albedo, vec3(1.0), 0.6) * rim * 0.6;
+  float a = uGhost * saturate(0.3 + 0.45 * rim + 0.06 * band) * mix(0.2, 1.0, smoothstep(0.0, 0.3, vObj.y));
   return vec4(c * a, a);
 }
 

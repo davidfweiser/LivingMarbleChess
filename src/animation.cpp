@@ -825,7 +825,7 @@ void World::updateFidgets(float dt) {
 // ---------------------------------------------------------------------------
 namespace {
 const float kGhostScale = 0.7f;
-vec3 ghostTint(int color) { return color == 1 ? vec3(0.78f, 0.62f, 1.0f) : vec3(0.62f, 0.9f, 1.0f); }
+const vec3 kGhostLight(0.9f, 0.93f, 1.0f);  // the pale light of their wisps and sparkles
 }  // namespace
 
 vec3 World::ghostSpot(int color, int slot) {
@@ -856,7 +856,7 @@ void World::addGhost(int kind, int color, float delay, bool instant) {
   ghosts.push_back(g);
 }
 
-void World::cheerGhosts(int color, float power, float seconds) {
+void World::cheerGhosts(int color, float power, float seconds, bool aloud) {
   int n = 0;
   vec3 at(0);
   for (Ghost& g : ghosts) {
@@ -869,22 +869,16 @@ void World::cheerGhosts(int color, float power, float seconds) {
       at += g.body.pos;
     }
   }
-  if (n > 0) sound(SFX_CHEER, std::min(0.25f + 0.07f * (float)n, 0.6f) * power, at / (float)n, fx.rnd(0.95f, 1.08f));
+  // a soft cheer from the sidelines (only when their side takes a piece)
+  if (aloud && n > 0) sound(SFX_CHEER, std::min(0.08f + 0.02f * (float)n, 0.18f), at / (float)n, fx.rnd(0.95f, 1.08f));
 }
 
 void World::droopGhosts(int color, float seconds) {
-  int n = 0;
-  vec3 at(0);
   for (Ghost& g : ghosts) {
     if (g.body.color != color) continue;
     g.droop = std::max(g.droop, seconds);
     g.cheer = 0;
-    if (g.appear > 0.3f) {
-      ++n;
-      at += g.body.pos;
-    }
   }
-  if (n > 0) sound(SFX_GHOST, 0.22f, at / (float)n, 0.72f);  // a disappointed moan
 }
 
 void World::updateGhosts(float dt) {
@@ -907,11 +901,9 @@ void World::updateGhosts(float dt) {
       a.set = pieceSet;
       a.resetControls();
     }
-    vec3 tint = ghostTint(a.color);
     vec3 home = ghostSpot(a.color, g.slot);
-    if (g.delay > 0) {
+    if (g.delay > 0) {  // it appears without a sound
       g.delay -= dt;
-      if (g.delay <= 0) sound(SFX_GHOST, 0.4f, home, fx.rnd(0.92f, 1.08f));
       continue;
     }
     g.t += dt;
@@ -924,8 +916,8 @@ void World::updateGhosts(float dt) {
         p.pos = home + vec3(px, py, pz);
         p.vel = vec3(0, fx.rnd(0.15f, 0.4f), 0);
         p.size = fx.rnd(0.01f, 0.024f);
-        p.color = tint * fx.rnd(0.8f, 1.6f);
-        p.colorEnd = tint * 0.2f;
+        p.color = kGhostLight * fx.rnd(0.8f, 1.6f);
+        p.colorEnd = kGhostLight * 0.2f;
         p.opacity = 0;
         p.maxLife = fx.rnd(0.8f, 1.6f);
         p.type = PT_GLOW;
@@ -977,18 +969,18 @@ void World::updateGhosts(float dt) {
     if (a.set == 1 && a.kind == meshgen::K_ROOK) k.bridge = 0.35f * std::fabs(std::sin(g.t * 6.0f + ph)) * cs;
     if (a.set == 2 && a.kind == meshgen::K_KNIGHT) k.spin += dt * (2.0f + 14.0f * cs);
     if (a.set == 2 && a.kind == meshgen::K_ROOK) k.crouch = 0.3f * std::fabs(std::sin(g.t * 8.0f + ph)) * cs;
-    // a ghostly glow, brighter when cheering, and it materialises out of the wisps
-    a.glow = glm::vec4(tint, 0.25f + 0.9f * cs + 0.3f * ws);
+    // a faint pale glow, brighter when cheering, and it materialises out of the wisps
+    a.glow = glm::vec4(kGhostLight, 0.1f + 0.45f * cs + 0.15f * ws);
     a.dissolve = (1.0f - g.appear) * 0.85f;
-    a.dissolveColor = tint * 1.5f;
+    a.dissolveColor = kGhostLight * 1.5f;
     if (cs > 0.3f && fx.rnd() < dt * 5.0f * cs) {
       Particle p;
       float px = fx.rnd(-0.12f, 0.12f), pz = fx.rnd(-0.12f, 0.12f);
       p.pos = a.pos + vec3(px, a.height() * 0.9f, pz);
       p.vel = vec3(0, fx.rnd(0.3f, 0.7f), 0);
       p.size = fx.rnd(0.008f, 0.018f);
-      p.color = tint * 2.0f;
-      p.colorEnd = tint * 0.3f;
+      p.color = kGhostLight * 2.0f;
+      p.colorEnd = kGhostLight * 0.3f;
       p.opacity = 0;
       p.maxLife = fx.rnd(0.6f, 1.1f);
       p.type = PT_GLOW;
@@ -1028,7 +1020,7 @@ void World::simulate(float dt) {
     if (!a.ghostOnDeath || a.alive) continue;
     a.ghostOnDeath = false;
     addGhost(a.kind, a.color, 1.4f);
-    cheerGhosts(a.color ^ 1, 1.0f, 2.6f);
+    cheerGhosts(a.color ^ 1, 1.0f, 2.6f, true);
     droopGhosts(a.color, 3.0f);
   }
   updateGhosts(dt);

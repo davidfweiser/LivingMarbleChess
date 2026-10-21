@@ -47,6 +47,7 @@ extension Renderer {
     var team: Int32 = 0       // medieval: 0 white army, 1 black army
     var boneCount: Int32 = 0  // > 0: skinned (bones in vertex buffer 3)
     var stone: Float = 0      // medieval: turned to salt
+    var ghost: Float = 0      // > 0: a translucent ghost (its opacity)
 
     init() {}
     init(_ it: DrawItem) {
@@ -65,6 +66,7 @@ extension Renderer {
       team = it.team
       boneCount = Int32(min(it.bones.count, Medieval.maxBones))
       stone = it.stone
+      ghost = it.ghost
     }
   }
 
@@ -231,6 +233,7 @@ final class Renderer {
   // pipelines (the MSAA-dependent ones are rebuilt when the sample count changes)
   private var mpShadow: MeshPipes!, mpPrepass: MeshPipes!, mpObjectRefl: MeshPipes!, mpObject: MeshPipes!
   private var mpGlassRefl: MeshPipes!, mpGlass: MeshPipes!  // see-through items, blended
+  private var mpGhostDepth: MeshPipes!, mpGhost: MeshPipes!  // ghosts: their depth, then blended
   private var psBoard: MTLRenderPipelineState!
   private var psBackground: MTLRenderPipelineState!, psParticle: MTLRenderPipelineState!
   private var psEnv: MTLRenderPipelineState!, psIrr: MTLRenderPipelineState!
@@ -359,7 +362,8 @@ final class Renderer {
   // -------------------------------------------------------------------------
   private func makePipeline(_ label: String, vs: String, fs: String?, color: MTLPixelFormat = .invalid,
                             depth: MTLPixelFormat = .invalid, samples: Int = 1, blend: Blend = .none,
-                            mesh: Bool = false, dissolve: Bool? = nil) throws -> MTLRenderPipelineState {
+                            mesh: Bool = false, dissolve: Bool? = nil, writeColor: Bool = true)
+    throws -> MTLRenderPipelineState {
     let d = MTLRenderPipelineDescriptor()
     d.label = label
     guard let v = library.makeFunction(name: vs) else { throw RendererError(description: "missing function \(vs)") }
@@ -377,6 +381,7 @@ final class Renderer {
     }
     if mesh { d.vertexDescriptor = meshLayout }
     d.colorAttachments[0].pixelFormat = color
+    if !writeColor { d.colorAttachments[0].writeMask = [] }
     if blend != .none {
       let ca = d.colorAttachments[0]!
       ca.isBlendingEnabled = true
@@ -421,11 +426,12 @@ final class Renderer {
   }
 
   private func meshPipes(_ label: String, fs: String, color: MTLPixelFormat, depth: MTLPixelFormat,
-                         samples: Int = 1, blend: Blend = .none) throws -> MeshPipes {
+                         samples: Int = 1, blend: Blend = .none, writeColor: Bool = true) throws -> MeshPipes {
     MeshPipes(plain: try makePipeline(label, vs: "meshVS", fs: fs, color: color, depth: depth, samples: samples,
-                                      blend: blend, mesh: true, dissolve: false),
+                                      blend: blend, mesh: true, dissolve: false, writeColor: writeColor),
               dissolve: try makePipeline(label + " (dissolve)", vs: "meshVS", fs: fs, color: color, depth: depth,
-                                         samples: samples, blend: blend, mesh: true, dissolve: true))
+                                         samples: samples, blend: blend, mesh: true, dissolve: true,
+                                         writeColor: writeColor))
   }
 
   /// Pipelines of the multisampled main pass.
@@ -433,6 +439,9 @@ final class Renderer {
     let hdr = MTLPixelFormat.rgba16Float, dep = MTLPixelFormat.depth32Float
     mpObject = try meshPipes("object", fs: "objectFS", color: hdr, depth: dep, samples: samples)
     mpGlass = try meshPipes("glass", fs: "objectFS", color: hdr, depth: dep, samples: samples, blend: .premultiplied)
+    mpGhostDepth = try meshPipes("ghost (depth)", fs: "objectFS", color: hdr, depth: dep, samples: samples,
+                                 writeColor: false)
+    mpGhost = try meshPipes("ghost", fs: "objectFS", color: hdr, depth: dep, samples: samples, blend: .premultiplied)
     psBoard = try makePipeline("board", vs: "meshVS", fs: "boardFS", color: hdr, depth: dep, samples: samples,
                                mesh: true)
     psBackground = try makePipeline("background", vs: "fullscreenVS", fs: "backgroundFS", color: hdr, depth: dep,
@@ -755,7 +764,7 @@ final class Renderer {
                          shadowPass: Bool, reflectPass: Bool, glass: Bool = false) {
     var bound: MTLRenderPipelineState?
     for it in sv.items {
-      if it.glass != glass { continue }
+      if it.glass != glass || it.ghost > 0 { continue }
       if shadowPass && !it.castShadow { continue }
       if reflectPass && !it.reflect { continue }
       guard let m = (lowLod && it.meshLow != nil) ? it.meshLow : it.mesh, !m.isEmpty else { continue }
@@ -784,6 +793,40 @@ final class Renderer {
     drawItems(enc, sv, pipes, lowLod: lowLod, shadowPass: false, reflectPass: reflectPass, glass: true)
     enc.setDepthStencilState(dsWrite)
     enc.setCullMode(cull)
+  }
+
+  /// Ghosts: see-through, but each showing only its nearest surface - its depth
+  /// first, then its colour blended on top - the farthest ghost first. Leaves no face culling.
+  private func drawGhosts(_ enc: MTLRenderCommandEncoder, _ sv: SceneView) {
+    var order: [(Float, Int32)] = []  // (distance, ghost id)
+    for it in sv.items where it.ghost > 0 {
+      if order.contains(where: { $0.1 == it.ghostId }) { continue }
+      let p = vec3(it.model.columns.3.x, it.model.columns.3.y, it.model.columns.3.z)
+      order.append((length(p - sv.camPos), it.ghostId))
+    }
+    if order.isEmpty { return }
+    order.sort { $0.0 > $1.0 }
+    enc.setCullMode(.back)
+    for (_, id) in order {
+      for (pipes, ds) in [(mpGhostDepth!, dsWrite!), (mpGhost!, dsTest!)] {
+        enc.setDepthStencilState(ds)
+        var bound: MTLRenderPipelineState?
+        for it in sv.items where it.ghost > 0 && it.ghostId == id {
+          guard let m = it.mesh, !m.isEmpty else { continue }
+          var du = DrawUniforms(it)
+          let ps = it.dissolve > 0 ? pipes.dissolve : pipes.plain
+          if ps !== bound {
+            enc.setRenderPipelineState(ps)
+            bound = ps
+          }
+          enc.setVertexBytes(&du, length: MemoryLayout<DrawUniforms>.stride, index: 1)
+          enc.setFragmentBytes(&du, length: MemoryLayout<DrawUniforms>.stride, index: 1)
+          setBones(enc, du.boneCount > 0 ? it.bones : restBones, Int(du.boneCount))
+          draw(enc, m)
+        }
+      }
+    }
+    enc.setCullMode(.none)
   }
 
   /// The skinning palette of the next draw (vertex buffer 3).
@@ -1003,10 +1046,12 @@ final class Renderer {
         enc.setFragmentTexture(envCube, index: 0)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
-        // glass (the background rebound texture 0: the lighting inputs go back on)
-        if sv.items.contains(where: { $0.glass }) {
+        // glass, then the ghosts (the background rebound texture 0: the lighting inputs go back on)
+        let hasGlass = sv.items.contains(where: { $0.glass }), hasGhosts = sv.items.contains(where: { $0.ghost > 0 })
+        if hasGlass || hasGhosts {
           bindLighting(enc, pu, sv, ssao: settings.ssao ? ssaoBlurTex : white)
-          drawGlass(enc, sv, mpGlass, lowLod: false, reflectPass: false, cull: .none)
+          if hasGlass { drawGlass(enc, sv, mpGlass, lowLod: false, reflectPass: false, cull: .none) }
+          if hasGhosts { drawGhosts(enc, sv) }
           enc.setDepthStencilState(dsTest)
         }
 

@@ -70,6 +70,8 @@ enum Sfx: Int, CaseIterable {
   case hatch     // an egg cracking open, chirps
   case drone     // the mothership
   case sputter   // a machine sputtering and dying
+  // the ghosts of captured pieces
+  case cheer     // a far-off little crowd of ghosts cheering
 }
 
 /// CPU-side image (2D or 3D), 8 bits per channel.

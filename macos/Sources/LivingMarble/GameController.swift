@@ -295,6 +295,11 @@ final class GameController: NSObject, MTKViewDelegate {
     world.props.removeAll()
     world.cam.release(0.6)
     world.spawnFromBoard(game.board.sq, true)
+    // the ghosts of the pieces still captured
+    world.ghosts.removeAll()
+    for m in game.moves where m.isCapture && m.captured != 0 {
+      world.addGhost(Int(m.captured & 7) - 1, Int(m.captured >> 3), 0, true)
+    }
     world.sound(.chime, 0.5, vec3(0), 0.8)
   }
 
@@ -394,6 +399,7 @@ final class GameController: NSObject, MTKViewDelegate {
       let cs = m.captureSquare
       plan.victim = world.actorAt[cs]
       world.actorAt[cs] = -1
+      if plan.victim >= 0 { world.actors[plan.victim].ghostOnDeath = true }  // it will watch from the side
     }
     if m.isCastle {
       let from = Int(m.from), to = Int(m.to)
@@ -437,6 +443,7 @@ final class GameController: NSObject, MTKViewDelegate {
         world.sound(.check, 0.9)
         bannerText = "Check!"
         bannerTime = 2
+        world.cheerGhosts(b.side ^ 1, 0.7, 1.8)
       }
       if model.mode == .twoPlayer && model.autoRotate && game.result == .ongoing { world.cam.setSide(b.side) }
     }
@@ -450,6 +457,8 @@ final class GameController: NSObject, MTKViewDelegate {
           let loser = r == .whiteMates ? Chess.black : Chess.white
           let kid = world.actorAt[game.board.kingSq[loser]]
           if kid >= 0 { anims.append(makeCheckmateAnim(world, kid, loser ^ 1)) }
+          world.cheerGhosts(loser ^ 1, 1.3, 8)
+          world.droopGhosts(loser, 10)
         } else {
           anims.append(makeStalemateAnim(world))
         }
@@ -695,6 +704,11 @@ final class GameController: NSObject, MTKViewDelegate {
       world.cam.pitch = opt.camPitch
       world.cam.dist = opt.camDist
       world.cam.target = vec3(opt.camTX, opt.camTY, opt.camTZ)
+    }
+    if opt.noCinematic {
+      model.cinematic = false
+      world.cinematic = false
+      model.autoRotate = false
     }
     if opt.battle >= 0 {
       setupBattleDemo()
@@ -1037,6 +1051,13 @@ final class GameController: NSObject, MTKViewDelegate {
     }
     world.reset()
     world.spawnFromBoard(game.board.sq, false)
+    if opt.scenario == 4 {
+      // ghost gallery: a row of captured pieces on each side
+      let kinds = [0, 0, 1, 2, 3, 4, 0]
+      for c in 0..<2 {
+        for k in kinds { world.addGhost(k, c, 0, true) }
+      }
+    }
   }
 }
 
