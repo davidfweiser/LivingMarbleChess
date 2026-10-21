@@ -133,7 +133,7 @@ final class AQuietMove: Staged {
   let plan: MovePlan
   var walker = AWalker(), rookWalker = AWalker()
   var A = vec3(0), B = vec3(0)
-  var dur: Float = 1
+  var dur: Float = 1, kingDelay: Float = 0
   init(_ p: MovePlan) { plan = p }
 
   /// The saucer lifts off, zooms across in an arc (over anything in the way) and settles.
@@ -203,12 +203,18 @@ final class AQuietMove: Staged {
         }
         A = flat(a.pos)
         B = squareCenter(Int(plan.move.to))
-        if plan.rook >= 0 { rookWalker = AWalker(plan.rook, squareCenter(plan.rookTo), .tripod, 0.9) }
+        if plan.rook >= 0 {
+          rookWalker = AWalker(plan.rook, squareCenter(plan.rookTo), .tripod, 1.1)
+          // the overlord waits until the tripod is about to clear his square
+          let clear = length(flat(B - w.actors[plan.rook].pos)) + 0.65
+          kingDelay = max(0, 0.65 + clear / 1.1 - 1.36)
+        }
       }
       var d1: Bool
       if plan.rook >= 0 {
-        // castling: the overlord swings out in an arc while the tripod strides past
-        let u = clamp(pt / 1.6, 0, 1), e = easeInOut(u)
+        // castling: the tripod strides off first, past the overlord's square, and he
+        // swings out in an arc behind it
+        let u = clamp((pt - kingDelay) / 1.6, 0, 1), e = easeInOut(u)
         let toCenter = vec3(0, 0, a.color == 0 ? -1 : 1)
         let half: vec3 = (A + B) * 0.5
         let W: vec3 = half + toCenter * 1.6  // well clear of the tripod's legs
@@ -217,13 +223,13 @@ final class AQuietMove: Staged {
         let p = pa + pw + e * e * B
         a.pos = vec3(p.x, 0, p.z)
         a.ctl.hover = 0.08 * sin(kPI * u)
-        if pt <= dt + 1e-6 { w.sound(.whoosh, 0.4, a.pos, 0.6) }
+        if pt >= kingDelay && pt - dt < kingDelay + 1e-6 { w.sound(.whoosh, 0.4, a.pos, 0.6) }
         d1 = u >= 1
       } else {
         d1 = walker.update(w, dt)
       }
       var d2 = true
-      if plan.rook >= 0 { d2 = pt > 0.2 ? rookWalker.update(w, dt) : false }
+      if plan.rook >= 0 { d2 = rookWalker.update(w, dt) }
       if a.kind == Kind.queen { a.ctl.tail += dt * 2 }
       if d1 && d2 { next() }
     case 1:

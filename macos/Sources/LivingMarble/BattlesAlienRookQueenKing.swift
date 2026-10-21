@@ -686,21 +686,31 @@ final class KingMothership: ABattle {
         }
         w.sound(.drone, 1, V)
         if w.cinematic {
-          // down low, looking up at the sky - towards the dark side of the room, away
-          // from the studio lights, and as side-on to the fighters as that allows
+          // from low down, looking up at the sky - towards the dark side of the room,
+          // away from the studio lights - with nothing standing in the way
           let mid = (A + V) * 0.5
           var s = CamPose()
           var best: Float = 1e9
           for k in -1...1 {
-            let ang = atan2(Float(0.8), Float(-0.6)) + 0.17 * Float(k)
-            let look = vec3(cos(ang), 0, sin(ang))
-            let score = abs(dot(look, dir)) + 0.2 * Float(abs(k))
-            if score < best {
-              best = score
-              s.pos = mid - look * 3.6 + vec3(0, 0.45, 0)
+            for e in 0..<2 {
+              let ang = atan2(Float(0.8), Float(-0.6)) + 0.09 * Float(k)
+              let look = vec3(cos(ang), 0, sin(ang))
+              let back: vec3 = mid - look * (4.2 + 0.8 * Float(e))
+              let cam = back + vec3(0, 1.1, 0)
+              var score = abs(dot(look, dir)) + 0.1 * Float(abs(k)) + 0.2 * Float(e)
+              for o in w.actors {
+                if !o.alive || !o.visible || o.id == plan.mover || o.id == plan.victim { continue }
+                let r = o.radius() + 0.15
+                if length(flat(o.pos - cam)) < r + 0.6 { score += 10 }
+                if segSegDist(cam, mid + vec3(0, 0.4, 0), o.pos, o.pos + vec3(0, o.height(), 0)) < r { score += 3 }
+              }
+              if score < best {
+                best = score
+                s.pos = cam
+              }
             }
           }
-          s.target = mid + vec3(0, 1.7, 0)
+          s.target = mid + vec3(0, 1.8, 0)
           s.fov = 52
           s.focus = length(s.pos - V)
           s.aperture = 4
