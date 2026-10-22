@@ -109,6 +109,11 @@ void App::drawUI() {
   ImGui::EndDisabled();
   ImGui::SameLine();
   if (ImGui::Button("Flip view", ImVec2(bw, 0))) flipCamera();
+  ImGui::BeginDisabled(!canHint());
+  if (ImGui::Button("Hint (T)", ImVec2(-1, 0))) requestHint();
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    ImGui::SetTooltip("Selects the best move for you: click the glowing square to play it");
   ImGui::Spacing();
   const char* modes[] = {"You play White", "You play Black", "Two players", "Watch AI vs AI"};
   int mi = (int)mode;
@@ -141,13 +146,12 @@ void App::drawUI() {
   if (audio.ok()) {
     ImGui::SetNextItemWidth(-90 * S);
     if (ImGui::SliderFloat("Volume", &volume, 0.0f, 1.0f, "%.2f")) audio.setVolume(volume);
-    if (ImGui::Checkbox("##music", &music)) audio.setMusic(music);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Music on or off (M)");
-    ImGui::SameLine();
     ImGui::BeginDisabled(!music);
     ImGui::SetNextItemWidth(-90 * S);
     if (ImGui::SliderFloat("Music", &musicVolume, 0.0f, 1.0f, "%.2f")) audio.setMusicVolume(musicVolume);
     ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("The music's own volume");
+    if (ImGui::Checkbox("Play music (M)", &music)) audio.setMusic(music);
     std::string playing = music ? audio.nowPlaying() : std::string();
     if (!playing.empty()) ImGui::TextDisabled("Playing: %s", playing.c_str());
   }
@@ -224,7 +228,7 @@ void App::drawUI() {
   ImDrawList* fg = ImGui::GetForegroundDrawList();
   float gs = io.FontGlobalScale;
   // ---------------- hint line ----------------
-  const char* hint = "Click: select & move    Drag: rotate board    Scroll: zoom    R: reset view    F1: help    H: hide UI    F11: full screen";
+  const char* hint = "Click: select & move    Drag: rotate board    Scroll: zoom    T: hint    R: reset view    F1: help    H: hide UI    F11: full screen";
   fg->AddText(fontUI, fontUI->FontSize * gs * 0.9f, ImVec2(pad, io.DisplaySize.y - pad - fontUI->FontSize * gs),
               IM_COL32(220, 200, 170, 140), hint);
 
@@ -235,7 +239,8 @@ void App::drawUI() {
     ImGui::BulletText("Left-click a piece, then a glowing square to move");
     ImGui::BulletText("Drag (any button) / arrow keys: rotate the board - even look underneath");
     ImGui::BulletText("Mouse wheel: zoom");
-    ImGui::BulletText("N new game, U undo, F flip view, R reset view");
+    ImGui::BulletText("N new game, U undo, T hint, F flip view, R reset view");
+    ImGui::BulletText("A hint selects the best move for you: click the glowing square to play it");
     ImGui::BulletText("B toggle battle animations, C toggle cinematic camera");
     ImGui::BulletText("H hide the interface, M music on/off, F11 full screen, F12 screenshot, Ctrl+Q quit");
     ImGui::Spacing();

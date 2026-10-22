@@ -67,6 +67,7 @@ final class GameController: NSObject, MTKViewDelegate {
   private var hasLastMove = false
   private var aiPending = false
   private var aiDelay: Float = 0
+  private var hintPending = false  // the AI is looking for a move to suggest
   private var promoFrom = -1, promoTo = -1
   private var gameOverShown = false
   private var bannerText = ""
@@ -257,6 +258,7 @@ final class GameController: NSObject, MTKViewDelegate {
 
   func newGame() {
     anims.removeAll()
+    cancelHint()
     ai.cancel()
     aiPending = false
     model.promoPending = false
@@ -281,6 +283,7 @@ final class GameController: NSObject, MTKViewDelegate {
   func undo() {
     if animating || model.promoPending { return }
     if game.plyCount == 0 { return }
+    cancelHint()
     ai.cancel()
     aiPending = false
     var n = (model.mode == .twoPlayer || model.mode == .watch) ? 1 : 2
@@ -325,6 +328,7 @@ final class GameController: NSObject, MTKViewDelegate {
 
   func setMode(_ m: Mode) {
     model.mode = m
+    cancelHint()
     ai.cancel()
     aiPending = false
     setSlowOrbit(m == .watch)
@@ -375,6 +379,8 @@ final class GameController: NSObject, MTKViewDelegate {
     var s: String
     if !isHumanTurn && aiPending {
       s = (white ? "White" : "Black") + " is thinking..."
+    } else if hintPending {
+      s = "Looking for a good move..."
     } else if isHumanTurn && model.mode != .twoPlayer {
       s = "Your move"
     } else {
@@ -402,7 +408,36 @@ final class GameController: NSObject, MTKViewDelegate {
     aiDelay = model.mode == .watch ? 0.7 : 0.15
   }
 
+  // ---- hints: the AI looks for the best move for the side to move and selects it ----
+  /// The hint searches at full strength ("King": about 2.5 s), whatever the opponent's level.
+  private let hintLevel = 3
+
+  var canHint: Bool { !loading && canAct && !hintPending && !aiPending }
+
+  func requestHint() {
+    guard canHint else { return }
+    ai.start(game.board, game.hashHistory, hintLevel)
+    hintPending = true
+  }
+
+  private func cancelHint() {
+    guard hintPending else { return }
+    ai.cancel()
+    hintPending = false
+  }
+
+  /// Selects the suggested piece with only the suggested square glowing: a click there plays it.
+  private func showHint(_ m: Move) {
+    guard let legal = Chess.findLegal(game.board, Int(m.from), Int(m.to), Int(m.promo)) else { return }
+    selected = Int(legal.from)
+    selMoves = [legal]
+    bannerText = "Hint: " + Chess.toSAN(game.board, legal)
+    bannerTime = 3
+    world.sound(.chime, 0.35, squareCenter(selected), 1.5)
+  }
+
   private func commitMove(_ m: Move) {
+    cancelHint()
     var plan = MovePlan()
     plan.move = m
     plan.mover = world.actorAt[Int(m.from)]
@@ -484,6 +519,10 @@ final class GameController: NSObject, MTKViewDelegate {
         }
       }
       return
+    }
+    if hintPending && ai.done {
+      hintPending = false
+      showHint(ai.result)
     }
     if !isHumanTurn {
       if !aiPending { startAIIfNeeded() }
@@ -636,6 +675,7 @@ final class GameController: NSObject, MTKViewDelegate {
     case "b": model.battles.toggle()
     case "h": model.showUI.toggle()
     case "m": setMusic(!model.music)
+    case "t": requestHint()
     case "?", "/": model.showHelp.toggle()
     default: return false
     }
@@ -939,6 +979,8 @@ final class GameController: NSObject, MTKViewDelegate {
     set(\.whiteToMove, game.board.side == Chess.white)
     if model.san.count != game.san.count || model.san.last != game.san.last { model.san = game.san }
     set(\.canUndo, !animating && game.plyCount > 0)
+    set(\.canHint, canHint)
+    set(\.hintPending, hintPending)
     let val = [0, 1, 3, 3, 5, 9, 0]
     var mat = [0, 0]
     for s in 0..<64 {
@@ -1090,6 +1132,7 @@ final class GameController: NSObject, MTKViewDelegate {
 extension GameController: NSMenuItemValidation {
   @objc func newGameAction(_ sender: Any?) { if !loading { newGame() } }
   @objc func undoAction(_ sender: Any?) { if !loading { undo() } }
+  @objc func hintAction(_ sender: Any?) { requestHint() }
   @objc func flipAction(_ sender: Any?) { flipCamera() }
   @objc func resetViewAction(_ sender: Any?) { resetView() }
   @objc func toggleInterfaceAction(_ sender: Any?) { model.showUI.toggle() }
@@ -1112,6 +1155,8 @@ extension GameController: NSMenuItemValidation {
       return !loading && !animating && game.plyCount > 0
     case #selector(newGameAction(_:)):
       return !loading
+    case #selector(hintAction(_:)):
+      return canHint
     case #selector(modeAction(_:)):
       item.state = model.mode.rawValue == item.tag ? .on : .off
     case #selector(levelAction(_:)):

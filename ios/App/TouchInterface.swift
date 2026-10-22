@@ -96,6 +96,8 @@ struct TouchHUDView: View {
       }
       ToolButton(title: "Undo", icon: "arrow.uturn.backward") { controller.undo() }
         .disabled(!model.canUndo)
+      ToolButton(title: "Hint", icon: model.hintPending ? "lightbulb.fill" : "lightbulb") { controller.requestHint() }
+        .disabled(!model.canHint)
       ToolButton(title: "Flip", icon: "arrow.triangle.2.circlepath") { controller.flipCamera() }
       ToolButton(title: "Reset", icon: "camera.viewfinder") { controller.resetView() }
       if movesButton {
@@ -140,7 +142,7 @@ private struct ToolButton: View {
         Image(systemName: icon).font(.system(size: 19, weight: .medium)).frame(height: 22)
         Text(title).font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
       }
-      .frame(width: 52, height: 46)  // comfortably above the 44 pt touch target
+      .frame(width: 48, height: 46)  // above the 44 pt touch target, and seven fit a 375 pt wide phone
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -240,20 +242,19 @@ private struct SettingsSheet: View {
         }
         if model.audioOK {
           Section {
-            HStack(spacing: 12) {
-              Image(systemName: "speaker.fill").foregroundStyle(.secondary)
+            LabeledContent {
               Slider(value: Binding(get: { Double(model.volume) }, set: { controller.setVolume(Float($0)) }), in: 0...1)
-              Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+            } label: {
+              Label("Volume", systemImage: "speaker.wave.2.fill")
             }
-            Toggle("Music", isOn: Binding(get: { model.music }, set: { controller.setMusic($0) }))
-            if model.music {
-              HStack(spacing: 12) {
-                Image(systemName: "music.note").foregroundStyle(.secondary)
-                Slider(value: Binding(get: { Double(model.musicVolume) }, set: { controller.setMusicVolume(Float($0)) }),
-                       in: 0...1)
-                Image(systemName: "music.note.list").foregroundStyle(.secondary)
-              }
+            LabeledContent {
+              Slider(value: Binding(get: { Double(model.musicVolume) }, set: { controller.setMusicVolume(Float($0)) }),
+                     in: 0...1)
+                .disabled(!model.music)
+            } label: {
+              Label("Music", systemImage: "music.note")
             }
+            Toggle("Play music", isOn: Binding(get: { model.music }, set: { controller.setMusic($0) }))
           } header: {
             Text("Sound")
           } footer: {
@@ -380,10 +381,11 @@ private struct HelpList: View {
     "Drag anywhere else to turn the board, even to look at it from underneath",
     "Pinch to zoom, twist two fingers to turn the board, slide two fingers up or down to tilt it",
     "Reset brings the camera back, Flip looks from the other side",
+    "Hint selects the best move for you: tap the glowing square to play it",
   ]
   private let keyboard = [
     "Arrow keys turn the board",
-    "N new game, U or ⌘Z undo, F flip view, R reset view",
+    "N new game, U or ⌘Z undo, T hint, F flip view, R reset view",
     "B battle animations on/off, C cinematic camera on/off",
     "H hide the interface, M music on/off, F12 screenshot, ? help",
   ]

@@ -112,6 +112,10 @@ class App {
   float armyProgress(int set) const;
   bool isHumanTurn() const;
   bool animating() const { return !anims.empty(); }
+  // A hint: the AI looks for the best move for the side to move and selects it.
+  bool canHint() const;
+  void requestHint();
+  bool hintPending = false;
   const char* statusText() const;
 
  private:
@@ -122,6 +126,8 @@ class App {
   void updateGame(float dt);
   void handleInput();
   void commitMove(const chess::Move& m);
+  void showHint(const chess::Move& m);
+  void cancelHint();
   void select(int sq);
   void deselect();
   int pickSquare(double mx, double my, bool piecesFirst) const;

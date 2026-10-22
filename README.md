@@ -129,9 +129,10 @@ theremin, a church bell, the check horn — the music steps back.
 | Queen  | **Twirl** — a quick waltz for violin, pizzicato and glockenspiel · **Sovereign** — disco strings, an octave bass and clavinet · **Royal Toccata** — harpsichord figures with violin and organ over a pop beat |
 | King   | **Royal Fanfare** — trumpets, tuba, timpani and a marching snare · **Coronation** — an anthem for trumpet, organ and choir · **The King's Parade** — trumpet, glockenspiel, strings and handclaps |
 
-Turn it on and off with **M** or *Music* in the panel, which has its own
-volume and shows what is playing (on the Mac also *Game › Music*; on iPhone
-and iPad in Settings); `--no-music` starts without it.
+The panel has a *Music* volume of its own beside *Volume* (which turns
+everything up or down), and *Play music* (or **M**) turns it on and off; it
+also shows what is playing. On the Mac it is also *Game › Music*, on iPhone and
+iPad under *Settings › Sound*; `--no-music` starts without it.
 
 Every note is synthesised as it plays: drums (kick, snare, claps, hi-hats,
 cymbals, toms, timpani, taiko, woodblock), basses, plucked strings (harp,
@@ -401,6 +402,7 @@ starts much quicker.
 | Mouse wheel (Mac: also two-finger scroll or pinch) | Zoom |
 | N (Mac: also ⌘N) | New game |
 | U / Ctrl+Z (Mac: ⌘Z) | Undo |
+| T | Hint: the AI picks the best move for you and selects it — click the glowing square to play it |
 | F | Flip the view |
 | R | Reset the view |
 | B | Toggle battle animations (quick captures when off) |
@@ -426,9 +428,10 @@ On iPhone and iPad:
 | Twist two fingers | Turn the board |
 | Slide two fingers up or down | Tilt the board |
 
-The toolbar has New game, Undo, Flip, Reset view, the move list (on iPhone;
+The toolbar has New game, Undo, Hint, Flip, Reset view, the move list (on iPhone;
 iPad shows it beside the board) and Settings, which holds the mode, opponent,
-the army (*Pieces*), battle and camera switches, volume, graphics quality, *Hide Interface* and
+the army (*Pieces*), battle and camera switches, the volume, the music and its volume,
+graphics quality, *Hide Interface* and
 *Save Screenshot* (the board without the interface, saved to the Files app).
 The board fills the screen in portrait as well as landscape. On iPad a
 trackpad or mouse also hovers and scrolls to zoom, and a keyboard takes the
@@ -438,6 +441,12 @@ Modes (in the panel): play White or Black against the AI, two players on one
 screen (the board turns each move), or watch the AI play itself. The AI has
 five strengths, from *Squire* (forgiving) to *Grandmaster* (about 6 seconds of
 search per move).
+
+Stuck? Ask for a **hint** (*Hint* in the panel or the toolbar, **T**, or on the
+Mac *Game › Hint*) when it is your move: the AI thinks for a couple of seconds
+at full strength, then selects the piece to move with only the square it should
+go to glowing, and names the move ("Hint: Nf3"). Click or tap that square to
+play it, or pick something else. In two-player mode it helps whoever is to move.
 
 ## Command-line options
 

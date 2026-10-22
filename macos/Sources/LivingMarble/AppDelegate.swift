@@ -84,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let game = NSMenu(title: "Game")
     add(game, "New Game", #selector(GameController.newGameAction(_:)), "n", target: c)
     add(game, "Undo Move", #selector(GameController.undoAction(_:)), "z", target: c)
+    add(game, "Hint", #selector(GameController.hintAction(_:)), "t", [], target: c)
     game.addItem(.separator())
     for m in Mode.allCases {
       add(game, m.title, #selector(GameController.modeAction(_:)), "\(m.rawValue + 1)", tag: m.rawValue, target: c)

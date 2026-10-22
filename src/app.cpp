@@ -337,6 +337,7 @@ int App::run() {
 // ---------------------------------------------------------------------------
 void App::newGame() {
   anims.clear();
+  cancelHint();
   ai.cancel();
   aiPending = false;
   promoPending = false;
@@ -359,6 +360,7 @@ void App::newGame() {
 void App::undo() {
   if (animating() || promoPending) return;
   if (game.plyCount() == 0) return;
+  cancelHint();
   ai.cancel();
   aiPending = false;
   int n = (mode == Mode::TwoPlayer || mode == Mode::Watch) ? 1 : 2;
@@ -392,6 +394,7 @@ void App::resetView() {
 
 void App::setMode(Mode m) {
   mode = m;
+  cancelHint();
   ai.cancel();
   aiPending = false;
   world.cam.autoSpin = 0;
@@ -459,6 +462,7 @@ const char* App::statusText() const {
   if (r != chess::Result::Ongoing) return chess::resultText(r);
   bool white = game.board().side == chess::WHITE;
   if (!isHumanTurn() && aiPending) s = std::string(white ? "White" : "Black") + " is thinking...";
+  else if (hintPending) s = "Looking for a good move...";
   else if (isHumanTurn() && mode != Mode::TwoPlayer) s = "Your move";
   else s = std::string(white ? "White" : "Black") + " to move";
   if (game.board().inCheck()) s += "  -  Check!";
@@ -487,7 +491,39 @@ void App::startAIIfNeeded() {
   aiDelay = mode == Mode::Watch ? 0.7f : 0.15f;
 }
 
+// The hint searches at full strength ("King": about 2.5 s), whatever the opponent's level.
+constexpr int kHintLevel = 3;
+
+bool App::canHint() const {
+  return !loading && anims.empty() && isHumanTurn() && game.result() == chess::Result::Ongoing && !promoPending &&
+         !hintPending && !aiPending;
+}
+
+void App::requestHint() {
+  if (!canHint()) return;
+  ai.start(game.board(), game.hashHistory(), kHintLevel);
+  hintPending = true;
+}
+
+void App::cancelHint() {
+  if (!hintPending) return;
+  ai.cancel();
+  hintPending = false;
+}
+
+// Selects the suggested piece with only the suggested square glowing: a click there plays it.
+void App::showHint(const chess::Move& m) {
+  chess::Move legal;
+  if (!chess::findLegal(game.board(), m.from, m.to, m.promo, legal)) return;
+  selected = legal.from;
+  selMoves.assign(1, legal);
+  bannerText = "Hint: " + chess::toSAN(game.board(), legal);
+  bannerTime = 3.0f;
+  world.sound(SFX_CHIME, 0.35f, squareCenter(legal.from), 1.5f);
+}
+
 void App::commitMove(const chess::Move& m) {
+  cancelHint();
   MovePlan plan;
   plan.move = m;
   plan.mover = world.actorAt[m.from];
@@ -628,6 +664,7 @@ void App::handleInput() {
     if (ImGui::IsKeyPressed(ImGuiKey_C)) world.cinematic = !world.cinematic;
     if (ImGui::IsKeyPressed(ImGuiKey_B)) battles = !battles;
     if (ImGui::IsKeyPressed(ImGuiKey_H)) showUI = !showUI;
+    if (ImGui::IsKeyPressed(ImGuiKey_T, false)) requestHint();
     if (ImGui::IsKeyPressed(ImGuiKey_M, false)) {
       music = !music;
       audio.setMusic(music);
@@ -721,6 +758,10 @@ void App::updateGame(float dt) {
       }
     }
     return;
+  }
+  if (hintPending && ai.done()) {
+    hintPending = false;
+    showHint(ai.result());
   }
   if (!isHumanTurn()) {
     if (!aiPending) startAIIfNeeded();

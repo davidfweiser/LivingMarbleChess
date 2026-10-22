@@ -35,6 +35,8 @@ final class GameModel {
   var san: [String] = []
   var material = "even"
   var canUndo = false
+  var canHint = false      // a hint can be asked for now
+  var hintPending = false  // ... and one is being looked for
   var bannerText = ""
   var bannerAlpha: Double = 0
   var bannerPermanent = false
@@ -175,7 +177,7 @@ private struct HUDView: View {
               MovesPanel(model: model, maxHeight: min(geo.size.height * 0.62, 480))
             }
             Spacer(minLength: 0)
-            Text("Click: select & move     Drag: turn the board     Scroll or pinch: zoom     R: reset view     ?: help     H: hide interface")
+            Text("Click: select & move     Drag: turn the board     Scroll or pinch: zoom     T: hint     R: reset view     ?: help     H: hide interface")
               .font(.system(size: 13))
               .foregroundStyle(Color(red: 0.86, green: 0.78, blue: 0.67).opacity(0.6))
               .allowsHitTesting(false)
@@ -266,7 +268,14 @@ private struct ControlPanel: View {
         Button { controller.flipCamera() } label: { Text("Flip View").frame(maxWidth: .infinity) }
       }
       .controlSize(.large)
-      .padding(.vertical, 2)
+      .padding(.top, 2)
+      Button { controller.requestHint() } label: {
+        Label("Hint", systemImage: model.hintPending ? "lightbulb.fill" : "lightbulb").frame(maxWidth: .infinity)
+      }
+      .controlSize(.large)
+      .disabled(!model.canHint)
+      .help("Selects the best move for you: click the glowing square to play it (T)")
+      .padding(.bottom, 2)
 
       Picker("Mode", selection: Binding(get: { model.mode }, set: { controller.setMode($0) })) {
         ForEach(Mode.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -303,14 +312,13 @@ private struct ControlPanel: View {
         LabeledContent("Volume") {
           Slider(value: Binding(get: { Double(model.volume) }, set: { controller.setVolume(Float($0)) }), in: 0...1)
         }
-        LabeledContent {
+        LabeledContent("Music") {
           Slider(value: Binding(get: { Double(model.musicVolume) }, set: { controller.setMusicVolume(Float($0)) }),
                  in: 0...1)
             .disabled(!model.music)
-        } label: {
-          Toggle("Music", isOn: Binding(get: { model.music }, set: { controller.setMusic($0) }))
-            .help("Music on or off (M)")
+            .help("The music's own volume")
         }
+        Toggle("Play music (M)", isOn: Binding(get: { model.music }, set: { controller.setMusic($0) }))
         if model.music && !model.nowPlaying.isEmpty {
           Text("Playing: \(model.nowPlaying)")
             .font(.system(size: 12))
@@ -406,7 +414,8 @@ private struct HelpPanel: View {
     "Click a piece, then a glowing square to move",
     "Drag (any button), arrow keys: turn the board, even look underneath",
     "Scroll or pinch: zoom",
-    "N new game, U or ⌘Z undo, F flip view, R reset view",
+    "N new game, U or ⌘Z undo, T hint, F flip view, R reset view",
+    "A hint selects the best move for you: click the glowing square to play it",
     "B battle animations on/off, C cinematic camera on/off",
     "H hide the interface, M music on/off, F12 or ⇧⌘S screenshot, ⌘Q quit",
   ]
