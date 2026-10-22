@@ -29,6 +29,7 @@ struct Options {
   var camYaw: Float = 0, camPitch: Float = 0.8, camDist: Float = 12.6
   var camTX: Float = 0, camTY: Float = 0.15, camTZ: Float = 0
   var noAudio = false
+  var noMusic = false
   var selftest = false
   var noRender = false        // simulate without drawing (stress tests)
   var level = -1
@@ -52,6 +53,7 @@ struct Options {
       --pieces marble|medieval|alien  which army to play with (default marble)
       --dof                   depth of field: blur what the camera is not focused on
       --mute                  no sound
+      --no-music              no background music (M turns it on and off)
       --selftest              verify the move generator (perft)
       --version               print the version
 
@@ -97,6 +99,7 @@ struct Options {
       case "--demo": o.demo = true
       case "--fen": o.fen = next()
       case "--mute": o.noAudio = true
+      case "--no-music": o.noMusic = true
       case "--pieces":
         let v = next()
         o.pieces = (v == "medieval" || v == "1") ? 1 : ((v == "alien" || v == "aliens" || v == "2") ? 2 : 0)

@@ -298,9 +298,13 @@ int App::run() {
   initUI();
   renderer.init(presetSettings(gfxPreset));
   std::printf("[gl] %s\n", renderer.glInfo().c_str());
+  music = !opt.noMusic;
+  audio.setMusic(music);
+  audio.setMusicVolume(musicVolume);
   if (!opt.noAudio && audio.init()) {
     world.audio = &audio;
     audio.setVolume(volume);
+    audio.resumeMusic();
   } else {
     std::printf("[audio] no audio device - running silent\n");
   }
@@ -347,6 +351,7 @@ void App::newGame() {
   world.cam.release(0.6f);
   world.spawnFromBoard(game.board().sq, true);
   world.sound(SFX_CHIME, 0.6f);
+  audio.resumeMusic();
   world.cam.setSide(mode == Mode::HumanBlack ? 1 : 0);
   bannerText = "";
 }
@@ -374,6 +379,7 @@ void App::undo() {
   for (const chess::Move& m : game.moves())
     if (m.isCapture() && m.captured) world.addGhost((m.captured & 7) - 1, m.captured >> 3, 0.0f, true);
   world.sound(SFX_CHIME, 0.5f, vec3(0), 0.8f);
+  audio.resumeMusic();  // in case the game had ended
 }
 
 void App::flipCamera() { world.cam.yaw = wrapAngle(world.cam.yaw + kPI); }
@@ -517,6 +523,8 @@ void App::commitMove(const chess::Move& m) {
   plan.style = opt.style;
   if (plan.victim < 0 && m.isCapture()) plan.fast = true;
   world.stopFidgets();
+  // the music of the piece that moves (a promoted pawn: of what it becomes)
+  audio.playMusic((m.flags & chess::MF_PROMO) ? m.promo - 1 : chess::pieceType(game.board().sq[m.from]) - 1);
   game.play(m);
   lastMove = m;
   hasLastMove = true;
@@ -620,6 +628,10 @@ void App::handleInput() {
     if (ImGui::IsKeyPressed(ImGuiKey_C)) world.cinematic = !world.cinematic;
     if (ImGui::IsKeyPressed(ImGuiKey_B)) battles = !battles;
     if (ImGui::IsKeyPressed(ImGuiKey_H)) showUI = !showUI;
+    if (ImGui::IsKeyPressed(ImGuiKey_M, false)) {
+      music = !music;
+      audio.setMusic(music);
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_F1)) showHelp = !showHelp;
     if (ImGui::IsKeyPressed(ImGuiKey_F11, false) || (io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_Enter, false)))
       setFullscreen(!fullscreen);
@@ -694,6 +706,7 @@ void App::updateGame(float dt) {
   if (r != chess::Result::Ongoing) {
     if (!gameOverShown) {
       gameOverShown = true;
+      audio.stopMusic();
       bannerText = chess::resultText(r);
       bannerTime = 1e9f;
       if (r == chess::Result::WhiteMates || r == chess::Result::BlackMates) {
@@ -970,6 +983,7 @@ void App::frame(float dt) {
     quitRequested = true;
   }
   if (opt.noRender && frameCount % 600 == 0)
-    std::printf("[sim] frame %d ply %d anims %zu chunks %zu particles %zu %s\n", frameCount, game.plyCount(), anims.size(),
-                world.chunks.size(), world.fx.size(), chess::resultText(game.result()));
+    std::printf("[sim] frame %d ply %d anims %zu chunks %zu particles %zu %s, music: %s\n", frameCount, game.plyCount(),
+                anims.size(), world.chunks.size(), world.fx.size(), chess::resultText(game.result()),
+                audio.nowPlaying().c_str());
 }

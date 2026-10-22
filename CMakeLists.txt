@@ -102,6 +102,8 @@ add_executable(living_marble
   src/battle_alien.cpp
   src/particles.cpp
   src/audio.cpp
+  src/music.cpp
+  src/music_score.cpp
   src/ui.cpp
   src/image_io.cpp)
 

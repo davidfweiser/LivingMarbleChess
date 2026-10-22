@@ -141,6 +141,15 @@ void App::drawUI() {
   if (audio.ok()) {
     ImGui::SetNextItemWidth(-90 * S);
     if (ImGui::SliderFloat("Volume", &volume, 0.0f, 1.0f, "%.2f")) audio.setVolume(volume);
+    if (ImGui::Checkbox("##music", &music)) audio.setMusic(music);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Music on or off (M)");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!music);
+    ImGui::SetNextItemWidth(-90 * S);
+    if (ImGui::SliderFloat("Music", &musicVolume, 0.0f, 1.0f, "%.2f")) audio.setMusicVolume(musicVolume);
+    ImGui::EndDisabled();
+    std::string playing = music ? audio.nowPlaying() : std::string();
+    if (!playing.empty()) ImGui::TextDisabled("Playing: %s", playing.c_str());
   }
   {
     bool fs = fullscreen;
@@ -228,7 +237,7 @@ void App::drawUI() {
     ImGui::BulletText("Mouse wheel: zoom");
     ImGui::BulletText("N new game, U undo, F flip view, R reset view");
     ImGui::BulletText("B toggle battle animations, C toggle cinematic camera");
-    ImGui::BulletText("H hide the interface, F11 full screen, F12 screenshot, Ctrl+Q quit");
+    ImGui::BulletText("H hide the interface, M music on/off, F11 full screen, F12 screenshot, Ctrl+Q quit");
     ImGui::Spacing();
     ImGui::TextColored(kGold, "The battles (each capture picks one at random)");
     static const char* const kPieces[6] = {"Pawn", "Knight", "Bishop", "Rook", "Queen", "King"};

@@ -35,6 +35,7 @@ static void usage() {
       "  --pieces marble|medieval|alien  which army to play with (default marble)\n"
       "  --dof                   depth of field: blur what the camera is not focused on\n"
       "  --mute                  no sound\n"
+      "  --no-music              no background music (M turns it on and off)\n"
       "  --selftest              verify the move generator (perft)\n"
       "  --version               print the version\n"
       "\n capture tools:\n"
@@ -69,6 +70,7 @@ int main(int argc, char** argv) {
     else if (a == "--demo") o.demo = true;
     else if (a == "--fen") o.fen = next();
     else if (a == "--mute") o.noAudio = true;
+    else if (a == "--no-music") o.noMusic = true;
     else if (a == "--pieces") {
       std::string v = next();
       o.pieces = (v == "medieval" || v == "1") ? 1 : ((v == "alien" || v == "aliens" || v == "2") ? 2 : 0);

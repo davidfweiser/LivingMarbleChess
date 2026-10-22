@@ -1,6 +1,7 @@
 #include "audio.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -9,6 +10,8 @@
 #include <random>
 #include <thread>
 #include <vector>
+
+#include "music.h"
 
 #ifdef LM_AUDIO
 #define MINIAUDIO_IMPLEMENTATION
@@ -1229,6 +1232,7 @@ struct Audio::Impl {
     float rate = 1, l = 0, r = 0;
   };
   Voice voices[40];
+  ::music::Engine music;
   std::mutex mtx;
   float master = 0.8f;
 #ifdef LM_AUDIO
@@ -1253,6 +1257,7 @@ struct Audio::Impl {
         v.pos += v.rate;
       }
     }
+    music.render(out, out + 1, (int)frames, 2);
     for (unsigned i = 0; i < frames * 2; ++i) out[i] = std::tanh(out[i] * master);
   }
 };
@@ -1264,12 +1269,17 @@ static void lmAudioCallback(ma_device* dev, void* out, const void*, ma_uint32 fr
 }
 #endif
 
+static float musicDuck(Sfx s);
+
 Audio::Audio() {}
 Audio::~Audio() { shutdown(); }
 
 bool Audio::init() {
 #ifdef LM_AUDIO
   impl_ = new Impl;
+  impl_->music.seed(std::random_device{}());
+  impl_->music.setEnabled(music_);
+  impl_->music.setVolume(musicVolume_);
   impl_->sounds = synthAll();
   impl_->sounds.resize(SFX_COUNT);
   for (int i = SFX_HYMN; i < SFX_COUNT; ++i) impl_->sounds[i] = make(0.01f);
@@ -1340,6 +1350,62 @@ void Audio::play(Sfx s, float vol, float pan, float pitch) {
   slot->rate = std::max(0.25f, pitch);
   slot->l = vol * std::cos(a);
   slot->r = vol * std::sin(a);
+  float depth = musicDuck(s);
+  if (depth < 1.0f) impl_->music.duck((int)((float)impl_->sounds[s].size() / slot->rate), depth);
+}
+
+// How far the music is turned down while a sound effect plays: the ones that are
+// music themselves (the organ, the theremin, the bells ...) would clash with it.
+static float musicDuck(Sfx s) {
+  switch (s) {
+    case SFX_HYMN: return 0.12f;
+    case SFX_ORGAN: case SFX_THEREMIN: return 0.2f;
+    case SFX_MATE: return 0.25f;
+    case SFX_BELL: case SFX_DRONE: return 0.35f;
+    case SFX_CHECK: case SFX_HORN: return 0.45f;
+    default: return 1.0f;
+  }
+}
+
+void Audio::playMusic(int piece) {
+  if (!ok_ || !impl_) return;
+  std::lock_guard<std::mutex> lk(impl_->mtx);
+  impl_->music.play(piece);
+}
+
+void Audio::resumeMusic() {
+  if (!ok_ || !impl_) return;
+  std::lock_guard<std::mutex> lk(impl_->mtx);
+  impl_->music.resume();
+}
+
+void Audio::stopMusic() {
+  if (!ok_ || !impl_) return;
+  std::lock_guard<std::mutex> lk(impl_->mtx);
+  impl_->music.stop();
+}
+
+void Audio::setMusic(bool on) {
+  music_ = on;
+  if (!impl_) return;
+  std::lock_guard<std::mutex> lk(impl_->mtx);
+  impl_->music.setEnabled(on);
+}
+
+void Audio::setMusicVolume(float v) {
+  musicVolume_ = v;
+  if (!impl_) return;
+  std::lock_guard<std::mutex> lk(impl_->mtx);
+  impl_->music.setVolume(v);
+}
+
+std::string Audio::nowPlaying() const {
+  if (!ok_ || !impl_) return "";
+  static const char* const kPiece[::music::kPieces] = {"pawn", "knight", "bishop", "rook", "queen", "king"};
+  std::lock_guard<std::mutex> lk(impl_->mtx);
+  int s = impl_->music.playing();
+  if (s < 0) return "";
+  return impl_->music.songTitle(s) + " (" + kPiece[impl_->music.songPiece(s)] + ")";
 }
 
 bool Audio::dumpWav(const char* dir) {
@@ -1363,6 +1429,28 @@ bool Audio::dumpWav(const char* dir) {
     w32(16); w16(1); w16(1); w32(SR); w32(SR * 2); w16(2); w16(16);
     std::fwrite("data", 1, 4, f); w32(bytes);
     for (float v : S[i]) w16((uint16_t)(int16_t)std::max(-32767.0f, std::min(32767.0f, v * 32767.0f)));
+    std::fclose(f);
+  }
+  // and every song of the music, in stereo: music-<piece>-<title>.wav
+  static const char* const kPiece[::music::kPieces] = {"pawn", "knight", "bishop", "rook", "queen", "king"};
+  ::music::Engine m;
+  for (const std::string& w : m.warnings()) std::printf("[music] %s\n", w.c_str());
+  for (int i = 0; i < m.songCount(); ++i) {
+    std::string title;  // "The King's Parade" -> the-kings-parade
+    for (char c : m.songTitle(i))
+      if (c == ' ') title += '-';
+      else if (std::isalnum((unsigned char)c)) title += (char)std::tolower((unsigned char)c);
+    std::string path = std::string(dir) + "/music-" + kPiece[m.songPiece(i)] + "-" + title + ".wav";
+    std::vector<float> st = m.renderSong(i);
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return false;
+    uint32_t n = (uint32_t)(st.size() / 2), bytes = n * 4;
+    auto w32 = [&](uint32_t v) { std::fwrite(&v, 4, 1, f); };
+    auto w16 = [&](uint16_t v) { std::fwrite(&v, 2, 1, f); };
+    std::fwrite("RIFF", 1, 4, f); w32(36 + bytes); std::fwrite("WAVEfmt ", 1, 8, f);
+    w32(16); w16(1); w16(2); w32(SR); w32(SR * 4); w16(4); w16(16);
+    std::fwrite("data", 1, 4, f); w32(bytes);
+    for (float v : st) w16((uint16_t)(int16_t)std::max(-32767.0f, std::min(32767.0f, v * 32767.0f)));
     std::fclose(f);
   }
   return true;

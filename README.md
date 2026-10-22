@@ -21,9 +21,15 @@ In every army, **the fallen come back as ghosts**: a captured piece slowly
 takes shape again, translucent, beside the board, and watches the rest of the
 game — cheering its side on.
 
+And there is **music**: every type of piece has three upbeat themes of its own
+— a bouncy one for the pawn, a gallop for the knight, a stomp for the rook, a
+waltz for the queen, a fanfare for the king — and when a piece moves, its
+music takes over.
+
 Everything is procedural. There are **no model, texture or sound files**:
 the pieces are sculpted from signed-distance fields at startup, the board's
-inlaid wood is baked on the fly, and every sound effect is synthesised.
+inlaid wood is baked on the fly, every sound effect is synthesised, and the
+music is played by a little synthesiser from scores written as text.
 
 On the Mac the game is a native app written in Swift: Metal graphics, an
 AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
@@ -102,6 +108,39 @@ is a soft, far-off cheer when one of their teammates takes out an opponent.
 When their side loses a piece they hang their heads, and now and then one
 gives a little wave to urge the others on. Taking a move back brings the
 captured piece back to life and its ghost disappears.
+
+## The music
+
+Each type of piece has three themes, written to suit it. When a piece moves,
+the music switches to one of its themes at the next bar line (a promoted pawn
+brings in the music of what it becomes). A theme plays at least two bars before
+another piece's can take over, and each piece's theme picks up where it left off
+the last time; when one ends, another of that piece's themes follows, chosen at
+random. The music fades out when the game ends and starts again with a new game.
+While an effect that is music itself plays — the organ's *Dies irae*, the
+theremin, a church bell, the check horn — the music steps back.
+
+| Piece | Themes |
+|---|---|
+| Pawn   | **Hop Along** — bouncy chiptune lead, marimba and pizzicato bass · **Fife and Drum** — a fife-and-drum march with tuba · **Pawn Shuffle** — a funky shuffle with slap bass, clavinet and a horn section |
+| Knight | **Gallop** — a trumpet over clip-clopping woodblocks and galloping strings · **Wild West Leap** — twangy western guitar and whistling over a train beat · **The Joust** — a brass fanfare over spiccato strings and timpani |
+| Bishop | **Glide** — bells and harp arpeggios with a choir over a light dance groove · **Glory Glory** — a swinging gospel with organ, choir and handclaps · **Seraph Dance** — a soaring synth lead, harp and pads over a trance beat |
+| Rook   | **Castle Stomp** — stomp-stomp-clap rock with distorted power chords and brass · **Siege Engine** — a driving octave bass, brass stabs and taiko · **Fortress** — taiko drums, horns and spiccato strings |
+| Queen  | **Twirl** — a quick waltz for violin, pizzicato and glockenspiel · **Sovereign** — disco strings, an octave bass and clavinet · **Royal Toccata** — harpsichord figures with violin and organ over a pop beat |
+| King   | **Royal Fanfare** — trumpets, tuba, timpani and a marching snare · **Coronation** — an anthem for trumpet, organ and choir · **The King's Parade** — trumpet, glockenspiel, strings and handclaps |
+
+Turn it on and off with **M** or *Music* in the panel, which has its own
+volume and shows what is playing (on the Mac also *Game › Music*; on iPhone
+and iPad in Settings); `--no-music` starts without it.
+
+Every note is synthesised as it plays: drums (kick, snare, claps, hi-hats,
+cymbals, toms, timpani, taiko, woodblock), basses, plucked strings (harp,
+harpsichord, guitar, pizzicato), mallets and bells (FM), organs, brass,
+strings, a choir and synth leads, with a reverb hall and an echo. The songs are
+written in a compact text notation (`music_score.cpp`: chords, drum patterns,
+arpeggios as chord tones and melodies as notes), and the score of every song
+is checked bar by bar when it is read. `--dump-sfx folder` writes each song as a
+.wav along with the sound effects.
 
 ## The medieval army
 
@@ -367,6 +406,7 @@ starts much quicker.
 | B | Toggle battle animations (quick captures when off) |
 | C | Toggle the cinematic battle camera |
 | H | Hide / show the interface |
+| M | Music on / off |
 | F11 / Alt+Enter (Mac: ⌃⌘F) | Toggle full screen (also a checkbox in the panel) |
 | F1 (Mac: also ? or ⌘?) | Help |
 | F12 (Mac: also ⇧⌘S) | Save a screenshot (PNG; on the Mac it goes to Pictures › Living Marble) |
@@ -417,6 +457,7 @@ many pixels, and screenshots show the 3D scene without the interface panels.
 --pieces marble|medieval|alien  which army to play with (default marble)
 --dof                   depth of field: blur what the camera is not focused on
 --mute                  no sound
+--no-music              no background music (M turns it on and off)
 --selftest              verify the move generator (perft)
 --version               print the version
 ```
@@ -459,6 +500,7 @@ on *High* and *Ultra*.
 | `battle_alien.cpp` | The aliens' moves, castling, checkmate and their 18 battles |
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
 | `audio.*` | Procedural sound synthesis (including a pipe organ and choir) and a small real-time mixer (miniaudio) |
+| `music.*`, `music_score.cpp` | The music: a real-time synthesiser and sequencer, and the score of the 18 piece themes |
 | `app.*`, `ui.cpp` | Window, game flow, input/picking, Dear ImGui interface |
 
 The native Mac version in `macos/Sources/LivingMarble` is a Swift port of the
@@ -478,6 +520,7 @@ same design:
 | `BattlesMedieval*.swift` | The medieval army's choreography and battles (as `battle_medieval.cpp`) |
 | `BattlesAlien*.swift` | The aliens' choreography and battles (as `battle_alien.cpp`) |
 | `Audio.swift` | Procedural sounds mixed in real time through AVAudioEngine |
+| `Music.swift`, `MusicScore.swift` | The music (as `music.*`; it plays exactly the same samples) |
 | `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, capture tools |
 | `Interface.swift`, `AppDelegate.swift` | Native SwiftUI interface, window and menu bar |
 

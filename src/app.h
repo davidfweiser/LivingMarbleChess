@@ -45,6 +45,7 @@ struct Options {
   float camYaw = 0, camPitch = 0.8f, camDist = 12.6f;
   float camTX = 0, camTY = 0.15f, camTZ = 0;
   bool noAudio = false;
+  bool noMusic = false;
   bool selftest = false;
   bool noRender = false;
   int level = -1;
@@ -76,6 +77,8 @@ class App {
   float exposure = 1.0f;
   bool depthOfField = false;  // blur what the camera is not focused on (High and Ultra only)
   float volume = 0.8f;
+  bool music = true;         // the background music
+  float musicVolume = 0.7f;
   float fps = 0;
   chess::Game game;
   World world;

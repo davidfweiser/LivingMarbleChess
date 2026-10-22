@@ -239,11 +239,26 @@ private struct SettingsSheet: View {
           }
         }
         if model.audioOK {
-          Section("Sound") {
+          Section {
             HStack(spacing: 12) {
               Image(systemName: "speaker.fill").foregroundStyle(.secondary)
               Slider(value: Binding(get: { Double(model.volume) }, set: { controller.setVolume(Float($0)) }), in: 0...1)
               Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+            }
+            Toggle("Music", isOn: Binding(get: { model.music }, set: { controller.setMusic($0) }))
+            if model.music {
+              HStack(spacing: 12) {
+                Image(systemName: "music.note").foregroundStyle(.secondary)
+                Slider(value: Binding(get: { Double(model.musicVolume) }, set: { controller.setMusicVolume(Float($0)) }),
+                       in: 0...1)
+                Image(systemName: "music.note.list").foregroundStyle(.secondary)
+              }
+            }
+          } header: {
+            Text("Sound")
+          } footer: {
+            if model.music && !model.nowPlaying.isEmpty {
+              Text("Playing: \(model.nowPlaying). Every piece has its own music, which plays when it moves.")
             }
           }
         }
@@ -370,7 +385,7 @@ private struct HelpList: View {
     "Arrow keys turn the board",
     "N new game, U or ⌘Z undo, F flip view, R reset view",
     "B battle animations on/off, C cinematic camera on/off",
-    "H hide the interface, F12 screenshot, ? help",
+    "H hide the interface, M music on/off, F12 screenshot, ? help",
   ]
   private let pieces = ["Pawn", "Knight", "Bishop", "Rook", "Queen", "King"]
 

@@ -1,5 +1,7 @@
-// Procedurally synthesised sound effects (no audio files), mixed in real time.
+// Procedurally synthesised sound effects (no audio files) and the background
+// music (music.h), mixed in real time.
 #pragma once
+#include <string>
 
 enum Sfx {
   SFX_STEP = 0,  // light stone footstep on wood
@@ -72,8 +74,18 @@ class Audio {
   // pan -1..1, pitch multiplier
   void play(Sfx s, float volume = 1.0f, float pan = 0.0f, float pitch = 1.0f);
   void setVolume(float v);
-  static bool dumpWav(const char* dir);  // debug: write every effect as a .wav
+  static bool dumpWav(const char* dir);  // debug: write every effect and song as a .wav
   float volume() const { return volume_; }
+
+  // The background music: every piece type has its own themes (music.h).
+  void playMusic(int piece);  // the music of this piece (0 pawn .. 5 king), from the next bar
+  void resumeMusic();         // a new game: start it again if it was stopped
+  void stopMusic();           // the game is over: fade it out
+  void setMusic(bool on);
+  void setMusicVolume(float v);
+  bool music() const { return music_; }
+  float musicVolume() const { return musicVolume_; }
+  std::string nowPlaying() const;  // "Gallop (knight)", or "" while silent
 
   struct Impl;
 
@@ -81,4 +93,6 @@ class Audio {
   Impl* impl_ = nullptr;
   bool ok_ = false;
   float volume_ = 0.8f;
+  bool music_ = true;
+  float musicVolume_ = 0.7f;
 };

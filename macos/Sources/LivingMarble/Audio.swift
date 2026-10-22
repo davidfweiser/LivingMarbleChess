@@ -3,7 +3,8 @@
 // a few oscillators (the medieval army's organ, choir, thunder and the rest, the
 // aliens' ray guns, saucers and cows, and the ghosts' cheer, are made
 // on a background thread right after). An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
-// resampling, volume) at 44.1 kHz and AVAudioEngine converts to the device rate.
+// resampling, volume) and the background music (Music.swift) at 44.1 kHz, and AVAudioEngine
+// converts to the device rate.
 import AVFoundation
 #if os(macOS)
 import CoreAudio
@@ -1369,6 +1370,14 @@ extension Audio {
   fileprivate struct SharedState {
     var head = 0, tail = 0  // free-running, head - tail = queued commands
     var master: Float = 0.8
+    var musicHead = 0, musicTail = 0  // the same for the music's commands
+    var musicVolume: Float = 0.7
+    var musicPlaying = -1  // the song playing, written by the render thread
+  }
+
+  /// The music's commands besides a piece's number (0 pawn .. 5 king).
+  fileprivate enum MusicCommand: Int32 {
+    case resume = 10, stop, off, on
   }
 
   /// Everything the render block touches lives in plain manually allocated
@@ -1392,13 +1401,19 @@ extension Audio {
     let lock: UnsafeMutablePointer<os_unfair_lock>
     let shared: UnsafeMutablePointer<SharedState>
     let ring: UnsafeMutablePointer<PlayCmd>
+    let musicQueueCap = 16  // power of two
+    let musicRing: UnsafeMutablePointer<Int32>
     // Render thread only.
     let voices: UnsafeMutablePointer<Voice>
     let pending: UnsafeMutablePointer<PlayCmd>
     let master: UnsafeMutablePointer<Float>
+    let music: UnsafeMutablePointer<MusicEngine>
+    let musicPending: UnsafeMutablePointer<Int32>
+    let duck: UnsafeMutablePointer<Float>  // per effect: how far it turns the music down
 
     /// `sounds` has one entry per Sfx; the empty ones are added later by publish().
-    init(sounds: [[Float]], master vol: Float) {
+    init(sounds: [[Float]], master vol: Float, music score: MusicScore, musicOn: Bool, musicVolume: Float,
+         duck duckBy: [Float]) {
       soundCount = sounds.count
       bufs = .allocate(capacity: soundCount)
       bufs.initialize(repeating: nil, count: soundCount)
@@ -1419,6 +1434,20 @@ extension Audio {
       pending.initialize(repeating: PlayCmd(), count: queueCap)
       master = .allocate(capacity: 1)
       master.initialize(to: vol)
+      shared.pointee.musicVolume = musicVolume
+      musicRing = .allocate(capacity: musicQueueCap)
+      musicRing.initialize(repeating: 0, count: musicQueueCap)
+      musicPending = .allocate(capacity: musicQueueCap)
+      musicPending.initialize(repeating: 0, count: musicQueueCap)
+      duck = .allocate(capacity: soundCount)
+      duck.initialize(repeating: 1, count: soundCount)
+      for (i, d) in duckBy.prefix(soundCount).enumerated() { duck[i] = d }
+      // set up before the render thread first sees it
+      music = .allocate(capacity: 1)
+      music.initialize(to: MusicEngine(score))
+      music.pointee.seed(UInt32.random(in: 1...UInt32.max))
+      music.pointee.setEnabled(musicOn)
+      music.pointee.setVolume(musicVolume)
     }
 
     /// Copies the non-empty sounds into one new block and points bufs/lengths at them.
@@ -1474,6 +1503,12 @@ extension Audio {
       voices.deallocate()
       pending.deallocate()
       master.deallocate()
+      music.pointee.free()
+      music.deinitialize(count: 1)
+      music.deallocate()
+      musicRing.deallocate()
+      musicPending.deallocate()
+      duck.deallocate()
     }
 
     /// Any thread. The critical section is a handful of stores; when the queue
@@ -1493,6 +1528,30 @@ extension Audio {
       os_unfair_lock_unlock(lock)
     }
 
+    /// Any thread: a command for the music, carried out on the render thread.
+    func pushMusic(_ c: Int32) {
+      os_unfair_lock_lock(lock)
+      if shared.pointee.musicHead &- shared.pointee.musicTail < musicQueueCap {
+        musicRing[shared.pointee.musicHead & (musicQueueCap - 1)] = c
+        shared.pointee.musicHead &+= 1
+      }
+      os_unfair_lock_unlock(lock)
+    }
+
+    func setMusicVolume(_ v: Float) {
+      os_unfair_lock_lock(lock)
+      shared.pointee.musicVolume = v
+      os_unfair_lock_unlock(lock)
+    }
+
+    /// The song playing (as of the last block mixed), or -1.
+    func playingSong() -> Int {
+      os_unfair_lock_lock(lock)
+      let s = shared.pointee.musicPlaying
+      os_unfair_lock_unlock(lock)
+      return s
+    }
+
     /// Render thread: never blocks. If a play() holds the lock right now the
     /// queue is simply picked up on the next block.
     private func drainQueue() {
@@ -1509,7 +1568,23 @@ extension Audio {
       }
       shared.pointee.tail = shared.pointee.head
       master.pointee = shared.pointee.master
+      let mt = shared.pointee.musicTail, mn = shared.pointee.musicHead &- mt
+      for k in 0..<mn { musicPending[k] = musicRing[(mt &+ k) & (musicQueueCap - 1)] }
+      shared.pointee.musicTail = shared.pointee.musicHead
+      let musicVolume = shared.pointee.musicVolume
+      shared.pointee.musicPlaying = music.pointee.playing()
       os_unfair_lock_unlock(lock)
+      for k in 0..<mn {
+        let c = musicPending[k]
+        switch MusicCommand(rawValue: c) {
+        case .resume: music.pointee.resume()
+        case .stop: music.pointee.stop()
+        case .off: music.pointee.setEnabled(false)
+        case .on: music.pointee.setEnabled(true)
+        case nil: music.pointee.play(Int(c))
+        }
+      }
+      music.pointee.setVolume(musicVolume)
       for k in 0..<n { startVoice(pending[k]) }
     }
 
@@ -1525,6 +1600,8 @@ extension Audio {
         for k in 0..<voiceCount where voices[k].pos > voices[slot].pos { slot = k }
       }
       voices[slot] = Voice(sfx: c.sfx, pos: 0, rate: c.rate, l: c.l, r: c.r, buf: c.buf, len: c.len)
+      let depth = duck[Int(c.sfx)]
+      if depth < 1 { music.pointee.duck(Int(Float(c.len) / c.rate), depth) }
     }
 
     /// Render block body. Returns true when the output is pure silence.
@@ -1574,6 +1651,7 @@ extension Audio {
         }
         v.pointee.pos = pos
       }
+      if music.pointee.render(outL, outR, frames, step) { active = true }
       if !active { return true }
       let m = master.pointee
       for i in 0..<frames {
@@ -1591,6 +1669,10 @@ final class Audio {
   private(set) var ok = false
   private var volume_: Float = 0.8
   var volume: Float { volume_ }
+  /// The background music (Music.swift): every piece type has its own themes.
+  private(set) var music = true
+  private(set) var musicVolume: Float = 0.7
+  private var score: MusicScore?
 
   private var mixer: Mixer?
   // Engine objects are only touched on `control`, which serialises start,
@@ -1611,7 +1693,7 @@ final class Audio {
 #if os(iOS)
     // Activating the audio session can block for a while, so it happens on the
     // audio queue instead of the caller's (main) thread. iOS always has an output.
-    let m = Mixer(sounds: Synth.synthAll(), master: volume_)
+    let m = makeMixer()
     mixer = m
     ok = true
     synthesiseLate(m)
@@ -1622,7 +1704,7 @@ final class Audio {
     return true
 #else
     guard Audio.prepareOutput() else { return false }
-    let m = Mixer(sounds: Synth.synthAll(), master: volume_)
+    let m = makeMixer()
     let started = control.sync { startEngine(m) }
     guard started else {
       m.free()
@@ -1633,6 +1715,27 @@ final class Audio {
     synthesiseLate(m)
     return true
 #endif
+  }
+
+  private func makeMixer() -> Mixer {
+    let s = MusicScore(musicScoreText)
+    for w in s.warnings { print("[music] \(w)") }
+    score = s
+    return Mixer(sounds: Synth.synthAll(), master: volume_, music: s, musicOn: music, musicVolume: musicVolume,
+                 duck: Sfx.allCases.map { Audio.musicDuck($0) })
+  }
+
+  /// How far the music is turned down while a sound effect plays: the ones that are
+  /// music themselves (the organ, the theremin, the bells ...) would clash with it.
+  private static func musicDuck(_ s: Sfx) -> Float {
+    switch s {
+    case .hymn: return 0.12
+    case .organ, .theremin: return 0.2
+    case .mate: return 0.25
+    case .bell, .drone: return 0.35
+    case .check, .horn: return 0.45
+    default: return 1
+    }
   }
 
   /// Makes the medieval army's, the aliens' and the ghosts' sounds on another
@@ -1675,6 +1778,30 @@ final class Audio {
   func setVolume(_ v: Float) {
     volume_ = v
     mixer?.setMaster(v)
+  }
+
+  /// The music of this piece (0 pawn .. 5 king), from the next bar. Safe from any thread.
+  func playMusic(_ piece: Int) { mixer?.pushMusic(Int32(piece)) }
+  /// A new game: starts the music again if it was stopped.
+  func resumeMusic() { mixer?.pushMusic(MusicCommand.resume.rawValue) }
+  /// The game is over: fades the music out.
+  func stopMusic() { mixer?.pushMusic(MusicCommand.stop.rawValue) }
+
+  func setMusic(_ on: Bool) {
+    music = on
+    mixer?.pushMusic(on ? MusicCommand.on.rawValue : MusicCommand.off.rawValue)
+  }
+
+  func setMusicVolume(_ v: Float) {
+    musicVolume = v
+    mixer?.setMusicVolume(v)
+  }
+
+  /// "Gallop (knight)", or "" while silent.
+  func nowPlaying() -> String {
+    guard let m = mixer, let score else { return "" }
+    let s = m.playingSong()
+    return s >= 0 && s < score.songCount ? "\(score.titles[s]) (\(musicPieceNames[score.songPiece(s)]))" : ""
   }
 
   /// Starts the engine again if something stopped it (on iOS: a call or Siri, or the
@@ -1771,7 +1898,8 @@ final class Audio {
   }
 #endif
 
-  /// Debug: writes every effect as a 16-bit mono .wav (same names as the C++).
+  /// Debug: writes every effect as a 16-bit mono .wav, and every song of the music in
+  /// stereo as music-<piece>-<title>.wav (same names as the C++).
   static func dumpWav(_ dir: String) -> Bool {
     let names = ["step", "thud", "clack", "shatter", "whoosh", "clang", "boom", "explode", "charge",
                  "zap", "crackle", "chime", "select", "check", "mate", "debris", "rumble",
@@ -1790,6 +1918,22 @@ final class Audio {
       d.append(contentsOf: Array("data".utf8)); w32(bytes)
       for v in buf { w16(UInt16(bitPattern: Int16(max(-32767, min(32767, v * 32767))))) }
       if !FileManager.default.createFile(atPath: dir + "/" + names[i] + ".wav", contents: d) { return false }
+    }
+    let score = MusicScore(musicScoreText)
+    for w in score.warnings { print("[music] \(w)") }
+    for i in 0..<score.songCount {
+      let st = MusicEngine.renderSong(score, i)
+      let n = UInt32(st.count / 2), bytes = n * 4
+      var d = Data(capacity: 44 + Int(bytes))
+      func w32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+      func w16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+      d.append(contentsOf: Array("RIFF".utf8)); w32(36 + bytes); d.append(contentsOf: Array("WAVEfmt ".utf8))
+      w32(16); w16(1); w16(2); w32(UInt32(Synth.SR)); w32(UInt32(Synth.SR * 4)); w16(4); w16(16)
+      d.append(contentsOf: Array("data".utf8)); w32(bytes)
+      for v in st { w16(UInt16(bitPattern: Int16(max(-32767, min(32767, v * 32767))))) }
+      let title = String(score.titles[i].lowercased().compactMap { $0 == " " ? "-" : $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : nil })
+      let path = dir + "/music-" + musicPieceNames[score.songPiece(i)] + "-" + title + ".wav"
+      if !FileManager.default.createFile(atPath: path, contents: d) { return false }
     }
     return true
   }

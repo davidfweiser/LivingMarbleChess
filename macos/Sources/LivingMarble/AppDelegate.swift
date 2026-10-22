@@ -107,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // single-letter shortcuts are handled by the game itself; listing them documents them
     add(game, "Battle Animations", #selector(GameController.toggleBattlesAction(_:)), "b", [], target: c)
     add(game, "Cinematic Camera", #selector(GameController.toggleCinematicAction(_:)), "c", [], target: c)
+    add(game, "Music", #selector(GameController.toggleMusicAction(_:)), "m", [], target: c)
     submenu("Game", game)
 
     // view

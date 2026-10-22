@@ -118,9 +118,13 @@ final class GameController: NSObject, MTKViewDelegate {
     view.preferredFramesPerSecond = 60  // phones and tablets: smooth, and kinder to the battery
 #endif
     print("[metal] \(renderer.info)")
+    model.music = !o.noMusic
+    audio.setMusic(model.music)
+    audio.setMusicVolume(model.musicVolume)
     if !o.noAudio && audio.start() {
       world.audio = audio
       audio.setVolume(model.volume)
+      audio.resumeMusic()
       model.audioOK = true
     } else {
       print("[audio] no audio device - running silent")
@@ -269,6 +273,7 @@ final class GameController: NSObject, MTKViewDelegate {
     world.cam.release(0.6)
     world.spawnFromBoard(game.board.sq, true)
     world.sound(.chime, 0.6)
+    audio.resumeMusic()
     world.cam.setSide(model.mode == .humanBlack ? 1 : 0)
     bannerText = ""
   }
@@ -302,6 +307,7 @@ final class GameController: NSObject, MTKViewDelegate {
       world.addGhost(Int(m.captured & 7) - 1, Int(m.captured >> 3), 0, true)
     }
     world.sound(.chime, 0.5, vec3(0), 0.8)
+    audio.resumeMusic()  // in case the game had ended
   }
 
   func flipCamera() { world.cam.yaw = wrapAngle(world.cam.yaw + kPI) }
@@ -340,6 +346,16 @@ final class GameController: NSObject, MTKViewDelegate {
   func setVolume(_ v: Float) {
     model.volume = v
     audio.setVolume(v)
+  }
+
+  func setMusic(_ on: Bool) {
+    model.music = on
+    audio.setMusic(on)
+  }
+
+  func setMusicVolume(_ v: Float) {
+    model.musicVolume = v
+    audio.setMusicVolume(v)
   }
 
   func choosePromotion(_ type: Int) {
@@ -423,6 +439,8 @@ final class GameController: NSObject, MTKViewDelegate {
     plan.style = opt.style
     if plan.victim < 0 && m.isCapture { plan.fast = true }
     world.stopFidgets()
+    // the music of the piece that moves (a promoted pawn: of what it becomes)
+    audio.playMusic(m.isPromo ? Int(m.promo) - 1 : Chess.pieceType(Int(game.board.sq[Int(m.from)])) - 1)
     game.play(m)
     lastMove = m
     hasLastMove = true
@@ -452,6 +470,7 @@ final class GameController: NSObject, MTKViewDelegate {
     if r != .ongoing {
       if !gameOverShown {
         gameOverShown = true
+        audio.stopMusic()
         bannerText = r.text
         bannerTime = 1e9
         if r == .whiteMates || r == .blackMates {
@@ -616,6 +635,7 @@ final class GameController: NSObject, MTKViewDelegate {
     case "c": model.cinematic.toggle()
     case "b": model.battles.toggle()
     case "h": model.showUI.toggle()
+    case "m": setMusic(!model.music)
     case "?", "/": model.showHelp.toggle()
     default: return false
     }
@@ -932,6 +952,7 @@ final class GameController: NSObject, MTKViewDelegate {
     set(\.bannerPermanent, bannerTime > 1e8)
     set(\.bannerAlpha, showBanner ? Double(min(1, bannerTime)) : 0)
     if frameCount % 30 == 0 { set(\.fps, Int(fps.rounded())) }
+    if frameCount % 15 == 0 { set(\.nowPlaying, model.music ? audio.nowPlaying() : "") }
     set(\.medievalBuilding, army[1].running)
     if army[1].running { set(\.medievalProgress, armyProgress(1)) }
     set(\.alienBuilding, army[2].running)
@@ -1074,6 +1095,7 @@ extension GameController: NSMenuItemValidation {
   @objc func toggleInterfaceAction(_ sender: Any?) { model.showUI.toggle() }
   @objc func toggleBattlesAction(_ sender: Any?) { model.battles.toggle() }
   @objc func toggleCinematicAction(_ sender: Any?) { model.cinematic.toggle() }
+  @objc func toggleMusicAction(_ sender: Any?) { setMusic(!model.music) }
   @objc func helpAction(_ sender: Any?) { model.showHelp.toggle() }
   @objc func screenshotAction(_ sender: Any?) { screenshotRequested = true }
   @objc func modeAction(_ sender: NSMenuItem) {
@@ -1107,6 +1129,9 @@ extension GameController: NSMenuItemValidation {
       item.state = model.battles ? .on : .off
     case #selector(toggleCinematicAction(_:)):
       item.state = model.cinematic ? .on : .off
+    case #selector(toggleMusicAction(_:)):
+      item.state = model.music ? .on : .off
+      return model.audioOK
     case #selector(toggleInterfaceAction(_:)):
       item.title = model.showUI ? "Hide Interface" : "Show Interface"
     default:

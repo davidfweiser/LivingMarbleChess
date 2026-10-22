@@ -17,6 +17,8 @@ final class GameModel {
   var autoRotate = true
   var slowOrbit = false
   var volume: Float = 0.8
+  var music = true  // the background music
+  var musicVolume: Float = 0.7
   var gfxPreset = 2
   var depthOfField = false  // blur what the camera is not focused on (High and Ultra only)
   var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens (what the picker shows: the set being switched to)
@@ -39,6 +41,7 @@ final class GameModel {
   var promoPending = false
   var fps = 0
   var audioOK = false
+  var nowPlaying = ""  // the music: "Gallop (knight)", or "" while silent
   var medievalBuilding = false  // the medieval army is being sculpted in the background
   var medievalProgress: Double = 0
   var alienBuilding = false  // ... and the aliens
@@ -300,6 +303,19 @@ private struct ControlPanel: View {
         LabeledContent("Volume") {
           Slider(value: Binding(get: { Double(model.volume) }, set: { controller.setVolume(Float($0)) }), in: 0...1)
         }
+        LabeledContent {
+          Slider(value: Binding(get: { Double(model.musicVolume) }, set: { controller.setMusicVolume(Float($0)) }),
+                 in: 0...1)
+            .disabled(!model.music)
+        } label: {
+          Toggle("Music", isOn: Binding(get: { model.music }, set: { controller.setMusic($0) }))
+            .help("Music on or off (M)")
+        }
+        if model.music && !model.nowPlaying.isEmpty {
+          Text("Playing: \(model.nowPlaying)")
+            .font(.system(size: 12))
+            .foregroundStyle(Palette.dim)
+        }
       }
       DisclosureGroup("Graphics") {
         VStack(alignment: .leading, spacing: 8) {
@@ -392,7 +408,7 @@ private struct HelpPanel: View {
     "Scroll or pinch: zoom",
     "N new game, U or ⌘Z undo, F flip view, R reset view",
     "B battle animations on/off, C cinematic camera on/off",
-    "H hide the interface, F12 or ⇧⌘S screenshot, ⌘Q quit",
+    "H hide the interface, M music on/off, F12 or ⇧⌘S screenshot, ⌘Q quit",
   ]
   private let pieces = ["Pawn", "Knight", "Bishop", "Rook", "Queen", "King"]
 
