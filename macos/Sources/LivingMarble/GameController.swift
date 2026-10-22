@@ -103,6 +103,7 @@ final class GameController: NSObject, MTKViewDelegate {
     super.init()
 
     model.gfxPreset = clamp(o.gfxPreset, 0, 3)
+    model.depthOfField = o.dof
     if o.demo { model.mode = .watch }
     if o.level >= 0 { model.aiLevel = min(4, o.level) }
     model.noUI = o.noUI
@@ -885,7 +886,7 @@ final class GameController: NSObject, MTKViewDelegate {
     sv.proj = projM
     sv.camPos = cp.pos
     sv.focusDist = cp.focus
-    sv.aperture = cp.aperture
+    sv.aperture = model.depthOfField ? cp.aperture : 0
     sv.time = world.time
     sv.exposure = model.exposure
     sv.flash = world.flash
@@ -1081,6 +1082,7 @@ extension GameController: NSMenuItemValidation {
   @objc func levelAction(_ sender: NSMenuItem) { model.aiLevel = sender.tag }
   @objc func piecesAction(_ sender: NSMenuItem) { if !loading { setPieceSet(sender.tag) } }
   @objc func qualityAction(_ sender: NSMenuItem) { applyGraphicsPreset(sender.tag) }
+  @objc func toggleDepthOfFieldAction(_ sender: Any?) { model.depthOfField.toggle() }
 
   func validateMenuItem(_ item: NSMenuItem) -> Bool {
     switch item.action {
@@ -1095,6 +1097,9 @@ extension GameController: NSMenuItemValidation {
       return model.mode != .twoPlayer
     case #selector(qualityAction(_:)):
       item.state = model.gfxPreset == item.tag ? .on : .off
+    case #selector(toggleDepthOfFieldAction(_:)):
+      item.state = model.depthOfField ? .on : .off
+      return renderer.settings.dof
     case #selector(piecesAction(_:)):
       item.state = model.pieceSet == item.tag ? .on : .off
       return !loading

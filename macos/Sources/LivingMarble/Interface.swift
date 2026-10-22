@@ -18,6 +18,7 @@ final class GameModel {
   var slowOrbit = false
   var volume: Float = 0.8
   var gfxPreset = 2
+  var depthOfField = false  // blur what the camera is not focused on (High and Ultra only)
   var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens (what the picker shows: the set being switched to)
   var exposure: Float = 1
   var showUI = true
@@ -305,6 +306,8 @@ private struct ControlPanel: View {
           Picker("Quality", selection: Binding(get: { model.gfxPreset }, set: { controller.applyGraphicsPreset($0) })) {
             ForEach(Array(["Low", "Medium", "High", "Ultra"].enumerated()), id: \.offset) { Text($0.element).tag($0.offset) }
           }
+          Toggle("Depth of field (blur)", isOn: $model.depthOfField)
+            .disabled(!RenderSettings.preset(model.gfxPreset).dof)
           LabeledContent("Exposure") {
             Slider(value: Binding(get: { Double(model.exposure) }, set: { model.exposure = Float($0) }), in: 0.4...2.0)
           }

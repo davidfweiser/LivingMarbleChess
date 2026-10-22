@@ -122,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let qualityItem = NSMenuItem(title: "Graphics Quality", action: nil, keyEquivalent: "")
     qualityItem.submenu = quality
     view.addItem(qualityItem)
+    add(view, "Depth of Field", #selector(GameController.toggleDepthOfFieldAction(_:)), target: c)
     view.addItem(.separator())
     add(view, "Save Screenshot", #selector(GameController.screenshotAction(_:)), "s", [.command, .shift], target: c)
     view.addItem(.separator())

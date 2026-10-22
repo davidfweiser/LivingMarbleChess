@@ -3,8 +3,16 @@ import Foundation
 
 struct Options {
   var width = 1600, height = 900
-  var quality = 1      // mesh/texture quality 0..2
-  var gfxPreset = 2    // 0 low .. 3 ultra
+#if os(macOS)
+  var quality = 3      // mesh/texture quality 0..3
+  var gfxPreset = 3    // 0 low .. 3 ultra
+  var dof = false      // depth of field (off: every piece stays sharp)
+#else
+  // iPhone and iPad keep lighter defaults
+  var quality = 1
+  var gfxPreset = 2
+  var dof = true
+#endif
   var fullscreen = false
   // capture / testing
   var shotPath = ""           // single screenshot then exit
@@ -37,12 +45,13 @@ struct Options {
 
       --fullscreen            run fullscreen
       --size WxH              window size in points (default 1600x900)
-      --quality 0|1|2         sculpting/texture detail (default 1)
-      --graphics 0..3         Low / Medium / High / Ultra (default High)
+      --quality 0..3          sculpting/texture detail (default 3)
+      --graphics 0..3         Low / Medium / High / Ultra (default Ultra)
       --demo                  watch the AI play itself
       --level 0..4            AI strength
       --fen "<fen>"           start from a position
       --pieces marble|medieval|alien  which army to play with (default marble)
+      --dof                   depth of field: blur what the camera is not focused on
       --mute                  no sound
       --selftest              verify the move generator (perft)
       --version               print the version
@@ -102,6 +111,7 @@ struct Options {
       case "--record": o.recordDir = next()
       case "--no-ui": o.noUI = true
       case "--no-cinematic": o.noCinematic = true
+      case "--dof": o.dof = true
       case "--no-render": o.noRender = true
       case "--level": o.level = Int(next()) ?? -1
       case "--move": o.forceMove = next()

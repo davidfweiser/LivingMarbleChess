@@ -793,9 +793,9 @@ private func gooModel() -> Model {
 
 // ---------------------------------------------------------------------------
 extension Alien {
-  /// quality: 0 = fast, 1 = normal, 2 = ultra
+  /// quality: 0 = fast, 1 = normal, 2 = ultra, 3 = extreme
   static func buildLibrary(_ lib: AlienLibrary, quality qIn: Int, progress prog: BuildProgress?) {
-    let quality = max(0, min(2, qIn))
+    let quality = max(0, min(3, qIn))
     if let prog {
       prog.total = 8
       prog.done = 0

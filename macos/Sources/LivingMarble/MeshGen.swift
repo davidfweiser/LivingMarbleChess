@@ -661,12 +661,12 @@ enum MeshGen {
   }
 
   // ---------------------------------------------------------------------------
-  /// quality: 0 = fast, 1 = normal, 2 = ultra
+  /// quality: 0 = fast, 1 = normal, 2 = ultra, 3 = extreme
   static func buildLibrary(_ lib: Library, quality qIn: Int, progress prog: BuildProgress?) {
-    let quality = max(0, min(2, qIn))
-    let c0: [Float] = [0.0125, 0.0095, 0.0074]  // lod0 cell size
-    let c1: [Float] = [0.022, 0.018, 0.015]     // lod1
-    let cs: [Float] = [0.016, 0.0125, 0.0105]   // shards / halves
+    let quality = max(0, min(3, qIn))
+    let c0: [Float] = [0.0125, 0.0095, 0.0074, 0.0052]  // lod0 cell size
+    let c1: [Float] = [0.022, 0.018, 0.015, 0.011]      // lod1
+    let cs: [Float] = [0.016, 0.0125, 0.0105, 0.008]    // shards / halves
     let seeds = [10, 13, 13, 13, 15, 16]
     let total = Kind.count * 4 + 3
     if let prog = prog {
@@ -705,7 +705,7 @@ enum MeshGen {
     }
     do {
       var o = MeshOptions()
-      o.cell = quality == 0 ? 0.0055 : 0.0042
+      o.cell = quality == 0 ? 0.0055 : (quality < 3 ? 0.0042 : 0.0032)
       o.bmin = vec3(-0.22, -0.36, -0.06)
       o.bmax = vec3(0.22, 1.02, 0.06)
       o.aoRadius = 0.04

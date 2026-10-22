@@ -342,9 +342,9 @@ func triS(_ a: vec3, _ b: vec3, _ c: vec3, _ t: Float) -> Shape {
 /// fracture shards and slice halves (painted, rigid).
 func buildAsset(_ A: inout PieceAssets, _ m: Model, _ lo: vec3, _ hi: vec3, _ quality: Int, _ seeds: Int,
                 _ seed: UInt32, _ height: Float, _ radius: Float) {
-  let c0: [Float] = [0.0085, 0.0062, 0.0048]
-  let c1: [Float] = [0.016, 0.013, 0.011]
-  let cs: [Float] = [0.014, 0.011, 0.009]
+  let c0: [Float] = [0.0085, 0.0062, 0.0048, 0.0034]
+  let c1: [Float] = [0.016, 0.013, 0.011, 0.0085]
+  let cs: [Float] = [0.014, 0.011, 0.009, 0.007]
   m.fitBounds()
   m.seal()
   let F: SDFFn = { p in m.eval(p) }

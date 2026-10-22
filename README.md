@@ -29,17 +29,22 @@ On the Mac the game is a native app written in Swift: Metal graphics, an
 AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
 [`macos/`](macos)). The same Swift code runs on iPhone and iPad with touch
 controls (see [`ios/`](ios)). Windows and Linux use the C++/OpenGL version in
-`src/`. All versions play, look and sound the same; the Windows/Linux version
-starts at a finer sculpting detail, *Ultra* graphics and no depth-of-field blur,
-while the Mac, iPhone and iPad keep lighter defaults.
+`src/`. All versions play, look and sound the same; the Windows, Linux and Mac
+versions start at the finest sculpting detail, *Ultra* graphics and no
+depth-of-field blur, while iPhone and iPad keep lighter defaults.
 
 ## Download
 
-The current version is **1.2**. Ready-made downloads are on the
+The current version is **1.2.1** on the Mac and **1.2** on Windows and Linux.
+Ready-made downloads are on the
 [Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest).
 
 **Mac** (macOS 14 or later, Apple silicon and Intel): open
-`LivingMarble-1.2.dmg` and drag *Living Marble* onto Applications.
+`LivingMarble-1.2.1.dmg` and drag *Living Marble* onto Applications.
+
+**Windows** (64-bit Windows 10 or 11): run `LivingMarble-1.2-setup.exe`. It is
+not code-signed, so SmartScreen may warn about it: click *More info*, then
+*Run anyway*.
 
 **Linux** (Debian, Ubuntu, Pop!_OS, Mint …):
 
@@ -48,7 +53,7 @@ sudo apt install ./living-marble_1.2_amd64.deb   # or double-click it
 ```
 
 Then start *Living Marble* from the app menu (`sudo apt remove living-marble`
-uninstalls it). For Windows, iPhone and iPad, build it from source (see
+uninstalls it). For iPhone and iPad, build it from source (see
 [Building](#building)).
 
 The game shows its version under the title in the panel and at the bottom of
@@ -246,7 +251,7 @@ Applications shortcut to drag it onto), give it to `build-dmg.sh`, which packs
 it as it is:
 
 ```sh
-macos/build-dmg.sh "path/to/Living Marble.app"   # -> macos/build/LivingMarble-1.2.dmg
+macos/build-dmg.sh "path/to/Living Marble.app"   # -> macos/build/LivingMarble-1.2.1.dmg
 ```
 
 Without an app, `macos/build-dmg.sh` makes a universal build itself and signs
@@ -341,9 +346,10 @@ The version number comes from `project(LivingMarble VERSION …)` in
 the Mac and iOS apps).
 
 On startup the pieces are sculpted and fractured procedurally — at the default
-detail (`--quality 3`) this takes about 5–10 seconds on a fast multi-core PC,
-longer when starting with the medieval or alien army (shown on the loading
-screen). On a slower computer `--quality 1` starts much quicker.
+detail (`--quality 3`) this takes about 5–10 seconds on a fast multi-core PC
+(about 13 seconds on an M2 Mac), longer when starting with the medieval or
+alien army (shown on the loading screen). On a slower computer `--quality 1`
+starts much quicker.
 
 ## Controls
 
@@ -393,8 +399,7 @@ search per move).
 
 ## Command-line options
 
-The Mac app takes the same options when started from Terminal (except
-`--dof` and `--quality 3`, which are Windows/Linux only):
+The Mac app takes the same options when started from Terminal:
 `"macos/build/Living Marble.app/Contents/MacOS/LivingMarble" --demo`. There,
 `--size` is in points, so screenshots on a Retina screen come out at twice that
 many pixels, and screenshots show the 3D scene without the interface panels.
@@ -427,8 +432,9 @@ through the battles), `--scenario 4` (a gallery of ghosts on both sides),
 too); *High* caps the internal resolution at 1440p. If the frame rate is low,
 open *Graphics* in the panel and pick *High*, *Medium* or *Low* (*Medium*
 turns off depth of field and lowers MSAA and the shadow map size; *Low* also
-turns off reflections and SSAO). *Depth of field* in the same section (or `--dof`) brings
-back the camera-focus blur on *High* and *Ultra*.
+turns off reflections and SSAO). *Depth of field* in the same section (on the
+Mac also *View › Depth of Field*, or `--dof`) brings back the camera-focus blur
+on *High* and *Ultra*.
 
 ## How it is built
 
