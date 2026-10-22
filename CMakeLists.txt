@@ -21,6 +21,13 @@ set(FETCHCONTENT_QUIET ON)
 # CMake 4.x refuses very old cmake_minimum_required() in dependencies
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 
+# Windows: the C/C++ runtime is linked into the exe, so the game is a single
+# file that needs no Visual C++ redistributable (GLFW has its own switch for it)
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  set(USE_MSVC_RUNTIME_LIBRARY_DLL OFF CACHE BOOL "" FORCE)
+endif()
+
 # --- GLFW (window + input) -------------------------------------------------
 set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
@@ -129,9 +136,25 @@ else()
   endif()
 endif()
 
+if(WIN32)
+  # the icon and version info, and a windowed app, so no console window opens
+  # with it (started from a terminal it still prints there - see main.cpp)
+  string(REGEX MATCHALL "[0-9]+" LM_RC_VERSION "${PROJECT_VERSION}.0.0.0")
+  list(SUBLIST LM_RC_VERSION 0 4 LM_RC_VERSION)
+  list(JOIN LM_RC_VERSION "," LM_RC_VERSION)  # 1.2 -> 1,2,0,0
+  set(LM_WINDOWS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/windows)
+  configure_file(windows/living_marble.rc.in living_marble.rc @ONLY)
+  target_sources(living_marble PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/living_marble.rc)
+  set_target_properties(living_marble PROPERTIES WIN32_EXECUTABLE ON)
+  if(MSVC)
+    target_link_options(living_marble PRIVATE /ENTRY:mainCRTStartup)  # main() stays the entry point
+  endif()
+endif()
+
 # --- Install -----------------------------------------------------------------
 #   cmake --install build --prefix ~/.local    (just you, no sudo)
 #   sudo cmake --install build                 (everyone, into /usr/local)
+#   Windows installer: windows\build-installer.bat
 include(GNUInstallDirs)
 install(TARGETS living_marble RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(UNIX AND NOT APPLE)

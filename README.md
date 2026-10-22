@@ -278,7 +278,7 @@ You need CMake 3.18+, a C++17 compiler and git. The first configure downloads
 GLFW, GLM, Dear ImGui and miniaudio automatically, so an internet connection is
 required once.
 
-### Windows (Visual Studio 2022)
+### Windows (Visual Studio 2022 or later)
 
 ```bat
 cmake -S . -B build
@@ -287,7 +287,21 @@ build\Release\living_marble.exe
 ```
 
 Or open the folder in Visual Studio ("Open a local folder") and run the
-`living_marble` target.
+`living_marble` target. The game is a single self-contained exe (no Visual C++
+runtime to install); started from a terminal, it prints its messages there.
+
+To build an installer with a Start menu entry, an optional desktop shortcut and
+an uninstaller (in *Settings › Apps*), install
+[Inno Setup 6](https://jrsoftware.org/isdl.php) and run:
+
+```bat
+windows\build-installer.bat     # -> build\LivingMarble-1.2-setup.exe
+```
+
+It builds the game first, and finds the CMake that comes with Visual Studio if
+there is none on the PATH. The installer asks whether to install just for you
+(no administrator needed) or for everyone, into Program Files, and a newer
+version installs over an older one.
 
 ### Linux
 

@@ -9,6 +9,20 @@
 #include "app.h"
 #include "audio.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+// On Windows the game is a windowed app, so starting it opens no console
+// window. Started from a terminal, it prints there instead (unless its
+// output is already redirected to a file or pipe).
+static void attachToTerminal() {
+  if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
+  if (_fileno(stdout) < 0) std::freopen("CONOUT$", "w", stdout);
+  if (_fileno(stderr) < 0) std::freopen("CONOUT$", "w", stderr);
+}
+#endif
+
 static void usage() {
   std::printf(
       "Living Marble " LM_VERSION " - 3D Battle Chess\n\n"
@@ -35,6 +49,9 @@ static void usage() {
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+  attachToTerminal();
+#endif
   Options o;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
