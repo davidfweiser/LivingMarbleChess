@@ -252,6 +252,8 @@ private struct SettingsSheet: View {
             ForEach(Self.qualities.indices, id: \.self) { Text(Self.qualities[$0]).tag($0) }
           }
           .pickerStyle(.segmented)
+          Toggle("Depth of field (blur)", isOn: $model.depthOfField)
+            .disabled(!RenderSettings.preset(model.gfxPreset).dof)
           LabeledContent("Exposure") {
             Slider(value: Binding(get: { Double(model.exposure) }, set: { model.exposure = Float($0) }), in: 0.4...2.0)
           }

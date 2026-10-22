@@ -29,13 +29,15 @@ On the Mac the game is a native app written in Swift: Metal graphics, an
 AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
 [`macos/`](macos)). The same Swift code runs on iPhone and iPad with touch
 controls (see [`ios/`](ios)). Windows and Linux use the C++/OpenGL version in
-`src/`. All versions play, look and sound the same; the Windows, Linux and Mac
-versions start at the finest sculpting detail, *Ultra* graphics and no
-depth-of-field blur, while iPhone and iPad keep lighter defaults.
+`src/`. All versions play, look and sound the same, with no depth-of-field blur
+by default. The Windows, Linux and Mac versions start at the finest sculpting
+detail and *Ultra* graphics; iPhone and iPad, to load quicker and stay cool,
+at one sculpting level less (`--quality 2`) and *High* graphics.
 
 ## Download
 
-The current version is **1.2.1** on the Mac and **1.2** on Windows and Linux.
+The current version is **1.2.1** on the Mac, iPhone and iPad and **1.2** on
+Windows and Linux.
 Ready-made downloads are on the
 [Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest).
 

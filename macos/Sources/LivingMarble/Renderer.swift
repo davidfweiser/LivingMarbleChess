@@ -84,6 +84,7 @@ extension Renderer {
     var includeKey: Int32 = 0
     var roughness: Float = 0
     var envRes: Float = 0
+    var includeLights: Int32 = 1
   }
 
   fileprivate struct BackgroundUniforms {
@@ -249,6 +250,7 @@ final class Renderer {
   private var white: MTLTexture!  // stands in for disabled SSAO / reflection inputs
   private var boardHalf: Float = 4.62
   private var envCube: MTLTexture!, envNoKeyCube: MTLTexture!, irrCube: MTLTexture!
+  private var backdropCube: MTLTexture!  // the room without the studio lights, seen behind the board
   private var prefCube: MTLTexture!, brdfLut: MTLTexture!
   private let envRes = 256, prefRes = 128, prefMips = 6
 
@@ -596,6 +598,13 @@ final class Renderer {
     fu.includeKey = 0
     renderFaces(psEnv, envNoKeyCube, mip: 0, fu, env: nil)
     genMips(envNoKeyCube)
+
+    // tall views (portrait phones) see high enough to catch the studio lights behind the board
+    backdropCube = makeCube(envRes, mips: Renderer.mipCount(envRes), label: "backdrop")
+    fu.includeLights = 0
+    renderFaces(psEnv, backdropCube, mip: 0, fu, env: nil)
+    genMips(backdropCube)
+    fu.includeLights = 1
 
     irrCube = makeCube(32, mips: 1, label: "irradiance")
     renderFaces(psIrr, irrCube, mip: 0, fu, env: envNoKeyCube)
@@ -1043,7 +1052,7 @@ final class Renderer {
         enc.setCullMode(.none)
         var bg = BackgroundUniforms(invViewProj: viewProj.inverse, camPos: sv.camPos, bgLod: 3.2, bgIntensity: 0.35)
         enc.setFragmentBytes(&bg, length: MemoryLayout<BackgroundUniforms>.stride, index: 0)
-        enc.setFragmentTexture(envCube, index: 0)
+        enc.setFragmentTexture(backdropCube, index: 0)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         // glass, then the ghosts (the background rebound texture 0: the lighting inputs go back on)

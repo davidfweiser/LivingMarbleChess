@@ -6,13 +6,12 @@ struct Options {
 #if os(macOS)
   var quality = 3      // mesh/texture quality 0..3
   var gfxPreset = 3    // 0 low .. 3 ultra
-  var dof = false      // depth of field (off: every piece stays sharp)
 #else
-  // iPhone and iPad keep lighter defaults
-  var quality = 1
+  // iPhone and iPad: lighter, for memory, startup time and heat
+  var quality = 2
   var gfxPreset = 2
-  var dof = true
 #endif
+  var dof = false      // depth of field (off: every piece stays sharp)
   var fullscreen = false
   // capture / testing
   var shotPath = ""           // single screenshot then exit

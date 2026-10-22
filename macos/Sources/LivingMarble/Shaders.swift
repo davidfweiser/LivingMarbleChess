@@ -1052,6 +1052,7 @@ struct FaceU {
   int includeKey;
   float roughness;
   float envRes;
+  int includeLights;
 };
 // direction through the centre of this cube face texel (GL face basis table)
 float3 faceDir(constant FaceU& u, float2 uv) {
@@ -1091,13 +1092,16 @@ fragment float4 envGenFS(FsOut in [[stage_in]], constant FaceU& u [[buffer(0)]])
   float3 d = faceDir(u, in.uv);
   float3 up = float3(0.0, 1.0, 0.0);
   float3 c = room(d);
-  // cool fill from the front-right, warm rim strip behind-right, soft overhead
-  c += float3(0.78, 0.87, 1.0) * 2.0 * panel(d, normalize(float3(0.85, 0.45, 0.55)), up, float2(0.55, 0.32), 0.25);
-  c += float3(1.0, 0.94, 0.86) * 4.5 * panel(d, normalize(float3(0.55, 0.40, -0.85)), up, float2(0.8, 0.045), 0.04);
-  c += float3(1.0, 0.96, 0.90) * 1.4 * panel(d, normalize(float3(0.05, 1.0, 0.12)), float3(0.0, 0.0, 1.0), float2(0.4, 0.4), 0.2);
-  c += float3(1.0, 0.62, 0.32) * 6.0 * smoothstep(0.9975, 0.9995, dot(d, normalize(float3(-1.0, 0.16, -0.55))));
-  c += float3(1.0, 0.62, 0.32) * 6.0 * smoothstep(0.9975, 0.9995, dot(d, normalize(float3(0.95, 0.20, -0.65))));
-  c += float3(0.33, 0.43, 0.70) * 1.0 * panel(d, normalize(float3(-1.0, 0.35, -0.30)), up, float2(0.22, 0.34), 0.04);
+  // the studio lights reflect in the pieces, but stay out of the backdrop (which blurs them into blobs)
+  if (u.includeLights == 1) {
+    // cool fill from the front-right, warm rim strip behind-right, soft overhead
+    c += float3(0.78, 0.87, 1.0) * 2.0 * panel(d, normalize(float3(0.85, 0.45, 0.55)), up, float2(0.55, 0.32), 0.25);
+    c += float3(1.0, 0.94, 0.86) * 4.5 * panel(d, normalize(float3(0.55, 0.40, -0.85)), up, float2(0.8, 0.045), 0.04);
+    c += float3(1.0, 0.96, 0.90) * 1.4 * panel(d, normalize(float3(0.05, 1.0, 0.12)), float3(0.0, 0.0, 1.0), float2(0.4, 0.4), 0.2);
+    c += float3(1.0, 0.62, 0.32) * 6.0 * smoothstep(0.9975, 0.9995, dot(d, normalize(float3(-1.0, 0.16, -0.55))));
+    c += float3(1.0, 0.62, 0.32) * 6.0 * smoothstep(0.9975, 0.9995, dot(d, normalize(float3(0.95, 0.20, -0.65))));
+    c += float3(0.33, 0.43, 0.70) * 1.0 * panel(d, normalize(float3(-1.0, 0.35, -0.30)), up, float2(0.22, 0.34), 0.04);
+  }
   if (u.includeKey == 1) c += float3(1.0, 0.94, 0.86) * 34.0 * panel(d, u.keyDir, up, float2(0.13, 0.10), 0.03);
   return float4(c, 1.0);
 }
