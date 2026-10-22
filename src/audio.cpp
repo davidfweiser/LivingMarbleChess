@@ -394,7 +394,7 @@ float envAR(float t, float a, float hold, float r) {
 void organNote(Buf& b, Rng& r, float t0, float dur, float f, float amp, float reed) {
   static const float H[12] = {1.0f, 0.75f, 0.42f, 0.5f, 0.22f, 0.3f, 0.1f, 0.22f, 0.08f, 0.12f, 0.05f, 0.09f};
   // one period of the registration as a wavetable, played twice (slightly detuned) for the chorus of ranks
-  const int N = 2048;
+  static constexpr int N = 2048;  // static, so the lambda below can use it uncaptured (MSVC)
   std::vector<float> table(N + 1, 0.0f);
   for (int k = 0; k < 12; ++k) {
     if (f * (k + 1) > 9000.0f) break;

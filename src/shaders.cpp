@@ -469,7 +469,8 @@ void medievalSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, ino
     sss *= 1.0 - vAux;
   }
 }
-
+)GLSL"  // two literals: MSVC caps a single string literal at 16 KB
+R"GLSL(
 // The aliens. The white army is green-skinned in silver and pearl with cyan
 // lights, the black army violet-skinned in black and gunmetal with magenta lights.
 vec3 alienLight(bool black) { return black ? vec3(1.0, 0.18, 0.62) : vec3(0.25, 1.0, 0.92); }
