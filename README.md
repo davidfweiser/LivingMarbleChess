@@ -1,5 +1,11 @@
 # Living Marble — 3D Battle Chess
 
+![The marble set on the floating board, with the game's panel](docs/screenshots/board.jpg)
+
+| Living Marble | Medieval | Aliens |
+| :---: | :---: | :---: |
+| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) |
+
 A photoreal 3D chess game in C++ where carved marble Staunton pieces come alive:
 they hop, lean, wobble and turn to face each other — and every capture is a
 fight. Each piece type knows three attacks and picks one at random, and the loser breaks into
@@ -46,7 +52,7 @@ at one sculpting level less (`--quality 2`) and *High* graphics.
 ## Download
 
 The current version is **1.3.1** on the Mac, iPhone and iPad, **1.3** on
-Windows and **1.2** on Linux.
+Windows and Linux.
 Ready-made downloads are on the
 [Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest).
 
@@ -60,7 +66,7 @@ not code-signed, so SmartScreen may warn about it: click *More info*, then
 **Linux** (Debian, Ubuntu, Pop!_OS, Mint …):
 
 ```sh
-sudo apt install ./living-marble_1.2_amd64.deb   # or double-click it
+sudo apt install ./living-marble_1.3_amd64.deb   # or double-click it
 ```
 
 Then start *Living Marble* from the app menu (`sudo apt remove living-marble`
