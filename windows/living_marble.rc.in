@@ -3,7 +3,9 @@
 // project(VERSION) in CMakeLists.txt; the installer reads its version from here.
 #include <winres.h>
 
-1 ICON "@LM_WINDOWS_DIR@/AppIcon.ico"
+// GLFW gives the game window (title bar, taskbar, Alt+Tab) the icon of this name;
+// Explorer and the shortcuts use it too, as the exe's first icon
+GLFW_ICON ICON "@LM_WINDOWS_DIR@/AppIcon.ico"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION    @LM_RC_VERSION@
