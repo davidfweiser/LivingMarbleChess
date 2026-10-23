@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(LivingMarble VERSION 1.2 LANGUAGES C CXX)
+project(LivingMarble VERSION 1.3 LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 #  Living Marble - 3D Battle Chess
