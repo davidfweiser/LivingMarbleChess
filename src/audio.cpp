@@ -1280,6 +1280,7 @@ bool Audio::init() {
   impl_->music.seed(std::random_device{}());
   impl_->music.setEnabled(music_);
   impl_->music.setVolume(musicVolume_);
+  impl_->music.setArmy(musicArmy_);
   impl_->sounds = synthAll();
   impl_->sounds.resize(SFX_COUNT);
   for (int i = SFX_HYMN; i < SFX_COUNT; ++i) impl_->sounds[i] = make(0.01f);
@@ -1373,6 +1374,13 @@ void Audio::playMusic(int piece) {
   impl_->music.play(piece);
 }
 
+void Audio::setMusicArmy(int set) {
+  musicArmy_ = set;
+  if (!impl_) return;
+  std::lock_guard<std::mutex> lk(impl_->mtx);
+  impl_->music.setArmy(set);
+}
+
 void Audio::resumeMusic() {
   if (!ok_ || !impl_) return;
   std::lock_guard<std::mutex> lk(impl_->mtx);
@@ -1431,8 +1439,9 @@ bool Audio::dumpWav(const char* dir) {
     for (float v : S[i]) w16((uint16_t)(int16_t)std::max(-32767.0f, std::min(32767.0f, v * 32767.0f)));
     std::fclose(f);
   }
-  // and every song of the music, in stereo: music-<piece>-<title>.wav
+  // and every song of the music, in stereo: music-<army>-<piece>-<title>.wav
   static const char* const kPiece[::music::kPieces] = {"pawn", "knight", "bishop", "rook", "queen", "king"};
+  static const char* const kArmy[::music::kArmies] = {"marble", "medieval", "alien"};
   ::music::Engine m;
   for (const std::string& w : m.warnings()) std::printf("[music] %s\n", w.c_str());
   for (int i = 0; i < m.songCount(); ++i) {
@@ -1440,7 +1449,7 @@ bool Audio::dumpWav(const char* dir) {
     for (char c : m.songTitle(i))
       if (c == ' ') title += '-';
       else if (std::isalnum((unsigned char)c)) title += (char)std::tolower((unsigned char)c);
-    std::string path = std::string(dir) + "/music-" + kPiece[m.songPiece(i)] + "-" + title + ".wav";
+    std::string path = std::string(dir) + "/music-" + kArmy[m.songArmy(i)] + "-" + kPiece[m.songPiece(i)] + "-" + title + ".wav";
     std::vector<float> st = m.renderSong(i);
     FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) return false;

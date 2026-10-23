@@ -77,8 +77,9 @@ class Audio {
   static bool dumpWav(const char* dir);  // debug: write every effect and song as a .wav
   float volume() const { return volume_; }
 
-  // The background music: every piece type has its own themes (music.h).
+  // The background music: every piece type has its own themes in each army (music.h).
   void playMusic(int piece);  // the music of this piece (0 pawn .. 5 king), from the next bar
+  void setMusicArmy(int set); // whose music: 0 Living Marble, 1 medieval, 2 aliens
   void resumeMusic();         // a new game: start it again if it was stopped
   void stopMusic();           // the game is over: fade it out
   void setMusic(bool on);
@@ -95,4 +96,5 @@ class Audio {
   float volume_ = 0.8f;
   bool music_ = true;
   float musicVolume_ = 0.7f;
+  int musicArmy_ = 0;
 };

@@ -15,16 +15,19 @@ and fight with their own battles, sounds and music.
 And a third: **the aliens** (`--pieces alien`). Little green men with ray
 guns, flying saucers, big-brained psychics floating in glass jars, tripod war
 machines, an alien queen and an overlord on a hovering egg-chair throne — with
-their own (slightly ridiculous) battles and B-movie sound effects.
+their own (slightly ridiculous) battles, B-movie sound effects and music.
 
 In every army, **the fallen come back as ghosts**: a captured piece slowly
 takes shape again, translucent, beside the board, and watches the rest of the
 game — cheering its side on.
 
-And there is **music**: every type of piece has three upbeat themes of its own
-— a bouncy one for the pawn, a gallop for the knight, a stomp for the rook, a
-waltz for the queen, a fanfare for the king — and when a piece moves, its
-music takes over.
+And there is **music**, written for each army: every type of piece has three
+themes of its own — concert-hall classical for the marble pieces (a minuet for
+the pawn, a galop for the knight, a waltz for the queen, a coronation anthem
+for the king), early music for the medieval army (recorders, bagpipes,
+hurdy-gurdy, lute and tabor) and 1950s science fiction for the aliens
+(theremin, vibraphone, bongos and bleeps) — and when a piece moves, its music
+takes over.
 
 Everything is procedural. There are **no model, texture or sound files**:
 the pieces are sculpted from signed-distance fields at startup, the board's
@@ -111,37 +114,68 @@ captured piece back to life and its ghost disappears.
 
 ## The music
 
-Each type of piece has three themes, written to suit it. When a piece moves,
+Every army has its own music, and in each one every type of piece has three
+themes, written to suit both: the Living Marble pieces play concert-hall
+classical, the medieval army early music from the castle and the cathedral,
+and the aliens 1950s science-fiction and space-age tunes. When a piece moves,
 the music switches to one of its themes at the next bar line (a promoted pawn
 brings in the music of what it becomes). A theme plays at least two bars before
 another piece's can take over, and each piece's theme picks up where it left off
 the last time; when one ends, another of that piece's themes follows, chosen at
-random. The music fades out when the game ends and starts again with a new game.
-While an effect that is music itself plays — the organ's *Dies irae*, the
-theremin, a church bell, the check horn — the music steps back.
+random. Switching armies brings in the same piece's music in the new army. The
+music fades out when the game ends and starts again with a new game. While an
+effect that is music itself plays — the organ's *Dies irae*, the theremin, a
+church bell, the check horn — the music steps back.
+
+**The Living Marble pieces** — string quartet, orchestra, harpsichord
 
 | Piece | Themes |
 |---|---|
-| Pawn   | **Hop Along** — bouncy chiptune lead, marimba and pizzicato bass · **Fife and Drum** — a fife-and-drum march with tuba · **Pawn Shuffle** — a funky shuffle with slap bass, clavinet and a horn section |
-| Knight | **Gallop** — a trumpet over clip-clopping woodblocks and galloping strings · **Wild West Leap** — twangy western guitar and whistling over a train beat · **The Joust** — a brass fanfare over spiccato strings and timpani |
-| Bishop | **Glide** — bells and harp arpeggios with a choir over a light dance groove · **Glory Glory** — a swinging gospel with organ, choir and handclaps · **Seraph Dance** — a soaring synth lead, harp and pads over a trance beat |
-| Rook   | **Castle Stomp** — stomp-stomp-clap rock with distorted power chords and brass · **Siege Engine** — a driving octave bass, brass stabs and taiko · **Fortress** — taiko drums, horns and spiccato strings |
-| Queen  | **Twirl** — a quick waltz for violin, pizzicato and glockenspiel · **Sovereign** — disco strings, an octave bass and clavinet · **Royal Toccata** — harpsichord figures with violin and organ over a pop beat |
-| King   | **Royal Fanfare** — trumpets, tuba, timpani and a marching snare · **Coronation** — an anthem for trumpet, organ and choir · **The King's Parade** — trumpet, glockenspiel, strings and handclaps |
+| Pawn   | **Pawn's Minuet** — a perky string-quartet minuet in G, with a flute joining the return · **Tin Soldier March** — a toy-soldier march for fife, side drum, oom-pah bassoon and pizzicato, with a glockenspiel trio · **Little Serenade** — a lilting wind serenade in 6/8: oboe and clarinet, with a cheeky bassoon solo |
+| Knight | **Grand Galop** — a headlong galop for violins and trumpet over galloping strings, timpani and triangle · **Tarantella** — a whirling A-minor tarantella for violin and flute with pizzicato and tambourine · **The Hunt** — a 6/8 hunting call for two horns, with a stormy string episode and timpani |
+| Bishop | **Chorale Prelude** — a Bach-style chorale on oboe and choir over flowing violin and harpsichord triplets and organ · **Barcarolle** — a gently rocking barcarolle for flute and harp over soft strings, with a celesta · **Gloria** — a Vivaldi-style allegro: leaping string octaves, harpsichord, then choir, trumpet and timpani |
+| Rook   | **Fireworks Overture** — a Handelian overture with dotted trumpets, oboes, horns, timpani and cannon-shot bass drum · **Storm on the Ramparts** — a stormy C-minor allegro: tremolo strings, rushing basses, trombones and thundering timpani · **Passacaglia** — a stately G-minor passacaglia over a falling ground bass, building from harpsichord to organ, trumpet and timpani |
+| Queen  | **Queen's Waltz** — a Viennese waltz for violin with oom-pah-pah strings, flute, harp and glockenspiel · **Gavotte** — a Baroque gavotte for violin and oboe over harpsichord continuo · **Polonaise** — a regal E-flat polonaise in its proud rhythm, with trumpet, timpani and side drum |
+| King   | **Ceremonial March** — a brisk march for trumpet and side drum with a broad, noble trio for strings, horns and cymbals · **Trumpet Voluntary** — a Purcell-style trumpet tune in C over organ, harpsichord and timpani · **Coronation Anthem** — a Handelian anthem: rising string arpeggios burst into choir, trumpet, organ and timpani |
+
+**The medieval army** — recorders, shawms, bagpipes, hurdy-gurdy, lute, tabor
+
+| Piece | Themes |
+|---|---|
+| Pawn   | **Men-at-Arms** — a soldiers' march in D Dorian: recorder over a crumhorn bass and tabor, a shawm joining an octave below · **Kettle Hat Bransle** — a bagpipe bransle in G Mixolydian, chanter over drones with frame drum and tambourine, a recorder an octave up · **A Flagon for the Spearmen** — a tavern jig in 6/8 for recorder and lute, then fiddle and sackbut |
+| Knight | **Lists and Lances** — a tournament fanfare: cornett arpeggios over sackbuts and a pair of nakers · **Saltarello of the Spurs** — a galloping saltarello in 6/8: shawm over a drone and a long-short tabor beat, then hurdy-gurdy · **Estampie of the Great Helm** — a chivalric estampie with open and closed endings: fiddle, psaltery and harp over nakers, a recorder in the second punctum |
+| Bishop | **Organum of the Crozier** — plainchant over an organ drone with tolling bells, the second time in organum a fourth below with a recorder above · **Procession of the Mitre** — a processional for portative organ over sackbut and tabor, monks and a recorder joining · **Laudate Saltando** — a joyful laude in 3/4: recorder and portative organ with tambourine, then fiddle and choir |
+| Rook   | **The Gatehouse Stands** — a heavy siege march: sackbut over a low drone, frame drum and tabor, crumhorn and nakers joining · **Portcullis Ductia** — a dark ductia in G Dorian: crumhorns in parallel fourths over a growling drone, a shawm above · **The Dragon in the Gate** — a Phrygian menace: wailing shawm over a crumhorn ostinato, a growling drone and a heartbeat drum, a tolling bell |
+| Queen  | **Basse Danse of the Sceptre** — a graceful basse danse in 3/4: recorder over lute and harp, then fiddle and psaltery · **The Queen's Pavane** — a stately pavane: cornett over sackbut and the long-short-short tabor, then fiddle, recorder and lute · **Galliard of the Five Steps** — a leaping galliard in 3/4 with hemiola: recorder and lute with tambourine, then fiddle and tabor |
+| King   | **The King's Procession** — a royal procession for a shawm band: shawms and sackbut, church bells and nakers · **Feast in the Great Hall** — a feast dance in 6/8: bagpipe chanter over drones with frame drum and tambourine, then hurdy-gurdy and psaltery · **Long Live the King** — a stately anthem: choir over church organ and sackbut, cornett, nakers and bells |
+
+**The aliens** — theremin, vibraphone, bongos, bleeps
+
+| Piece | Themes |
+|---|---|
+| Pawn   | **Little Green March** — a waddling comic march for muted trumpet over tuba oom-pah, snare and woodblock, with ray-gun bleeps · **Martian Cha-Cha** — a theremin cha-cha over congas, bongos, vibes and upright bass · **Ray Gun Boogie** — a 50s rock'n'roll boogie: honking sax, boogie-woogie bass, jukebox piano and guitar, with zaps |
+| Knight | **Saucer Flight** — a swooping theremin over a driving beat, a pulsing synth bass and a warbling saucer pad, with twinkling running lights · **Crop Circle Waltz** — a creepy-campy theremin waltz with vibes, organ, celesta and harp glissandi · **Countdown to Liftoff** — a blip countdown, a rocket roar and a galloping trumpet fanfare |
+| Bishop | **The Third Eye** — a hypnotic 6/8 for ondes Martenot over swirling vibes, harp and bongos · **Telepathy** — exotica for vibes and a choir that shifts up a semitone, with bongos and bird calls · **Mind over Matter** — a whole-tone theremin mystery in 5/4 with organ, celesta runs and ring-modulated clangs |
+| Rook   | **Three-Legged March** — a heavy mechanical march in 3/4 for brass, taiko, tuba and clanking metal, with the tripod's horn · **Heat Ray** — a menacing synth-bass ostinato with ring-modulated chords, brass stabs and a wailing theremin · **Invasion Stomp** — a stomp-stomp-clap monster-movie theme for brass, guitar, tuba and timpani, with an alien siren |
+| Queen  | **Spade-Tail Tango** — a slinky theremin tango over habanera bass, vibes and strings, with harp glissandi · **Shell Bodice Bossa** — a glamorous space-age bossa nova: theremin, vibes, rim clicks, shaker and harp · **Royal Hive Waltz** — a dramatic lounge waltz for ondes Martenot, vibes, strings and harp |
+| King   | **Hail the Overlord** — a pompous anthem for trumpets, church organ, timpani and choir, with a theremin descant · **Mothership Arrival** — a majestic brass fanfare over a ring-modulated hum, a saucer pad, landing-light blips and choir · **Big Red Button Swing** — swaggering big-band swing (trumpet, sax section, walking bass, ride cymbal), with a "bee-boop" button press |
 
 The panel has a *Music* volume of its own beside *Volume* (which turns
 everything up or down), and *Play music* (or **M**) turns it on and off; it
 also shows what is playing. On the Mac it is also *Game › Music*, on iPhone and
 iPad under *Settings › Sound*; `--no-music` starts without it.
 
-Every note is synthesised as it plays: drums (kick, snare, claps, hi-hats,
-cymbals, toms, timpani, taiko, woodblock), basses, plucked strings (harp,
-harpsichord, guitar, pizzicato), mallets and bells (FM), organs, brass,
-strings, a choir and synth leads, with a reverb hall and an echo. The songs are
-written in a compact text notation (`music_score.cpp`: chords, drum patterns,
-arpeggios as chord tones and melodies as notes), and the score of every song
-is checked bar by bar when it is read. `--dump-sfx folder` writes each song as a
-.wav along with the sound effects.
+Every note is synthesised as it plays: drums (timpani, bass drum, side drum,
+tabor, frame drum, nakers, bongos, congas, cymbals, triangle, taiko and a kit),
+basses, plucked strings (harp, harpsichord, lute, psaltery, guitar,
+pizzicato, upright bass), mallets and bells (FM), organs, brass, bowed strings,
+woodwinds (flute, oboe, clarinet, bassoon, recorder, shawm, crumhorn,
+bagpipes), a hurdy-gurdy, a choir, a theremin that glides from note to note,
+an ondes Martenot and science-fiction bleeps, with a reverb hall and an echo.
+The songs are written in a compact text notation (`music_score.cpp`: chords,
+drum patterns, arpeggios as chord tones and melodies as notes), and the score
+of every song is checked bar by bar when it is read. `--dump-sfx folder` writes
+each song as a .wav along with the sound effects.
 
 ## The medieval army
 
@@ -509,7 +543,7 @@ on *High* and *Ultra*.
 | `battle_alien.cpp` | The aliens' moves, castling, checkmate and their 18 battles |
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
 | `audio.*` | Procedural sound synthesis (including a pipe organ and choir) and a small real-time mixer (miniaudio) |
-| `music.*`, `music_score.cpp` | The music: a real-time synthesiser and sequencer, and the score of the 18 piece themes |
+| `music.*`, `music_score.cpp` | The music: a real-time synthesiser and sequencer, and the score of the 54 themes (three for each piece in each army) |
 | `app.*`, `ui.cpp` | Window, game flow, input/picking, Dear ImGui interface |
 
 The native Mac version in `macos/Sources/LivingMarble` is a Swift port of the

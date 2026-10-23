@@ -1,9 +1,11 @@
-// The background music. Every type of chess piece has three upbeat themes of
-// its own, written as little text scores (music_score.cpp) and played by a
-// small real-time synthesiser: no audio files. When a piece moves, the music
-// switches to one of its themes at the next bar line; each piece's theme picks
-// up where it left off, and when one ends another of that piece's themes is
-// chosen at random.
+// The background music. In each army every type of chess piece has three
+// themes of its own, written to suit that army (the Living Marble pieces a
+// concert hall, the medieval army early music, the aliens 1950s science
+// fiction) as little text scores (music_score.cpp) and played by a small
+// real-time synthesiser: no audio files. When a piece moves, the music switches
+// to one of its themes at the next bar line; each piece's theme picks up where
+// it left off, and when one ends another of that piece's themes is chosen at
+// random.
 #pragma once
 #include <cstdint>
 #include <string>
@@ -12,6 +14,7 @@
 namespace music {
 
 constexpr int kPieces = 6;  // pawn, knight, bishop, rook, queen, king
+constexpr int kArmies = 3;  // Living Marble, medieval, aliens
 
 class Engine {
  public:
@@ -22,6 +25,7 @@ class Engine {
 
   // Control, from the game. Not thread-safe: call under the lock that guards render().
   void play(int piece);   // this piece's music (0 pawn .. 5 king), from the next bar line
+  void setArmy(int army); // whose music: 0 Living Marble, 1 medieval, 2 aliens (from the next bar line)
   void resume();          // starts again after stop(), with a random piece's music
   void stop();            // fades out (the game is over)
   void setEnabled(bool on);
@@ -36,6 +40,7 @@ class Engine {
 
   int songCount() const;
   int songPiece(int song) const;
+  int songArmy(int song) const;
   const std::string& songTitle(int song) const;
   // Plays one song through on its own (and its echo), as interleaved stereo; for --dump-sfx and tests.
   std::vector<float> renderSong(int song);

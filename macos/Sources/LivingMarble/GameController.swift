@@ -122,6 +122,7 @@ final class GameController: NSObject, MTKViewDelegate {
     model.music = !o.noMusic
     audio.setMusic(model.music)
     audio.setMusicVolume(model.musicVolume)
+    audio.setMusicArmy(o.pieces)
     if !o.noAudio && audio.start() {
       world.audio = audio
       audio.setVolume(model.volume)
@@ -239,6 +240,7 @@ final class GameController: NSObject, MTKViewDelegate {
       a.dissolveColor = s == 1 ? vec3(1.0, 0.62, 0.25) : (s == 2 ? vec3(0.4, 1.0, 0.5) : vec3(1.0, 0.75, 0.35))
     }
     world.sound(.chime, 0.6, vec3(0), s == 1 ? 0.75 : (s == 2 ? 1.4 : 1))
+    audio.setMusicArmy(s)  // and its music
   }
 
   // ---------------------------------------------------------------------------

@@ -1378,6 +1378,7 @@ extension Audio {
   /// The music's commands besides a piece's number (0 pawn .. 5 king).
   fileprivate enum MusicCommand: Int32 {
     case resume = 10, stop, off, on
+    case marble = 20, medieval, alien  // whose music: setArmy(0 ... 2)
   }
 
   /// Everything the render block touches lives in plain manually allocated
@@ -1413,7 +1414,7 @@ extension Audio {
 
     /// `sounds` has one entry per Sfx; the empty ones are added later by publish().
     init(sounds: [[Float]], master vol: Float, music score: MusicScore, musicOn: Bool, musicVolume: Float,
-         duck duckBy: [Float]) {
+         musicArmy: Int, duck duckBy: [Float]) {
       soundCount = sounds.count
       bufs = .allocate(capacity: soundCount)
       bufs.initialize(repeating: nil, count: soundCount)
@@ -1448,6 +1449,7 @@ extension Audio {
       music.pointee.seed(UInt32.random(in: 1...UInt32.max))
       music.pointee.setEnabled(musicOn)
       music.pointee.setVolume(musicVolume)
+      music.pointee.setArmy(musicArmy)
     }
 
     /// Copies the non-empty sounds into one new block and points bufs/lengths at them.
@@ -1581,6 +1583,7 @@ extension Audio {
         case .stop: music.pointee.stop()
         case .off: music.pointee.setEnabled(false)
         case .on: music.pointee.setEnabled(true)
+        case .marble, .medieval, .alien: music.pointee.setArmy(Int(c - MusicCommand.marble.rawValue))
         case nil: music.pointee.play(Int(c))
         }
       }
@@ -1669,9 +1672,10 @@ final class Audio {
   private(set) var ok = false
   private var volume_: Float = 0.8
   var volume: Float { volume_ }
-  /// The background music (Music.swift): every piece type has its own themes.
+  /// The background music (Music.swift): every piece type has its own themes in each army.
   private(set) var music = true
   private(set) var musicVolume: Float = 0.7
+  private(set) var musicArmy = 0
   private var score: MusicScore?
 
   private var mixer: Mixer?
@@ -1722,7 +1726,7 @@ final class Audio {
     for w in s.warnings { print("[music] \(w)") }
     score = s
     return Mixer(sounds: Synth.synthAll(), master: volume_, music: s, musicOn: music, musicVolume: musicVolume,
-                 duck: Sfx.allCases.map { Audio.musicDuck($0) })
+                 musicArmy: musicArmy, duck: Sfx.allCases.map { Audio.musicDuck($0) })
   }
 
   /// How far the music is turned down while a sound effect plays: the ones that are
@@ -1782,6 +1786,11 @@ final class Audio {
 
   /// The music of this piece (0 pawn .. 5 king), from the next bar. Safe from any thread.
   func playMusic(_ piece: Int) { mixer?.pushMusic(Int32(piece)) }
+  /// Whose music: 0 Living Marble, 1 medieval, 2 aliens. Safe from any thread.
+  func setMusicArmy(_ set: Int) {
+    musicArmy = set == 1 || set == 2 ? set : 0
+    mixer?.pushMusic(MusicCommand.marble.rawValue + Int32(musicArmy))
+  }
   /// A new game: starts the music again if it was stopped.
   func resumeMusic() { mixer?.pushMusic(MusicCommand.resume.rawValue) }
   /// The game is over: fades the music out.
@@ -1899,7 +1908,7 @@ final class Audio {
 #endif
 
   /// Debug: writes every effect as a 16-bit mono .wav, and every song of the music in
-  /// stereo as music-<piece>-<title>.wav (same names as the C++).
+  /// stereo as music-<army>-<piece>-<title>.wav (same names as the C++).
   static func dumpWav(_ dir: String) -> Bool {
     let names = ["step", "thud", "clack", "shatter", "whoosh", "clang", "boom", "explode", "charge",
                  "zap", "crackle", "chime", "select", "check", "mate", "debris", "rumble",
@@ -1932,7 +1941,8 @@ final class Audio {
       d.append(contentsOf: Array("data".utf8)); w32(bytes)
       for v in st { w16(UInt16(bitPattern: Int16(max(-32767, min(32767, v * 32767))))) }
       let title = String(score.titles[i].lowercased().compactMap { $0 == " " ? "-" : $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : nil })
-      let path = dir + "/music-" + musicPieceNames[score.songPiece(i)] + "-" + title + ".wav"
+      let path = dir + "/music-" + musicArmyNames[score.songArmy(i)] + "-" + musicPieceNames[score.songPiece(i)] + "-"
+        + title + ".wav"
       if !FileManager.default.createFile(atPath: path, contents: d) { return false }
     }
     return true

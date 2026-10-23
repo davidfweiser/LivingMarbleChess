@@ -1,9 +1,11 @@
-// The background music. Every type of chess piece has three upbeat themes of
-// its own, written as little text scores (MusicScore.swift) and played by a
-// small real-time synthesiser: no audio files. When a piece moves, the music
-// switches to one of its themes at the next bar line; each piece's theme picks
-// up where it left off, and when one ends another of that piece's themes is
-// chosen at random.
+// The background music. In each army every type of chess piece has three
+// themes of its own, written to suit that army (the Living Marble pieces a
+// concert hall, the medieval army early music, the aliens 1950s science
+// fiction) as little text scores (MusicScore.swift) and played by a small
+// real-time synthesiser: no audio files. When a piece moves, the music switches
+// to one of its themes at the next bar line; each piece's theme picks up where
+// it left off, and when one ends another of that piece's themes is chosen at
+// random.
 //
 // A port of music.cpp that plays the same: the score is read the same way and
 // every voice, filter and effect does the same arithmetic. MusicScore parses
@@ -13,6 +15,7 @@
 import Foundation
 
 let musicPieceNames = ["pawn", "knight", "bishop", "rook", "queen", "king"]
+let musicArmyNames = ["marble", "medieval", "alien"]
 
 private let mSR = 44100
 private let mTAU = 6.283185307179586
@@ -24,6 +27,8 @@ private let mBlock = 256       // the mix is made in blocks of this many samples
 private let mEcho = 65536      // echo line per channel (1.49 s)
 private let mLevel: Float = 0.5  // music under the sound effects
 private let mPieces = 6
+private let mArmies = 3  // Living Marble, medieval, aliens
+private let mSlots = mArmies * mPieces  // an army's piece: army * mPieces + piece
 
 // kinds, waves, filters and drums
 private let kSynth = 0, kFM = 1, kKS = 2, kDrum = 3
@@ -53,6 +58,7 @@ private struct MPatch {
   var hz: Float = 0, cut: Float = 0, res: Float = 0, fenv: Float = 0, fatk: Float = 0, fdec: Float = 0.2
   var vibRate: Float = 0, vibDepth: Float = 0, vibDelay: Float = 0, scoop: Float = 0, drive: Float = 0
   var tremRate: Float = 0, tremDepth: Float = 0
+  var glide: Float = 0, bend: Float = 0, bendTime: Float = 0.05, wahRate: Float = 0, wahDepth: Float = 0  // portamento (s), a pitch sweep, a filter LFO
   var ratio: Float = 1, index: Float = 0, idec: Float = 0.5, p2: Float = 0, p2amp: Float = 0, p2dec: Float = 0.3
   var bright: Float = 0.6, damp: Float = 0.5, decay: Float = 1
   var f: Float = 100, pamt: Float = 0, pdec: Float = 0.05, nf: Float = 1000, ndec: Float = 0.02
@@ -88,7 +94,7 @@ private struct MVoice {
   var patch = -1  // -1: free
   var age = 0, gateAt = 0, stage = 0  // stage 0 attack, 1 decay/sustain, 2 release
   var env: Float = 0, aInc: Float = 0, dCoef: Float = 0, rCoef: Float = 0
-  var freq: Float = 0, amp: Float = 0, gl: Float = 0, gr: Float = 0, rev: Float = 0, del: Float = 0
+  var freq: Float = 0, amp: Float = 0, gl: Float = 0, gr: Float = 0, rev: Float = 0, del: Float = 0, slide: Float = 0
   var phSub = 0.0, phM = 0.0, ph2 = 0.0
   var trem: Float = 1, idx: Float = 0, p2g: Float = 0
   // plucked string
@@ -140,7 +146,7 @@ private func metalFrequency(_ k: Int) -> Float {
 // MARK: - The score
 // ---------------------------------------------------------------------------
 private struct MSong {
-  var piece = 0, beat = 4, bar = 16, bars = 8, echo = 3
+  var army = 0, piece = 0, beat = 4, bar = 16, bars = 8, echo = 3
   var bpm: Float = 120, swing: Float = 0, gain: Float = 1
   var sps = 0.0    // samples per step
   var len = 0      // samples
@@ -272,6 +278,7 @@ final class MusicScore {
 
   var songCount: Int { songs.count }
   func songPiece(_ s: Int) -> Int { songs[s].piece }
+  func songArmy(_ s: Int) -> Int { songs[s].army }
 
   private func warning(_ whereIn: String, _ what: String) { warnings.append(whereIn + ": " + what) }
 
@@ -377,6 +384,13 @@ final class MusicScore {
         P.tremRate = f[0]
         P.tremDepth = f[1]
       case "scoop": P.scoop = x
+      case "glide": P.glide = x
+      case "bend" where f.count == 2:
+        P.bend = f[0]
+        P.bendTime = f[1]
+      case "wah" where f.count == 2:
+        P.wahRate = f[0]
+        P.wahDepth = f[1]
       case "drive": P.drive = x
       case "ratio": P.ratio = x
       case "index": P.index = x
@@ -454,6 +468,7 @@ final class MusicScore {
       switch k {
       case "title": title = v.replacingOccurrences(of: "_", with: " ")
       case "piece": S.piece = musicPieceNames.firstIndex(of: v) ?? -1
+      case "army": S.army = musicArmyNames.firstIndex(of: v) ?? -1
       case "bpm": S.bpm = x
       case "beat": S.beat = Int(x)
       case "bar": S.bar = Int(x)
@@ -465,7 +480,7 @@ final class MusicScore {
       }
     }
     let whereIn = title.isEmpty ? "song" : title
-    if S.piece < 0 || S.bpm <= 0 || S.beat <= 0 || S.bar <= 0 || S.bars <= 0 {
+    if S.army < 0 || S.piece < 0 || S.bpm <= 0 || S.beat <= 0 || S.bar <= 0 || S.bars <= 0 {
       warning(whereIn, "bad song header")
       return
     }
@@ -878,7 +893,9 @@ struct MusicEngine {
   // the sequencer
   private var cur = -1, curBar = 0, ev = 0, evEnd = 0, pending = -1, want = -1
   private var pos = 0, barEnd = 0, since = 0
-  private let pieceSong = alloc(mPieces, -1), pieceBar = alloc(mPieces, 0), lastSong = alloc(mPieces, -1)
+  private let pieceSong = alloc(mSlots, -1), pieceBar = alloc(mSlots, 0), lastSong = alloc(mSlots, -1)
+  private var army = 0
+  private let lastFreq: UnsafeMutablePointer<Float>  // per instrument: its last note, for glide
   private var enabled = true, single = false
   private var fade: Float = 1, fadeTarget: Float = 1, fadeStep: Float = 1 / (2.5 * Float(mSR))
   private var volume: Float = 0.7, volS: Float = 0.7, songGain: Float = 1, songGainS: Float = 1
@@ -907,6 +924,7 @@ struct MusicEngine {
     ks = alloc(mVoices * mKS, Float(0))
     noise.s = 20_240_611
     crash = score.patchNames.lastIndex(of: "crash") ?? -1
+    lastFreq = alloc(max(score.patches.count, 1), Float(0))
   }
 
   /// Only once the audio thread no longer calls render().
@@ -926,6 +944,7 @@ struct MusicEngine {
     echo.free()
     for p in [dryL, dryR, revIn, delIn] { p.deallocate() }
     for p in [pieceSong, pieceBar, lastSong] { p.deallocate() }
+    lastFreq.deallocate()
   }
 
   // ---- tables: sine, two organs, a flute -------------------------------
@@ -986,6 +1005,10 @@ struct MusicEngine {
     v.patch = pi
     v.gateAt = max(1, len)
     v.freq = note > 0 ? mtof(note) : P.f
+    if P.glide > 0 && note > 0 {  // slides in from the instrument's last note
+      if lastFreq[pi] > 0 { v.slide = 12 * log2(lastFreq[pi] / v.freq) }
+      lastFreq[pi] = v.freq
+    }
     v.amp = vel * T.vol * P.gain
     let pan = min(1, max(-1, P.pan + T.pan))
     let an = (pan + 1) * 0.25 * mPI
@@ -1086,13 +1109,16 @@ struct MusicEngine {
       semis += P.vibDepth * ramp * sinT(frac(P.vibRate * t))
     }
     if P.scoop > 0 { semis -= P.scoop * exp(-t / 0.05) }
+    if P.bend != 0 { semis += P.bend * exp(-t / P.bendTime) }
+    if v.slide != 0 { semis += v.slide * exp(-t / P.glide) }
     let pm = exp2(semis / 12)
     let base = Double(v.freq * pm) / Double(mSR)
     let det = dets + vi * 3
     for u in 0..<3 { inc[u] = base * Double(det[u]) }
     if P.filt == fLP || P.filt == fBP {
       let fe = (P.fatk > 0 && t < P.fatk) ? t / P.fatk : exp(-(t - P.fatk) / P.fdec)
-      svfs[vi * 4].set((P.hz + P.cut * v.freq) * exp2(P.fenv * fe), P.res)
+      let wah: Float = P.wahDepth > 0 ? exp2(P.wahDepth * sinT(frac(P.wahRate * t))) : 1
+      svfs[vi * 4].set((P.hz + P.cut * v.freq) * exp2(P.fenv * fe) * wah, P.res)
     }
     if P.tremDepth > 0 { v.trem = 1 - P.tremDepth * (0.5 + 0.5 * sinT(frac(P.tremRate * t))) }
     if P.kind == kFM {
@@ -1299,23 +1325,32 @@ struct MusicEngine {
   }
 
   // ---- the sequencer ---------------------------------------------------
-  private mutating func randomSong(_ piece: Int, _ avoid: Int) -> Int {
+  @inline(__always) private func slotOf(_ s: Int) -> Int { songs[s].army * mPieces + songs[s].piece }
+
+  /// A random theme of an army's piece (a slot), not `avoid` if there is another.
+  private mutating func randomSong(_ slot: Int, _ avoid: Int) -> Int {
     var n = 0
-    for i in 0..<songCount where songs[i].piece == piece { n += 1 }
+    for i in 0..<songCount where slotOf(i) == slot { n += 1 }
     if n == 0 { return -1 }
-    let choices = n > 1 && avoid >= 0 && songs[avoid].piece == piece ? n - 1 : n
+    let choices = n > 1 && avoid >= 0 && slotOf(avoid) == slot ? n - 1 : n
     var k = Int(pick.u32() % UInt32(choices))
     for i in 0..<songCount {
-      if songs[i].piece != piece || (choices < n && i == avoid) { continue }
+      if slotOf(i) != slot || (choices < n && i == avoid) { continue }
       if k == 0 { return i }
       k -= 1
     }
     return -1
   }
 
-  private func hasSongs(_ piece: Int) -> Bool {
-    for i in 0..<songCount where songs[i].piece == piece { return true }
+  private func hasSongs(_ slot: Int) -> Bool {
+    for i in 0..<songCount where slotOf(i) == slot { return true }
     return false
+  }
+
+  /// The piece's slot in the army being played (the Living Marble one's if that army has no music for it).
+  private func slotFor(_ piece: Int) -> Int {
+    let s = army * mPieces + piece
+    return hasSongs(s) ? s : piece
   }
 
   private func releaseAll() {
@@ -1337,8 +1372,8 @@ struct MusicEngine {
     since = 0
     songGain = S.gain
     echo.len = S.echoLen
-    lastSong[S.piece] = s
-    pieceSong[S.piece] = s
+    lastSong[slotOf(s)] = s
+    pieceSong[slotOf(s)] = s
     tail = 4 * mSR
     if mark && crash >= 0 {
       var T = MTrack()
@@ -1347,7 +1382,7 @@ struct MusicEngine {
     }
   }
 
-  /// The piece's theme where it left off (or a new one); false if it has none.
+  /// The theme of an army's piece (a slot) where it left off (or a new one); false if it has none.
   @discardableResult private mutating func startPiece(_ p: Int) -> Bool {
     var s = pieceSong[p]
     if s < 0 {
@@ -1355,7 +1390,7 @@ struct MusicEngine {
       pieceBar[p] = 0
     }
     if s < 0 { return false }
-    let mark = cur >= 0 && songs[cur].piece != p
+    let mark = cur >= 0 && slotOf(cur) != p
     startSong(s, pieceBar[p], mark)
     return true
   }
@@ -1379,7 +1414,7 @@ struct MusicEngine {
       // a new theme waits for the bar line, and stays for at least two bars
       let dwelt = since >= 2 * Int(Double(S.bar) * S.sps)
       let p = pending
-      let from = S.piece, fromBar = curBar
+      let from = slotOf(cur), fromBar = curBar
       if p >= 0 && p != from && (atEnd || dwelt) && hasSongs(p) {
         pending = -1
         pieceBar[from] = atEnd ? 0 : fromBar
@@ -1402,7 +1437,7 @@ struct MusicEngine {
   }
 
   private mutating func halt() {
-    if cur >= 0 { pieceBar[songs[cur].piece] = curBar }
+    if cur >= 0 { pieceBar[slotOf(cur)] = curBar }
     cur = -1
     pending = -1
     for i in 0..<mVoices { voices[i].patch = -1 }
@@ -1501,12 +1536,24 @@ struct MusicEngine {
     if piece < 0 || piece >= mPieces { return }
     want = piece
     if !enabled { return }
+    let s = slotFor(piece)
     if cur < 0 {
-      startNow(piece)
+      startNow(s)
     } else {
       fadeTarget = 1
-      pending = songs[cur].piece == piece ? -1 : piece
+      pending = slotOf(cur) == s ? -1 : s
     }
+  }
+
+  /// Whose music: 0 Living Marble, 1 medieval, 2 aliens (from the next bar line).
+  mutating func setArmy(_ a: Int) {
+    let a = a == 1 || a == 2 ? a : 0
+    if a == army { return }
+    army = a
+    if cur < 0 || fadeTarget <= 0 { return }
+    // the same piece's music (or the one waiting to come in) in the new army, from the next bar line
+    let s = slotFor(pending >= 0 ? pending % mPieces : songs[cur].piece)
+    pending = slotOf(cur) == s ? -1 : s
   }
 
   /// Starts again after stop(), with a random piece's music.
@@ -1518,7 +1565,7 @@ struct MusicEngine {
     }
     let p = Int(pick.u32() % UInt32(mPieces))  // a new game: any piece's music
     want = p
-    startNow(p)
+    startNow(slotFor(p))
   }
 
   /// Fades out (the game is over).
@@ -1544,7 +1591,7 @@ struct MusicEngine {
     } else {
       let p = want >= 0 ? want : Int(pick.u32() % UInt32(mPieces))
       want = p
-      startNow(p)
+      startNow(slotFor(p))
     }
   }
 

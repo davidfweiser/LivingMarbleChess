@@ -259,7 +259,7 @@ private struct SettingsSheet: View {
             Text("Sound")
           } footer: {
             if model.music && !model.nowPlaying.isEmpty {
-              Text("Playing: \(model.nowPlaying). Every piece has its own music, which plays when it moves.")
+              Text("Playing: \(model.nowPlaying). In every army each piece has its own music, which plays when it moves.")
             }
           }
         }

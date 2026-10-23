@@ -7,7 +7,8 @@
 
 namespace music {
 
-extern const char* const kScore;  // music_score.cpp: the instruments and the songs
+// music_score.cpp: the instruments and the songs, in pieces (compilers limit a string's length), then nullptr
+extern const char* const kScore[];
 
 namespace {
 
@@ -48,6 +49,7 @@ struct Patch {
   float a = 0.005f, d = 0.3f, s = 0.7f, r = 0.1f;          // amplitude envelope (s), sustain level
   float hz = 0, cut = 0, res = 0, fenv = 0, fatk = 0, fdec = 0.2f;  // filter: hz + cut * note frequency, envelope in octaves
   float vibRate = 0, vibDepth = 0, vibDelay = 0, scoop = 0, drive = 0, tremRate = 0, tremDepth = 0;
+  float glide = 0, bend = 0, bendTime = 0.05f, wahRate = 0, wahDepth = 0;  // portamento (s), a pitch sweep, a filter LFO
   float ratio = 1, index = 0, idec = 0.5f, p2 = 0, p2amp = 0, p2dec = 0.3f;  // FM, and an extra partial
   float bright = 0.6f, damp = 0.5f, decay = 1.0f;          // plucked string
   float f = 100, pamt = 0, pdec = 0.05f, nf = 1000, ndec = 0.02f, snap = 0, tone = 0.5f, metal = 0.5f;  // drums
@@ -80,7 +82,7 @@ struct Voice {
   int patch = -1;  // -1: free
   int age = 0, gateAt = 0, stage = 0;  // stage 0 attack, 1 decay/sustain, 2 release
   float env = 0, aInc = 0, dCoef = 0, rCoef = 0;
-  float freq = 0, amp = 0, gl = 0, gr = 0, rev = 0, del = 0;
+  float freq = 0, amp = 0, gl = 0, gr = 0, rev = 0, del = 0, slide = 0;
   double ph[6] = {0, 0, 0, 0, 0, 0}, inc[6] = {0, 0, 0, 0, 0, 0};
   double phSub = 0, phM = 0, ph2 = 0;
   float det[3] = {1, 1, 1};
@@ -194,7 +196,7 @@ struct Echo {
 // ---------------------------------------------------------------------------
 struct Song {
   std::string title;
-  int piece = 0, beat = 4, bar = 16, bars = 8, echo = 3;
+  int army = 0, piece = 0, beat = 4, bar = 16, bars = 8, echo = 3;
   float bpm = 120, swing = 0, gain = 1;
   double sps = 0;          // samples per step
   int64_t len = 0;         // samples
@@ -237,6 +239,8 @@ struct Cell {
 };
 
 const char* const kPieceNames[kPieces] = {"pawn", "knight", "bishop", "rook", "queen", "king"};
+const char* const kArmyNames[kArmies] = {"marble", "medieval", "alien"};
+constexpr int kSlots = kArmies * kPieces;  // an army's piece: army * kPieces + piece
 
 std::vector<std::string> splitWS(const std::string& s) {
   std::vector<std::string> out;
@@ -364,7 +368,9 @@ struct Engine::Impl {
   // the sequencer
   int cur = -1, curBar = 0, ev = 0, evEnd = 0, pending = -1, want = -1;
   int64_t pos = 0, barEnd = 0, since = 0;
-  int pieceSong[kPieces], pieceBar[kPieces], lastSong[kPieces];
+  int pieceSong[kSlots], pieceBar[kSlots], lastSong[kSlots];
+  int army = 0;
+  std::vector<float> lastFreq;  // per instrument: its last note, for glide
   bool enabled = true, single = false;
   float fade = 1, fadeTarget = 1, fadeStep = 1.0f / (2.5f * SR);
   float volume = 0.7f, volS = 0.7f, songGain = 1, songGainS = 1;
@@ -374,7 +380,7 @@ struct Engine::Impl {
   Rng pick, noise;
 
   explicit Impl(const char* text) {
-    for (int p = 0; p < kPieces; ++p) {
+    for (int p = 0; p < kSlots; ++p) {
       pieceSong[p] = -1;
       pieceBar[p] = 0;
       lastSong[p] = -1;
@@ -388,6 +394,7 @@ struct Engine::Impl {
     parse(text);
     for (size_t i = 0; i < patches.size(); ++i)
       if (patches[i].name == "crash") crash = (int)i;
+    lastFreq.assign(patches.size(), 0.0f);
   }
 
   // ---- tables: sine, two organs, a flute -------------------------------
@@ -535,7 +542,14 @@ struct Engine::Impl {
         P.tremRate = f[0];
         P.tremDepth = f[1];
       } else if (k == "scoop") P.scoop = x;
-      else if (k == "drive") P.drive = x;
+      else if (k == "glide") P.glide = x;
+      else if (k == "bend" && f.size() == 2) {
+        P.bend = f[0];
+        P.bendTime = f[1];
+      } else if (k == "wah" && f.size() == 2) {
+        P.wahRate = f[0];
+        P.wahDepth = f[1];
+      } else if (k == "drive") P.drive = x;
       else if (k == "ratio") P.ratio = x;
       else if (k == "index") P.index = x;
       else if (k == "idec") P.idec = x;
@@ -619,6 +633,10 @@ struct Engine::Impl {
         S.piece = -1;
         for (int p = 0; p < kPieces; ++p)
           if (v == kPieceNames[p]) S.piece = p;
+      } else if (k == "army") {
+        S.army = -1;
+        for (int a = 0; a < kArmies; ++a)
+          if (v == kArmyNames[a]) S.army = a;
       } else if (k == "bpm") S.bpm = x;
       else if (k == "beat") S.beat = (int)x;
       else if (k == "bar") S.bar = (int)x;
@@ -629,7 +647,7 @@ struct Engine::Impl {
       else warning("song", "unknown setting " + head[i]);
     }
     std::string where = S.title.empty() ? std::string("song") : S.title;
-    if (S.piece < 0 || S.bpm <= 0 || S.beat <= 0 || S.bar <= 0 || S.bars <= 0) {
+    if (S.army < 0 || S.piece < 0 || S.bpm <= 0 || S.beat <= 0 || S.bar <= 0 || S.bars <= 0) {
       warning(where, "bad song header");
       return;
     }
@@ -926,6 +944,10 @@ struct Engine::Impl {
     v.patch = pi;
     v.gateAt = std::max(1, len);
     v.freq = note > 0 ? mtof(note) : P.f;
+    if (P.glide > 0 && note > 0) {  // slides in from the instrument's last note
+      if (lastFreq[(size_t)pi] > 0) v.slide = 12.0f * std::log2(lastFreq[(size_t)pi] / v.freq);
+      lastFreq[(size_t)pi] = v.freq;
+    }
     v.amp = vel * T.vol * P.gain;
     float pan = std::min(1.0f, std::max(-1.0f, P.pan + T.pan));
     float an = (pan + 1.0f) * 0.25f * PI_F;
@@ -1022,12 +1044,15 @@ struct Engine::Impl {
       semis += P.vibDepth * ramp * sinT(frac(P.vibRate * t));
     }
     if (P.scoop > 0) semis -= P.scoop * std::exp(-t / 0.05f);
+    if (P.bend != 0) semis += P.bend * std::exp(-t / P.bendTime);
+    if (v.slide != 0) semis += v.slide * std::exp(-t / P.glide);
     float pm = std::exp2(semis / 12.0f);
     double base = (double)(v.freq * pm) / (double)SR;
     for (int u = 0; u < 3; ++u) v.inc[u] = base * (double)v.det[u];
     if (P.filt == F_LP || P.filt == F_BP) {
       float fe = (P.fatk > 0 && t < P.fatk) ? t / P.fatk : std::exp(-(t - P.fatk) / P.fdec);
-      v.flt.set((P.hz + P.cut * v.freq) * std::exp2(P.fenv * fe), P.res);
+      float wah = P.wahDepth > 0 ? std::exp2(P.wahDepth * sinT(frac(P.wahRate * t))) : 1.0f;
+      v.flt.set((P.hz + P.cut * v.freq) * std::exp2(P.fenv * fe) * wah, P.res);
     }
     if (P.tremDepth > 0) v.trem = 1.0f - P.tremDepth * (0.5f + 0.5f * sinT(frac(P.tremRate * t)));
     if (P.kind == K_FM) {
@@ -1230,25 +1255,33 @@ struct Engine::Impl {
 
   // ---- the sequencer ---------------------------------------------------
   const Song& song() const { return songs[(size_t)cur]; }
+  static int slotOf(const Song& s) { return s.army * kPieces + s.piece; }
 
-  int randomSong(int piece, int avoid) {
+  // A random theme of an army's piece (a slot), not 'avoid' if there is another.
+  int randomSong(int slot, int avoid) {
     int n = 0;
     for (const Song& s : songs)
-      if (s.piece == piece) ++n;
+      if (slotOf(s) == slot) ++n;
     if (n == 0) return -1;
-    int choices = n > 1 && avoid >= 0 && songs[(size_t)avoid].piece == piece ? n - 1 : n;
+    int choices = n > 1 && avoid >= 0 && slotOf(songs[(size_t)avoid]) == slot ? n - 1 : n;
     int k = (int)(pick.u32() % (uint32_t)choices);
     for (size_t i = 0; i < songs.size(); ++i) {
-      if (songs[i].piece != piece || (choices < n && (int)i == avoid)) continue;
+      if (slotOf(songs[i]) != slot || (choices < n && (int)i == avoid)) continue;
       if (k-- == 0) return (int)i;
     }
     return -1;
   }
 
-  bool hasSongs(int piece) const {
+  bool hasSongs(int slot) const {
     for (const Song& s : songs)
-      if (s.piece == piece) return true;
+      if (slotOf(s) == slot) return true;
     return false;
+  }
+
+  // The piece's slot in the army being played (the Living Marble one's if that army has no music for it).
+  int slotFor(int piece) const {
+    int s = army * kPieces + piece;
+    return hasSongs(s) ? s : piece;
   }
 
   void releaseAll() {
@@ -1269,8 +1302,8 @@ struct Engine::Impl {
     since = 0;
     songGain = S.gain;
     echo.len = S.echoLen;
-    lastSong[S.piece] = s;
-    pieceSong[S.piece] = s;
+    lastSong[slotOf(S)] = s;
+    pieceSong[slotOf(S)] = s;
     tail = 4 * SR;
     if (mark && crash >= 0) {
       Track T;
@@ -1279,7 +1312,7 @@ struct Engine::Impl {
     }
   }
 
-  // The piece's theme where it left off (or a new one); false if it has none.
+  // The theme of an army's piece (a slot) where it left off (or a new one); false if it has none.
   bool startPiece(int p) {
     int s = pieceSong[p];
     if (s < 0) {
@@ -1287,7 +1320,7 @@ struct Engine::Impl {
       pieceBar[p] = 0;
     }
     if (s < 0) return false;
-    bool mark = cur >= 0 && song().piece != p;
+    bool mark = cur >= 0 && slotOf(song()) != p;
     startSong(s, pieceBar[p], mark);
     return true;
   }
@@ -1311,7 +1344,7 @@ struct Engine::Impl {
       // a new theme waits for the bar line, and stays for at least two bars
       bool dwelt = since >= 2 * (int64_t)((double)S.bar * S.sps);
       int p = pending;
-      int from = S.piece, fromBar = curBar;
+      int from = slotOf(S), fromBar = curBar;
       if (p >= 0 && p != from && (atEnd || dwelt) && hasSongs(p)) {
         pending = -1;
         pieceBar[from] = atEnd ? 0 : fromBar;
@@ -1333,7 +1366,7 @@ struct Engine::Impl {
   }
 
   void halt() {
-    if (cur >= 0) pieceBar[song().piece] = curBar;
+    if (cur >= 0) pieceBar[slotOf(song())] = curBar;
     cur = -1;
     pending = -1;
     for (Voice& v : voices) v.patch = -1;
@@ -1410,18 +1443,35 @@ struct Engine::Impl {
 };
 
 // ---------------------------------------------------------------------------
-Engine::Engine(const char* score) : d(new Impl(score ? score : kScore)) {}
+static std::string gameScore() {
+  std::string s;
+  for (int i = 0; kScore[i]; ++i) s += kScore[i];
+  return s;
+}
+
+Engine::Engine(const char* score) : d(new Impl(score ? score : gameScore().c_str())) {}
 Engine::~Engine() { delete d; }
 
 void Engine::play(int piece) {
   if (piece < 0 || piece >= kPieces) return;
   d->want = piece;
   if (!d->enabled) return;
-  if (d->cur < 0) d->startNow(piece);
+  int s = d->slotFor(piece);
+  if (d->cur < 0) d->startNow(s);
   else {
     d->fadeTarget = 1.0f;
-    d->pending = d->song().piece == piece ? -1 : piece;
+    d->pending = Impl::slotOf(d->song()) == s ? -1 : s;
   }
+}
+
+void Engine::setArmy(int army) {
+  army = army == 1 || army == 2 ? army : 0;
+  if (army == d->army) return;
+  d->army = army;
+  if (d->cur < 0 || d->fadeTarget <= 0.0f) return;
+  // the same piece's music (or the one waiting to come in) in the new army, from the next bar line
+  int s = d->slotFor(d->pending >= 0 ? d->pending % kPieces : d->song().piece);
+  d->pending = Impl::slotOf(d->song()) == s ? -1 : s;
 }
 
 void Engine::resume() {
@@ -1432,7 +1482,7 @@ void Engine::resume() {
   }
   int p = (int)(d->pick.u32() % (uint32_t)kPieces);  // a new game: any piece's music
   d->want = p;
-  d->startNow(p);
+  d->startNow(d->slotFor(p));
 }
 
 void Engine::stop() {
@@ -1457,7 +1507,7 @@ void Engine::setEnabled(bool on) {
   } else {
     int p = d->want >= 0 ? d->want : (int)(d->pick.u32() % (uint32_t)kPieces);
     d->want = p;
-    d->startNow(p);
+    d->startNow(d->slotFor(p));
   }
 }
 
@@ -1477,6 +1527,7 @@ void Engine::render(float* left, float* right, int frames, int step) { d->render
 
 int Engine::songCount() const { return (int)d->songs.size(); }
 int Engine::songPiece(int s) const { return d->songs[(size_t)s].piece; }
+int Engine::songArmy(int s) const { return d->songs[(size_t)s].army; }
 const std::string& Engine::songTitle(int s) const { return d->songs[(size_t)s].title; }
 const std::vector<std::string>& Engine::warnings() const { return d->warn; }
 

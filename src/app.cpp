@@ -281,6 +281,7 @@ void App::applyPieceSet(int s) {
     a.dissolveColor = s == 1 ? vec3(1.0f, 0.62f, 0.25f) : (s == 2 ? vec3(0.4f, 1.0f, 0.5f) : vec3(1.0f, 0.75f, 0.35f));
   }
   world.sound(SFX_CHIME, 0.6f, vec3(0), s == 1 ? 0.75f : (s == 2 ? 1.4f : 1.0f));
+  audio.setMusicArmy(s);  // and its music
 }
 
 int App::run() {
@@ -301,6 +302,7 @@ int App::run() {
   music = !opt.noMusic;
   audio.setMusic(music);
   audio.setMusicVolume(musicVolume);
+  audio.setMusicArmy(opt.pieces);
   if (!opt.noAudio && audio.init()) {
     world.audio = &audio;
     audio.setVolume(volume);
