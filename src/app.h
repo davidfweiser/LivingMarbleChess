@@ -76,6 +76,8 @@ class App {
   int gfxPreset = 3;
   float exposure = 1.0f;
   bool depthOfField = false;  // blur what the camera is not focused on (High and Ultra only)
+  bool savePower = true;      // fewer frames while the board is at rest and in battery saver
+  const char* paceNote = "";  // why the frame rate is lowered ("at rest", "battery saver"), or ""
   float volume = 0.8f;
   bool music = true;         // the background music
   float musicVolume = 0.7f;
@@ -123,6 +125,7 @@ class App {
   void initUI();
   void loadAssets();
   void frame(float dtReal);
+  void pace(float dt, double frameStart);
   void updateGame(float dt);
   void handleInput();
   void commitMove(const chess::Move& m);
@@ -183,4 +186,17 @@ class App {
   float battleTime = 0;
   size_t nextShot = 0;
   int victimDemo = -1;
+  // frame rate (pace())
+  float restTime = 0;          // seconds the board has been at rest
+  CamPose pacedCam;            // the camera, cursor and selection at the last frame
+  double pacedMX = -1, pacedMY = -1;
+  int pacedSelected = -1;
+  float powerCheck = 0;        // seconds to the next look at the power state and the display
+  bool powerSaver = false;
+  int refreshHz = 60;
+  int vsyncs = 1;              // display refreshes per frame (2 or more: a lowered rate)
+  bool intervalsWork = true;   // the driver keeps to swap intervals above 1 ...
+  int slowFrames = 0;          // ... (checked over the first frames at a lowered rate)
+  double slowSince = 0;
+  double frameDue = 0;         // ... if it doesn't: when the next frame is due
 };

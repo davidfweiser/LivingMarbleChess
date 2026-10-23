@@ -167,9 +167,12 @@ void App::drawUI() {
     ImGui::BeginDisabled(!renderer.settings().dof);
     ImGui::Checkbox("Depth of field (blur)", &depthOfField);
     ImGui::EndDisabled();
+    ImGui::Checkbox("Save power", &savePower);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("30 frames a second while the board is at rest and in battery saver");
     ImGui::SetNextItemWidth(-90 * S);
     ImGui::SliderFloat("Exposure", &exposure, 0.4f, 2.0f, "%.2f");
-    ImGui::TextDisabled("%.0f fps", fps);
+    if (*paceNote) ImGui::TextDisabled("%.0f fps (%s)", fps, paceNote);
+    else ImGui::TextDisabled("%.0f fps", fps);
   }
   ImGui::End();
 

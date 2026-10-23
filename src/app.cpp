@@ -13,6 +13,7 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "power.h"
 
 using glm::vec3;
 
@@ -317,7 +318,16 @@ int App::run() {
   loadAssets();
   double prev = glfwGetTime();
   while (!glfwWindowShouldClose(win) && !quitRequested) {
-    glfwPollEvents();
+    // minimised: nothing to draw, and the game waits (the music plays on)
+    if (!fixedStep && glfwGetWindowAttrib(win, GLFW_ICONIFIED)) {
+      glfwWaitEventsTimeout(0.25);
+      prev = glfwGetTime();
+      continue;
+    }
+    // a lowered frame rate the driver doesn't keep to: wait for the frame's time (any input ends it)
+    double wait = frameDue - glfwGetTime();
+    if (wait > 0) glfwWaitEventsTimeout(wait);
+    else glfwPollEvents();
     double now = glfwGetTime();
     float dt = (float)(now - prev);
     prev = now;
@@ -325,6 +335,7 @@ int App::run() {
     dt = std::min(dt, 0.05f);
     if (fixedStep && !loading) dt = 1.0f / 30.0f;
     frame(dt);
+    pace(dt, now);
     glfwSwapBuffers(win);
   }
   if (fixedStep) {
@@ -441,6 +452,74 @@ void App::setFullscreen(bool on) {
   }
   fullscreen = on;
   glfwSwapInterval(fixedStep ? 0 : 1);  // some drivers drop the swap interval on a mode switch
+  vsyncs = 1;
+  powerCheck = 0;  // another monitor, perhaps another refresh rate
+}
+
+// Picks the frame rate for what is on screen (with Save power on). A move, a battle, flying
+// debris, a turning camera or a player at the controls get every refresh of the display. Once
+// the board has been at rest for a second (the pieces only breathe and fidget, the ghosts bob)
+// it draws 30 frames a second, which look the same and take a fraction of the power; so does
+// everything while battery saver is on. A lowered rate is a whole number of refreshes per frame
+// (the swap interval), so the frames stay evenly spaced; where the driver ignores swap
+// intervals, a timer waits instead.
+void App::pace(float dt, double frameStart) {
+  if (fixedStep) return;
+  powerCheck -= dt;
+  if (powerCheck <= 0) {
+    powerCheck = 3;
+    powerSaver = power::saverOn();
+    GLFWmonitor* mon = glfwGetWindowMonitor(win);
+    // (Wayland doesn't tell where a window is)
+    if (!mon) mon = glfwGetPlatform() == GLFW_PLATFORM_WAYLAND ? glfwGetPrimaryMonitor() : monitorOf(win);
+    const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
+    refreshHz = vm && vm->refreshRate > 0 ? vm->refreshRate : 60;
+  }
+  // how fast the view turns or travels, in camera distances per second (the slow orbit: 0.05)
+  const CamPose& cp = world.cam.current;
+  float moved = glm::length(cp.pos - pacedCam.pos) + glm::length(cp.target - pacedCam.target);
+  float camRate = moved / (std::max(1.0f, glm::length(cp.pos - cp.target)) * std::max(dt, 1e-3f));
+  pacedCam = cp;
+  double mx, my;
+  glfwGetCursorPos(win, &mx, &my);
+  bool arrows = ImGui::IsKeyDown(ImGuiKey_LeftArrow) || ImGui::IsKeyDown(ImGuiKey_RightArrow) ||
+                ImGui::IsKeyDown(ImGuiKey_UpArrow) || ImGui::IsKeyDown(ImGuiKey_DownArrow);
+  bool input = mx != pacedMX || my != pacedMY || selected != pacedSelected || arrows || ImGui::IsAnyMouseDown();
+  pacedMX = mx;
+  pacedMY = my;
+  pacedSelected = selected;
+  // debris still tumbling, ghosts jumping for joy, an army changing into another
+  bool settling = false;
+  for (const Chunk& c : world.chunks) settling = settling || !c.sleeping;
+  for (const Ghost& g : world.ghosts) settling = settling || g.cheer > 0;
+  for (const Actor& a : world.actors) settling = settling || a.dissolveVel != 0;
+  bool shaken = world.trauma > 0 || world.timeScale < 0.99f;  // camera shake, slow motion
+  bool lively = !loading && (input || !anims.empty() || camRate > 0.06f || shaken || settling);
+  restTime = lively ? 0 : restTime + dt;
+
+  int want = 1;  // refreshes per frame
+  paceNote = "";
+  if (savePower && (powerSaver || restTime > 1)) {
+    want = std::max(1, (int)std::floor(refreshHz / 30.0 + 0.1));  // 30 fps or a little more
+    if (want > 1) paceNote = powerSaver ? "battery saver" : "at rest";
+  }
+  if (intervalsWork) {
+    if (want != vsyncs) {
+      glfwSwapInterval(want);
+      vsyncs = want;
+      slowFrames = 0;
+      slowSince = frameStart;
+    } else if (want > 1 && ++slowFrames == 30) {
+      // 30 frames should take 30 x `want` refreshes; sooner, and the driver ignores the interval
+      // (or vsync is off): from now on a timer waits for each frame's time
+      if (frameStart - slowSince < 0.75 * 30 * want / refreshHz) {
+        intervalsWork = false;
+        glfwSwapInterval(1);
+        vsyncs = 1;
+      }
+    }
+  }
+  frameDue = !intervalsWork && want > 1 ? frameStart + (double)want / refreshHz : 0;
 }
 
 void App::applyGraphicsPreset(int p) {

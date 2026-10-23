@@ -105,7 +105,8 @@ add_executable(living_marble
   src/music.cpp
   src/music_score.cpp
   src/ui.cpp
-  src/image_io.cpp)
+  src/image_io.cpp
+  src/power.cpp)
 
 target_include_directories(living_marble PRIVATE src)
 target_link_libraries(living_marble PRIVATE glfw glm::glm imgui)

@@ -522,20 +522,21 @@ turns off reflections and SSAO). *Depth of field* in the same section (on the
 Mac also *View › Depth of Field*, or `--dof`) brings back the camera-focus blur
 on *High* and *Ultra*.
 
-**Saving power** (Mac, iPhone and iPad). The game draws every frame the screen
-can show (up to 120 a second on a ProMotion Mac, 60 on iPhone and iPad) only
-while something moves quickly: a move or a battle, flying debris, cheering
-ghosts, the board being turned, or you at the controls. Once the board has
-been at rest for a second (the pieces only breathe and fidget, the ghosts bob)
-it draws 30 frames a second, which look the same and take a fraction of the
-power. A Mac running on battery draws at most 60, and in Low Power Mode, or
-while the device is hot, the game draws 30. A Mac window that is minimised,
-covered or on another Space draws nothing (the game waits; the music plays
-on). The fps readout under *Graphics* says when and why the rate is lowered;
-*Save power* in the same section (on the Mac also *View › Save Power*) turns
-all this off. For longer still on battery, pick *High* on the Mac: on a Retina
-screen it draws fewer pixels than *Ultra* (1440 across the short side), with
-4× instead of 8× MSAA.
+**Saving power.** The game draws every frame the screen can show (up to 120
+a second on a ProMotion Mac, 60 on iPhone and iPad, the monitor's refresh rate
+on Windows and Linux) while something moves: a move or a battle, flying
+debris, cheering ghosts, the board being turned, or you at the controls. Once
+the board has been at rest for a second (the pieces only breathe and fidget,
+the ghosts bob) it draws 30 frames a second, which look the same and take a
+fraction of the power. It draws 30 all the time in Low Power Mode (Mac, iPhone
+and iPad), with battery saver on (Windows; on Linux the power-saver profile),
+and while a Mac, iPhone or iPad is hot. A minimised window draws nothing (the
+game waits; the music plays on), and on the Mac neither does one that is
+covered or on another Space. The fps readout under *Graphics* says when and
+why the rate is lowered; *Save power* in the same section (on the Mac also
+*View › Save Power*) turns all this off. For longer still on battery, pick
+*High*: on a high-resolution screen it draws fewer pixels than *Ultra* (1440
+across the short side), with 4× instead of 8× MSAA.
 
 ## How it is built
 
@@ -559,7 +560,8 @@ screen it draws fewer pixels than *Ultra* (1440 across the short side), with
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
 | `audio.*` | Procedural sound synthesis (including a pipe organ and choir) and a small real-time mixer (miniaudio) |
 | `music.*`, `music_score.cpp` | The music: a real-time synthesiser and sequencer, and the score of the 54 themes (three for each piece in each army) |
-| `app.*`, `ui.cpp` | Window, game flow, input/picking, Dear ImGui interface |
+| `app.*`, `ui.cpp` | Window, game flow, input/picking, frame rate, Dear ImGui interface |
+| `power.*` | Whether the system asks to save power (Windows battery saver, Linux power-saver profile) |
 
 The native Mac version in `macos/Sources/LivingMarble` is a Swift port of the
 same design:
@@ -579,7 +581,7 @@ same design:
 | `BattlesAlien*.swift` | The aliens' choreography and battles (as `battle_alien.cpp`) |
 | `Audio.swift` | Procedural sounds mixed in real time through AVAudioEngine |
 | `Music.swift`, `MusicScore.swift` | The music (as `music.*`; it plays exactly the same samples) |
-| `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, capture tools |
+| `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, frame rate, capture tools |
 | `Interface.swift`, `AppDelegate.swift` | Native SwiftUI interface, window and menu bar |
 
 The iPhone and iPad app in `ios/App` adds only the touch shell around those
