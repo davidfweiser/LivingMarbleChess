@@ -3,7 +3,6 @@
 // iOS apps; each platform's GameView feeds it clicks, touches and keys.
 #if os(macOS)
 import AppKit
-import IOKit.ps
 #else
 import UIKit
 #endif
@@ -93,7 +92,7 @@ final class GameController: NSObject, MTKViewDelegate {
   private var pacedMouse: CGPoint?
   private var pacedSelected = -1
   private var powerCheck: Float = 0   // seconds to the next look at the power state
-  private var lowPower = false, hot = false, onBattery = false
+  private var lowPower = false, hot = false
   private var tallView: Bool?  // portrait-shaped view; nil until the first frame
   private var screenshotRequested = false
   private var quitRequested = false
@@ -759,10 +758,10 @@ final class GameController: NSObject, MTKViewDelegate {
   }
 
   /// Picks the frame rate for what is on screen (with Save Power on). A move, a battle, flying
-  /// debris, a turning camera or a player at the controls get the display's full rate - at most
-  /// 60 fps on a Mac running on battery, 30 in Low Power Mode or while the device is hot. Once the
+  /// debris, a turning camera or a player at the controls get the display's full rate. Once the
   /// board has been at rest for a second (the pieces only breathe and fidget, the ghosts bob) it
-  /// draws 30 frames a second, which look the same and take a fraction of the power.
+  /// draws 30 frames a second, which look the same and take a fraction of the power; so does
+  /// everything in Low Power Mode or while the device is hot.
   private func pace(_ dt: Float) {
     if fixedStep { return }
     powerCheck -= dt
@@ -798,9 +797,6 @@ final class GameController: NSObject, MTKViewDelegate {
       } else if restTime > 1 {
         rate = 30
         note = "at rest"
-      } else if onBattery {
-        rate = 60
-        note = "on battery"
       }
       if rate >= full {
         rate = full
@@ -811,15 +807,11 @@ final class GameController: NSObject, MTKViewDelegate {
     if model.paceNote != note { model.paceNote = note }
   }
 
-  /// Low Power Mode, a hot device and (on a Mac) running on battery lower the frame rate.
+  /// Low Power Mode and a hot device lower the frame rate.
   private func readPowerState() {
     let info = ProcessInfo.processInfo
     lowPower = info.isLowPowerModeEnabled
     hot = info.thermalState == .serious || info.thermalState == .critical
-#if os(macOS)
-    // kIOPSTimeRemainingUnlimited (-2): plugged in, or a Mac without a battery
-    onBattery = IOPSGetTimeRemainingEstimate() != -2
-#endif
   }
 
   /// The Mac window was minimised, covered or moved to another Space (false), or shown again.
