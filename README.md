@@ -45,13 +45,13 @@ at one sculpting level less (`--quality 2`) and *High* graphics.
 
 ## Download
 
-The current version is **1.3.1** on iPhone and iPad, **1.3** on the Mac and
+The current version is **1.3.1** on the Mac, iPhone and iPad, **1.3** on
 Windows and **1.2** on Linux.
 Ready-made downloads are on the
 [Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest).
 
 **Mac** (macOS 14 or later, Apple silicon and Intel): open
-`LivingMarble-1.3.dmg` and drag *Living Marble* onto Applications.
+`LivingMarble-1.3.1.dmg` and drag *Living Marble* onto Applications.
 
 **Windows** (64-bit Windows 10 or 11): run `LivingMarble-1.3-setup.exe`. It is
 not code-signed, so SmartScreen may warn about it: click *More info*, then
@@ -327,7 +327,7 @@ Applications shortcut to drag it onto), give it to `build-dmg.sh`, which packs
 it as it is:
 
 ```sh
-macos/build-dmg.sh "path/to/Living Marble.app"   # -> macos/build/LivingMarble-1.3.dmg
+macos/build-dmg.sh "path/to/Living Marble.app"   # -> macos/build/LivingMarble-1.3.1.dmg
 ```
 
 Without an app, `macos/build-dmg.sh` makes a universal build itself and signs
