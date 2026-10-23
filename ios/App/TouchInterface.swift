@@ -270,13 +270,15 @@ private struct SettingsSheet: View {
           .pickerStyle(.segmented)
           Toggle("Depth of field (blur)", isOn: $model.depthOfField)
             .disabled(!RenderSettings.preset(model.gfxPreset).dof)
+          Toggle("Save power", isOn: $model.savePower)
           LabeledContent("Exposure") {
             Slider(value: Binding(get: { Double(model.exposure) }, set: { model.exposure = Float($0) }), in: 0.4...2.0)
           }
         } header: {
           Text("Graphics")
         } footer: {
-          Text("\(model.fps) fps. If it stutters or the device gets warm, pick a lower quality.")
+          Text(model.fpsText + ". Save power draws 30 frames a second while the board is at rest and in Low Power Mode. "
+            + "If it stutters or the device gets warm, pick a lower quality.")
         }
         Section {
           Button("Hide Interface") {

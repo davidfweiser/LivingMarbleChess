@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   private let opt: Options
   private var controller: GameController?
   private var window: NSWindow?
@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     w.collectionBehavior = [.fullScreenPrimary]
     w.contentView = host
     w.isReleasedWhenClosed = false
+    w.delegate = self
     w.center()
     w.makeKeyAndOrderFront(nil)
     w.makeFirstResponder(c.view)
@@ -47,6 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     controller?.shutdown()
+  }
+
+  /// Minimised, hidden, covered or on another Space: nothing is drawn until it shows again.
+  func windowDidChangeOcclusionState(_ notification: Notification) {
+    guard let w = notification.object as? NSWindow else { return }
+    controller?.setWindowVisible(w.occlusionState.contains(.visible))
   }
 
   // ---------------------------------------------------------------------------
@@ -125,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     qualityItem.submenu = quality
     view.addItem(qualityItem)
     add(view, "Depth of Field", #selector(GameController.toggleDepthOfFieldAction(_:)), target: c)
+    add(view, "Save Power", #selector(GameController.toggleSavePowerAction(_:)), target: c)
     view.addItem(.separator())
     add(view, "Save Screenshot", #selector(GameController.screenshotAction(_:)), "s", [.command, .shift], target: c)
     view.addItem(.separator())

@@ -21,6 +21,7 @@ final class GameModel {
   var musicVolume: Float = 0.7
   var gfxPreset = 2
   var depthOfField = false  // blur what the camera is not focused on (High and Ultra only)
+  var savePower = true  // fewer frames while the board is at rest, on battery and in Low Power Mode
   var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens (what the picker shows: the set being switched to)
   var exposure: Float = 1
   var showUI = true
@@ -42,6 +43,7 @@ final class GameModel {
   var bannerPermanent = false
   var promoPending = false
   var fps = 0
+  var paceNote = ""  // why the frame rate is lowered ("at rest", "on battery" ...), or ""
   var audioOK = false
   var nowPlaying = ""  // the music: "Gallop (knight)", or "" while silent
   var medievalBuilding = false  // the medieval army is being sculpted in the background
@@ -49,6 +51,9 @@ final class GameModel {
   var alienBuilding = false  // ... and the aliens
   var alienProgress: Double = 0
   var screenshotsSaved = 0  // counts saved screenshots (the touch interface confirms each)
+
+  /// The frame-rate readout: "120 fps", or "30 fps (at rest)" while Save Power holds it down.
+  var fpsText: String { paceNote.isEmpty ? "\(fps) fps" : "\(fps) fps (\(paceNote))" }
 }
 
 enum Palette {
@@ -332,10 +337,12 @@ private struct ControlPanel: View {
           }
           Toggle("Depth of field (blur)", isOn: $model.depthOfField)
             .disabled(!RenderSettings.preset(model.gfxPreset).dof)
+          Toggle("Save power", isOn: $model.savePower)
+            .help("30 frames a second while the board is at rest, at most 60 on battery, 30 in Low Power Mode")
           LabeledContent("Exposure") {
             Slider(value: Binding(get: { Double(model.exposure) }, set: { model.exposure = Float($0) }), in: 0.4...2.0)
           }
-          Text("\(model.fps) fps").font(.system(size: 12).monospacedDigit()).foregroundStyle(Palette.dim)
+          Text(model.fpsText).font(.system(size: 12).monospacedDigit()).foregroundStyle(Palette.dim)
         }
         .padding(.top, 6)
       }

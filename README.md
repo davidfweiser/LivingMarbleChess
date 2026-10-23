@@ -522,6 +522,21 @@ turns off reflections and SSAO). *Depth of field* in the same section (on the
 Mac also *View › Depth of Field*, or `--dof`) brings back the camera-focus blur
 on *High* and *Ultra*.
 
+**Saving power** (Mac, iPhone and iPad). The game draws every frame the screen
+can show (up to 120 a second on a ProMotion Mac, 60 on iPhone and iPad) only
+while something moves quickly: a move or a battle, flying debris, cheering
+ghosts, the board being turned, or you at the controls. Once the board has
+been at rest for a second (the pieces only breathe and fidget, the ghosts bob)
+it draws 30 frames a second, which look the same and take a fraction of the
+power. A Mac running on battery draws at most 60, and in Low Power Mode, or
+while the device is hot, the game draws 30. A Mac window that is minimised,
+covered or on another Space draws nothing (the game waits; the music plays
+on). The fps readout under *Graphics* says when and why the rate is lowered;
+*Save power* in the same section (on the Mac also *View › Save Power*) turns
+all this off. For longer still on battery, pick *High* on the Mac: on a Retina
+screen it draws fewer pixels than *Ultra* (1440 across the short side), with
+4× instead of 8× MSAA.
+
 ## How it is built
 
 | File | What it does |

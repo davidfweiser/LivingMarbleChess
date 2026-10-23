@@ -3,6 +3,7 @@
 // iOS apps; each platform's GameView feeds it clicks, touches and keys.
 #if os(macOS)
 import AppKit
+import IOKit.ps
 #else
 import UIKit
 #endif
@@ -86,6 +87,13 @@ final class GameController: NSObject, MTKViewDelegate {
 #if os(macOS)
   private var keyMonitor: Any?
 #endif
+  // frame rate (pace())
+  private var restTime: Float = 0     // seconds the board has been at rest
+  private var pacedCam = CamPose()    // the camera, cursor and selection at the last frame
+  private var pacedMouse: CGPoint?
+  private var pacedSelected = -1
+  private var powerCheck: Float = 0   // seconds to the next look at the power state
+  private var lowPower = false, hot = false, onBattery = false
   private var tallView: Bool?  // portrait-shaped view; nil until the first frame
   private var screenshotRequested = false
   private var quitRequested = false
@@ -746,7 +754,79 @@ final class GameController: NSObject, MTKViewDelegate {
     dt = min(dt, 0.05)
     if fixedStep && !loading { dt = 1 / 30 }
     frame(dt)
+    pace(dt)
     if quitRequested { finishAndQuit() }
+  }
+
+  /// Picks the frame rate for what is on screen (with Save Power on). A move, a battle, flying
+  /// debris, a turning camera or a player at the controls get the display's full rate - at most
+  /// 60 fps on a Mac running on battery, 30 in Low Power Mode or while the device is hot. Once the
+  /// board has been at rest for a second (the pieces only breathe and fidget, the ghosts bob) it
+  /// draws 30 frames a second, which look the same and take a fraction of the power.
+  private func pace(_ dt: Float) {
+    if fixedStep { return }
+    powerCheck -= dt
+    if powerCheck <= 0 {
+      powerCheck = 3
+      readPowerState()
+    }
+    // how fast the view turns or travels, in camera distances per second (the slow orbit: 0.05)
+    let cp = world.cam.current
+    let moved = length(cp.pos - pacedCam.pos) + length(cp.target - pacedCam.target)
+    let camRate = moved / (max(1, length(cp.pos - cp.target)) * max(dt, 1e-3))
+    pacedCam = cp
+    let input = view.mouse != pacedMouse || selected != pacedSelected || !arrowsDown.isEmpty
+    pacedMouse = view.mouse
+    pacedSelected = selected
+    // debris still tumbling, ghosts jumping for joy, an army changing into another
+    let settling = world.chunks.contains { !$0.sleeping } || world.ghosts.contains { $0.cheer > 0 } ||
+      world.actors.contains { $0.dissolveVel != 0 }
+    let shaken = world.trauma > 0 || world.timeScale < 0.99  // camera shake, slow motion
+    let lively = !loading && (input || !anims.isEmpty || camRate > 0.06 || shaken || settling)
+    restTime = lively ? 0 : restTime + dt
+
+#if os(macOS)
+    let full = min(120, max(60, view.window?.screen?.maximumFramesPerSecond ?? 120))  // up to ProMotion's
+#else
+    let full = 60  // phones and tablets: smooth, and kinder to the battery
+#endif
+    var rate = full, note = ""
+    if model.savePower {
+      if lowPower || hot {
+        rate = 30
+        note = lowPower ? "Low Power Mode" : "device warm"
+      } else if restTime > 1 {
+        rate = 30
+        note = "at rest"
+      } else if onBattery {
+        rate = 60
+        note = "on battery"
+      }
+      if rate >= full {
+        rate = full
+        note = ""
+      }
+    }
+    if view.preferredFramesPerSecond != rate { view.preferredFramesPerSecond = rate }
+    if model.paceNote != note { model.paceNote = note }
+  }
+
+  /// Low Power Mode, a hot device and (on a Mac) running on battery lower the frame rate.
+  private func readPowerState() {
+    let info = ProcessInfo.processInfo
+    lowPower = info.isLowPowerModeEnabled
+    hot = info.thermalState == .serious || info.thermalState == .critical
+#if os(macOS)
+    // kIOPSTimeRemainingUnlimited (-2): plugged in, or a Mac without a battery
+    onBattery = IOPSGetTimeRemainingEstimate() != -2
+#endif
+  }
+
+  /// The Mac window was minimised, covered or moved to another Space (false), or shown again.
+  /// Nothing is drawn while nobody can see it: the game waits, the music plays on.
+  func setWindowVisible(_ visible: Bool) {
+    if fixedStep { return }  // captures run regardless
+    view.isPaused = !visible
   }
 
   private func finishLoading() {
@@ -1150,6 +1230,7 @@ extension GameController: NSMenuItemValidation {
   @objc func piecesAction(_ sender: NSMenuItem) { if !loading { setPieceSet(sender.tag) } }
   @objc func qualityAction(_ sender: NSMenuItem) { applyGraphicsPreset(sender.tag) }
   @objc func toggleDepthOfFieldAction(_ sender: Any?) { model.depthOfField.toggle() }
+  @objc func toggleSavePowerAction(_ sender: Any?) { model.savePower.toggle() }
 
   func validateMenuItem(_ item: NSMenuItem) -> Bool {
     switch item.action {
@@ -1169,6 +1250,8 @@ extension GameController: NSMenuItemValidation {
     case #selector(toggleDepthOfFieldAction(_:)):
       item.state = model.depthOfField ? .on : .off
       return renderer.settings.dof
+    case #selector(toggleSavePowerAction(_:)):
+      item.state = model.savePower ? .on : .off
     case #selector(piecesAction(_:)):
       item.state = model.pieceSet == item.tag ? .on : .off
       return !loading
