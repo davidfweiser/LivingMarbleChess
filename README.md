@@ -592,3 +592,12 @@ sources (`main.swift`, `AppDelegate.swift` and `GameView.swift` are Mac only):
 | `GameView.swift` | Touch input: taps, piece drags, orbit, pinch / twist / tilt; iPad pointer, scrolling and keyboard |
 | `TouchInterface.swift` | Touch layout for phones (portrait and landscape) and tablets, settings, move list and help sheets |
 | `LivingMarbleApp.swift` | App lifecycle: full-screen scene, pausing in the background, audio resume |
+
+## License
+
+Living Marble is released under the [MIT License](LICENSE). The Windows and
+Linux versions are built with GLFW, GLM, Dear ImGui and miniaudio, under their
+own licenses (zlib, MIT, MIT and MIT No Attribution), which
+[THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) gives in full; the Windows
+installer and the Linux package install both files with the game. The Mac,
+iPhone and iPad versions use only Apple's frameworks.

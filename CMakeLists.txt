@@ -16,6 +16,8 @@ endif()
 
 option(LM_ENABLE_AUDIO "Build with procedural sound effects (miniaudio)" ON)
 
+# The libraries below are downloaded at configure time; their licenses are in
+# THIRD_PARTY_NOTICES.txt (update it along with a GIT_TAG)
 include(FetchContent)
 set(FETCHCONTENT_QUIET ON)
 # CMake 4.x refuses very old cmake_minimum_required() in dependencies
@@ -164,6 +166,7 @@ if(UNIX AND NOT APPLE)
   # launcher entry + icon; the window class (= window title) ties the window to them
   set(LM_APP_ID io.github.davidfweiser.LivingMarble)
   install(FILES linux/${LM_APP_ID}.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  install(FILES LICENSE THIRD_PARTY_NOTICES.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/living-marble)
   foreach(size 32 48 64 128 256 512)
     install(FILES linux/icons/${size}.png
             DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps
