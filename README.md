@@ -45,8 +45,8 @@ at one sculpting level less (`--quality 2`) and *High* graphics.
 
 ## Download
 
-The current version is **1.3** on the Mac, iPhone, iPad and Windows and
-**1.2** on Linux.
+The current version is **1.3.1** on iPhone and iPad, **1.3** on the Mac and
+Windows and **1.2** on Linux.
 Ready-made downloads are on the
 [Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest).
 
