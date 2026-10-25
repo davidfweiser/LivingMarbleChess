@@ -51,15 +51,15 @@ at one sculpting level less (`--quality 2`) and *High* graphics.
 
 ## Download
 
-The current version is **1.3.1** on the Mac, iPhone and iPad, **1.3** on
-Windows and Linux.
+The current version is **1.3.1** on the Mac, iPhone, iPad and Windows and
+**1.3** on Linux.
 Ready-made downloads are on the
 [Releases page](https://github.com/davidfweiser/LivingMarbleChess/releases/latest).
 
 **Mac** (macOS 14 or later, Apple silicon and Intel): open
 `LivingMarble-1.3.1.dmg` and drag *Living Marble* onto Applications.
 
-**Windows** (64-bit Windows 10 or 11): run `LivingMarble-1.3-setup.exe`. It is
+**Windows** (64-bit Windows 10 or 11): run `LivingMarble-1.3.1-setup.exe`. It is
 not code-signed, so SmartScreen may warn about it: click *More info*, then
 *Run anyway*.
 
@@ -382,7 +382,7 @@ an uninstaller (in *Settings › Apps*), install
 [Inno Setup 6](https://jrsoftware.org/isdl.php) and run:
 
 ```bat
-windows\build-installer.bat     # -> build\LivingMarble-1.3-setup.exe
+windows\build-installer.bat     # -> build\LivingMarble-1.3.1-setup.exe
 ```
 
 It builds the game first, and finds the CMake that comes with Visual Studio if
@@ -419,8 +419,8 @@ Or build a `.deb` package (Debian, Ubuntu, Pop!_OS, Mint …) that installs into
 package that is on the Releases page:
 
 ```sh
-(cd build && cpack -G DEB)                              # -> build/living-marble_1.3_amd64.deb
-sudo apt install ./build/living-marble_1.3_amd64.deb   # or double-click it
+(cd build && cpack -G DEB)                              # -> build/living-marble_1.3.1_amd64.deb
+sudo apt install ./build/living-marble_1.3.1_amd64.deb   # or double-click it
 ```
 
 The version number comes from `project(LivingMarble VERSION …)` in
