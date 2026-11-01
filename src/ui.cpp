@@ -13,6 +13,15 @@ namespace {
 const ImVec4 kGold(0.98f, 0.80f, 0.45f, 1.0f);
 const ImU32 kGoldU = IM_COL32(250, 205, 115, 255);
 
+// The name under "Living Marble" (the web page has a name of its own)
+#ifdef __EMSCRIPTEN__
+const char* const kSubtitle = "3D Fighting Chess";
+const char* const kSubtitleSpaced = "3 D   F I G H T I N G   C H E S S";
+#else
+const char* const kSubtitle = "3D Battle Chess";
+const char* const kSubtitleSpaced = "3 D   B A T T L E   C H E S S";
+#endif
+
 void textCentered(ImDrawList* dl, ImFont* f, float size, ImVec2 center, ImU32 col, const char* t, bool shadow) {
   ImVec2 sz = f->CalcTextSizeA(size, FLT_MAX, 0.0f, t);
   ImVec2 p(center.x - sz.x * 0.5f, center.y - sz.y * 0.5f);
@@ -32,7 +41,7 @@ void App::drawLoading() {
   textCentered(dl, fontBanner, fontBanner->FontSize * gs, ImVec2(c.x, c.y - 70), IM_COL32(240, 226, 200, 255),
                "Living Marble", true);
   textCentered(dl, fontTitle, fontTitle->FontSize * gs * 0.7f, ImVec2(c.x, c.y - 18), IM_COL32(200, 170, 120, 255),
-               "3 D   B A T T L E   C H E S S", false);
+               kSubtitleSpaced, false);
   int total = std::max(1, progress.total.load() + 1);
   int done = progress.done.load();
   float target = (float)done / total;
@@ -80,7 +89,7 @@ void App::drawUI() {
   ImGui::PushFont(fontTitle);
   ImGui::TextColored(kGold, "Living Marble");
   ImGui::PopFont();
-  ImGui::TextDisabled("3D Battle Chess");
+  ImGui::TextDisabled("%s", kSubtitle);
   {
     const char* ver = "v" LM_VERSION;
     ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(ver).x);
