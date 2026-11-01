@@ -82,6 +82,26 @@ The command line's options, as in `?pieces=medieval&quality=3&graphics=3`:
 | `mute`, `no-music`, `dof` | no sound, no music, depth of field |
 | `fen=...` | start from a position |
 
+## The front page and accounts
+
+The site opens on a front page about the game, with pictures, where everyone
+logs in or creates an account before playing: a name (3 to 16 letters, digits,
+`_` or `-`, shown on the leaderboard) and a password (8 characters or more).
+
+- Creating an account shows a **recovery code** once (like `K7QX-9PMB-...`):
+  with it and their name, *Forgot your password?* lets a player choose a new
+  password. A player who has lost the code too: run
+  `sudo living-marble-admin --reset-code NAME` on the server and give them the
+  new code it prints.
+- In the game, the **Account** button (bottom right) changes the password, makes
+  a new recovery code, or logs out. Changing the password, or using a recovery
+  code, logs the account out everywhere else.
+- A browser stays logged in (for 180 days without a visit); an invite link
+  (`?join=...`) asks for a login first, then goes to the game.
+- Passwords are kept as scrypt hashes; recovery codes and login keys as SHA-256
+  hashes. After 10 wrong passwords for a name, or 30 from one address, in 10
+  minutes, it waits.
+
 ## Online games
 
 Two kinds, both under *Mode*:
@@ -93,10 +113,8 @@ starts a new one for both.
 
 **Play someone online.** The server pairs you with another player looking for
 a game, of a similar rating at first and anyone after a while; colours are
-random. The first time, you choose a name for the leaderboard (3 to 16
-letters, digits, `_` or `-`): there are no passwords, the browser keeps a
-secret key for the player. These games are rated and timed, 10 minutes each
-plus 5 seconds a move:
+random. These games are rated and timed, 10 minutes each plus 5 seconds a
+move:
 
 - Losing on time, resigning, or staying away for 90 seconds loses the game;
   a draw can be offered and accepted. A game that ends before both players have
@@ -117,6 +135,13 @@ and side; *Undo* and *Hint* are off.
 `living-marble-relay` behind nginx (at `/ws`):
 
 - Its log: `journalctl -u living-marble-relay`.
+- **The admin app**, [`admin.py`](admin.py): `sudo living-marble-admin` on the
+  server (over SSH) shows, live, who is online, the games going on (players,
+  ratings, clocks), who is waiting for an opponent; every player (rating, rated
+  games won, drawn and lost, all games, last seen; `/` searches, Enter shows a
+  player's games); the latest games; and totals with charts of games and new
+  players a day. Keys 1-4 switch screens, q quits; `--once` prints the summary
+  as text.
 - The players and their games: `/var/lib/living-marble/players.db` (SQLite).
   Back it up now and then, e.g. `sqlite3 /var/lib/living-marble/players.db
   ".backup players-backup.db"` (`apt install sqlite3`).
@@ -127,8 +152,8 @@ and side; *Undo* and *Hint* are off.
 - Settings (in the service's `ExecStart` line, then `systemctl daemon-reload`
   and `systemctl restart living-marble-relay`): `--clock` minutes and
   `--increment` seconds for rated games, `--away` seconds, `--top-min` games
-  for the leaderboard, `--per-ip` connections and `--names-per-ip` new names a
-  day from one address (40 and 20). `python3 relay.py --help` lists them all.
+  for the leaderboard, `--per-ip` connections and `--names-per-ip` new accounts
+  a day from one address (40 and 20). `python3 relay.py --help` lists them all.
 
 ### How many players
 

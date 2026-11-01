@@ -444,7 +444,7 @@ void App::newGame(bool tellFriend) {
   if (mode == Mode::Online) {
     if (tellFriend) {
       if (online.kind == OnlineGame::Kind::Match) {  // a matched game: another opponent, once it is over
-        if (!onlineGameOn() && !online.seeking && !online.needName) startMatch();
+        if (!onlineGameOn() && !online.seeking) startMatch();
         return;
       }
       if (online.net != OnlineGame::Net::Open) return;  // (the friend has to hear of it)
@@ -674,7 +674,6 @@ const char* App::statusText() const {
   if (mode == Mode::Online) {
     bool match = online.kind == OnlineGame::Kind::Match;
     if (!online.error.empty()) return online.error.c_str();
-    if (online.needName) return "Choose a name to play";
     if (online.net == OnlineGame::Net::Connecting) return "Connecting to the server...";
     if (online.net == OnlineGame::Net::Lost) return "Connection lost - reconnecting...";
     if (online.net == OnlineGame::Net::Closed) return "Not connected";
@@ -828,7 +827,6 @@ void App::startOnline(const std::string& code) {
 }
 
 // Looks for an opponent: the server pairs this player with someone of a similar rating.
-// A player without a name is asked for one first.
 void App::startMatch() {
   if (!net::available()) return;
   if (mode == Mode::Online) leaveOnline();
@@ -838,7 +836,6 @@ void App::startMatch() {
   online.seeking = true;
   online.seekSince = glfwGetTime();
   newGame(false);
-  std::snprintf(online.nameBuf, sizeof(online.nameBuf), "%s", me.name.c_str());
   net::command("seek");
 }
 
@@ -849,16 +846,6 @@ void App::leaveOnline() {
 }
 
 void App::copyOnlineLink() { net::command("copy"); }
-
-void App::registerName() {
-  std::string name = online.nameBuf;
-  if (name.size() < 3) {
-    notice = "A name has at least 3 letters.";
-    noticeTime = 4;
-    return;
-  }
-  net::command("register " + name);
-}
 
 // Resigning takes a second click within 3 seconds (or a few frames, on a slow device).
 bool App::resignArmed() const {
@@ -943,12 +930,6 @@ void App::pollOnline(float dt) {
         me.known = true;
         me.name = name;
         in >> me.rating >> me.games;
-        if (mode == Mode::Online && online.needName) {  // named: now look for an opponent
-          online.needName = false;
-          online.seeking = true;
-          online.seekSince = glfwGetTime();
-          net::command("seek");
-        }
       }
       continue;
     }
@@ -975,8 +956,8 @@ void App::pollOnline(float dt) {
                    : s == "lost"   ? OnlineGame::Net::Lost
                    : s == "closed" ? OnlineGame::Net::Closed
                                    : OnlineGame::Net::Connecting;
-    } else if (kind == "needname") {
-      online.needName = true;
+    } else if (kind == "needlogin") {  // (the login has run out: the front page logs in again)
+      online.error = "You're not logged in. Reload the page to log in.";
       online.seeking = false;
     } else if (kind == "seeking") {
       online.seeking = true;
@@ -1001,7 +982,6 @@ void App::pollOnline(float dt) {
       online.rated = rated != 0;
       online.kind = rated ? OnlineGame::Kind::Match : OnlineGame::Kind::Friend;
       online.seeking = false;
-      online.needName = false;
       online.drawOffered = online.myDrawOffer = false;
       online.awaySeconds = -1;
       online.net = OnlineGame::Net::Open;

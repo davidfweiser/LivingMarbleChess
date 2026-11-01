@@ -74,7 +74,10 @@ for f in index.html living_marble.js living_marble.wasm living_marble.worker.js 
   cp "$SRC/build-web/$f" "$stage/"
   gzip -9 -k "$stage/$f"  # nginx sends these to browsers that take gzip
 done
-chmod 755 "$stage" && chmod 644 "$stage"/*
+mkdir -p "$stage/screens"  # (the front page's pictures)
+cp "$SRC/build-web/screens/"*.jpg "$stage/screens/"
+find "$stage" -type d -exec chmod 755 {} +
+find "$stage" -type f -exec chmod 644 {} +
 if [ -d "$WEBROOT" ]; then mv "$WEBROOT" "$WEBROOT.old"; fi
 mv "$stage" "$WEBROOT"
 rm -rf "$WEBROOT.old"
@@ -121,6 +124,23 @@ if [ -n "$changed" ]; then
 else
   systemctl enable --now living-marble-relay >/dev/null 2>&1 || true
 fi
+
+# The admin app: sudo living-marble-admin (and --reset-code NAME for a lost recovery code)
+install -m 644 "$SRC/web/admin.py" /opt/living-marble/admin.py
+cat > /usr/local/bin/living-marble-admin <<'ADMIN'
+#!/bin/sh
+# Living Marble - the admin app: the players, their games and who is playing (web/admin.py).
+#   living-marble-admin                   the screens (q quits)
+#   living-marble-admin --once            the summary as plain text
+#   living-marble-admin --reset-code NAME a new recovery code for a player who lost theirs
+if [ "$(id -u)" != 0 ]; then exec sudo "$0" "$@"; fi
+DB=/var/lib/living-marble/players.db
+if [ "$1" = "--reset-code" ]; then
+  exec /usr/bin/python3 /opt/living-marble/relay.py --db "$DB" --reset-code "$2"
+fi
+exec /usr/bin/python3 /opt/living-marble/admin.py --db "$DB" "$@"
+ADMIN
+chmod 755 /usr/local/bin/living-marble-admin
 
 # Many players at once: nginx allows 768 connections by default, and each player's
 # WebSocket takes two (in from the browser, out to the game server)
@@ -187,3 +207,4 @@ say "Done: $url"
 echo "Run this script again to update the page. The certificate renews itself."
 echo "The game server's log: journalctl -u living-marble-relay"
 echo "Players and ratings: /var/lib/living-marble/players.db (back it up now and then)"
+echo "Who is playing, the players and their games: living-marble-admin"

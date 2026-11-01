@@ -437,11 +437,11 @@ starts much quicker.
 
 ### Web page
 
-The same C++ code, compiled with Emscripten, where you can also play online: a
-friend by a link, or anyone looking for a game, rated, with clocks and a
-leaderboard. See [`web/README.md`](web/README.md) for building it, and
-[`web/linode-setup.sh`](web/linode-setup.sh) for putting it on a server, game
-server included, with one command.
+The same C++ code, compiled with Emscripten, behind a front page with accounts,
+where you can also play online: a friend by a link, or anyone looking for a
+game, rated, with clocks and a leaderboard. See [`web/README.md`](web/README.md)
+for building it, and [`web/linode-setup.sh`](web/linode-setup.sh) for putting it
+on a server with one command, game server and admin app included.
 
 ## Controls
 

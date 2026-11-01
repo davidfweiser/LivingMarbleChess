@@ -85,8 +85,6 @@ struct OnlineGame {
   // finding an opponent
   bool seeking = false;
   double seekSince = 0;
-  bool needName = false;   // the server wants a name first
-  char nameBuf[24] = {};
   // matched games
   std::string names[2];    // by side
   int ratings[2] = {0, 0};
@@ -172,7 +170,6 @@ class App {
   void startMatch();  // find an opponent (a rated game)
   void leaveOnline();
   void copyOnlineLink();
-  void registerName();
   void resignOnline();
   void offerDraw(bool accept);
   void declineDraw();

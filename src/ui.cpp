@@ -39,22 +39,23 @@ void App::drawLoading() {
   ImDrawList* dl = ImGui::GetForegroundDrawList();
   ImVec2 c(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
   float gs = io.FontGlobalScale;
-  textCentered(dl, fontBanner, fontBanner->FontSize * gs, ImVec2(c.x, c.y - 70), IM_COL32(240, 226, 200, 255),
+  float u = ImGui::GetFontSize() / 16.0f;  // the interface's scale: the spacing grows with the text (high-DPI screens)
+  textCentered(dl, fontBanner, fontBanner->FontSize * gs, ImVec2(c.x, c.y - 70 * u), IM_COL32(240, 226, 200, 255),
                "Living Marble", true);
-  textCentered(dl, fontTitle, fontTitle->FontSize * gs * 0.7f, ImVec2(c.x, c.y - 18), IM_COL32(200, 170, 120, 255),
+  textCentered(dl, fontTitle, fontTitle->FontSize * gs * 0.7f, ImVec2(c.x, c.y - 18 * u), IM_COL32(200, 170, 120, 255),
                kSubtitleSpaced, false);
   int total = std::max(1, progress.total.load() + 1);
   int done = progress.done.load();
   float target = (float)done / total;
   loadProgress += (target - loadProgress) * 0.15f;
-  float w = 380.0f * ImGui::GetFontSize() / 16.0f, h = 4.0f;
-  ImVec2 p0(c.x - w * 0.5f, c.y + 30), p1(c.x + w * 0.5f, c.y + 30 + h);
+  float w = 380.0f * u, h = 4.0f * u;
+  ImVec2 p0(c.x - w * 0.5f, c.y + 30 * u), p1(c.x + w * 0.5f, c.y + 30 * u + h);
   dl->AddRectFilled(p0, p1, IM_COL32(60, 48, 36, 255), 2.0f);
   dl->AddRectFilled(p0, ImVec2(p0.x + w * loadProgress, p1.y), kGoldU, 2.0f);
   const char* st = progress.stage.load();
   std::string stage = (st && *st) ? std::string(st) : std::string("Quarrying marble");
   stage += "...";
-  textCentered(dl, fontUI, fontUI->FontSize * gs, ImVec2(c.x, c.y + 58), IM_COL32(170, 150, 120, 255), stage.c_str(),
+  textCentered(dl, fontUI, fontUI->FontSize * gs, ImVec2(c.x, c.y + 58 * u), IM_COL32(170, 150, 120, 255), stage.c_str(),
                false);
 }
 
@@ -76,13 +77,6 @@ void App::drawBanner() {
   }
 }
 
-// A name for the leaderboard takes letters, digits, _ and -
-static int nameChars(ImGuiInputTextCallbackData* d) {
-  ImWchar c = d->EventChar;
-  bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
-  return ok ? 0 : 1;
-}
-
 // The online part of the panel: the friend's link, or the players and their clocks; offering a
 // draw and resigning; how the game ended
 void App::drawOnline(float S) {
@@ -95,15 +89,6 @@ void App::drawOnline(float S) {
       if (match) startMatch();
       else startOnline("");
     }
-  } else if (online.needName) {
-    static bool focused = false;
-    ImGui::TextWrapped("Choose a name for the leaderboard (3 to 16 letters, digits, _ or -):");
-    ImGui::SetNextItemWidth(-1);
-    if (!focused) ImGui::SetKeyboardFocusHere();
-    focused = true;
-    bool enter = ImGui::InputText("##name", online.nameBuf, sizeof(online.nameBuf),
-                                  ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, nameChars);
-    if (ImGui::Button("Play", ImVec2(-1, 0)) || enter) registerName();
   } else if (match && online.seeking) {
     if (me.known) ImGui::TextDisabled("Playing as %s (%d)", me.name.c_str(), me.rating);
     if (ImGui::Button("Cancel", ImVec2(-1, 0))) setMode(Mode::HumanWhite);
@@ -209,7 +194,7 @@ void App::drawLeaderboard(float S) {
       ImGui::EndTable();
     }
     ImGui::Separator();
-    if (!me.known) ImGui::TextDisabled("Play someone online to get a rating.");
+    if (!me.known) ImGui::TextDisabled("Log in on the front page to get a rating.");
     else if (leaders.myRank > 0) ImGui::Text("You: %s, #%d with %d", me.name.c_str(), leaders.myRank, me.rating);
     else
       ImGui::TextDisabled("You: %s, %d - on the board after %d rated games (%d so far)", me.name.c_str(), me.rating,

@@ -13,9 +13,9 @@ Two kinds of game:
   Resigning, running out of time or staying away for 90 seconds loses; a game that ends
   before both players have moved is aborted (unrated).
 
-A player is known by a secret key the server hands the browser when they choose a name (no
-passwords). Each side of a game has a token of its own, so a reload or a lost connection
-comes back to the same side.
+Players have accounts: a name and a password (kept as a scrypt hash), and a recovery code
+for a forgotten password, shown once. A browser that logs in gets a session key. Each side of
+a game has a token of its own, so a reload or a lost connection comes back to the same side.
 
     python3 relay.py --rules liblmrules.so --db players.db
     python3 relay.py --rules ... --db ... --static build-web --allow-same-ip   (local tests)
@@ -47,7 +47,9 @@ MAX_ROOMS = 20000
 ROOM_IDLE_SECONDS = 24 * 3600    # an unfinished game nobody has touched for this long goes
 ENDED_ROOM_SECONDS = 600         # a finished one, 10 minutes after both players left
 CREATES_PER_IP_PER_HOUR = 30
-NAMES_PER_IP_PER_DAY = 20         # (a school or an office may share one address)
+NAMES_PER_IP_PER_DAY = 20         # new accounts (a school or an office may share one address)
+LOGIN_FAILS_PER_IP = 30           # wrong passwords or recovery codes in 10 minutes, from one address ...
+LOGIN_FAILS_PER_NAME = 10         # ... and for one name (passwords and codes counted apart)
 MAX_PLIES = 1200
 MAX_MESSAGE = 2048
 CLOCK_MS = 10 * 60 * 1000        # matched games: 10 minutes each ...
@@ -106,67 +108,207 @@ class ChessGame:
 
 
 # ---------------------------------------------------------------------------
-# Players: names, secret keys (stored hashed) and ratings
+# Players: accounts (a name and a password), the browsers they're logged in on (sessions),
+# and their ratings. Passwords are kept as scrypt hashes; session keys and recovery codes,
+# being long and random, as SHA-256 hashes.
+
+PASSWORD_MIN, PASSWORD_MAX = 8, 128
+SESSION_DAYS = 180  # a browser that hasn't been back for this long is logged out
+
+
+def hash_password(password):
+    salt = secrets.token_bytes(16)
+    h = hashlib.scrypt(password.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
+    return f"scrypt$16384$8$1${salt.hex()}${h.hex()}"
+
+
+def check_password(password, stored):
+    try:
+        _, n, r, p, salt, h = stored.split("$")
+        got = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), n=int(n), r=int(r), p=int(p), dklen=32)
+        return secrets.compare_digest(got.hex(), h)
+    except (ValueError, AttributeError):
+        return False
+
+
+def sha(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def new_recovery_code():
+    return "-".join("".join(secrets.choice(CODE_ALPHABET) for _ in range(4)) for _ in range(4))
+
+
+def normal_code(code):  # (however the player typed it)
+    return "".join(ch for ch in str(code).upper() if ch.isalnum())
+
 
 class Player:
     def __init__(self, row):
-        self.id, self.name, self.rating, self.games, self.wins, self.draws, self.losses = row
+        self.id, self.name, self.rating, self.games, self.wins, self.draws, self.losses, self.haspw = row
+        self.haspw = bool(self.haspw)
 
     def public(self):
         return {"name": self.name, "rating": self.rating}
 
+    def me(self):
+        return {"name": self.name, "rating": self.rating, "games": self.games, "haspw": self.haspw}
+
 
 class Players:
     def __init__(self, path):
+        self.path = path
         self.db = sqlite3.connect(path)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")  # (safe with WAL; far fewer waits for the disk)
-        self.db.executescript("""
-            CREATE TABLE IF NOT EXISTS players (
-              id INTEGER PRIMARY KEY,
-              name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-              secret_hash TEXT NOT NULL UNIQUE,
-              rating INTEGER NOT NULL, games INTEGER NOT NULL DEFAULT 0,
-              wins INTEGER NOT NULL DEFAULT 0, draws INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0,
-              created INTEGER NOT NULL, seen INTEGER NOT NULL);
-            CREATE INDEX IF NOT EXISTS players_by_rating ON players (rating DESC);
-            CREATE TABLE IF NOT EXISTS games (
-              id INTEGER PRIMARY KEY, white INTEGER, black INTEGER, result TEXT, why TEXT, moves TEXT,
-              white_before INTEGER, white_after INTEGER, black_before INTEGER, black_after INTEGER,
-              ended INTEGER NOT NULL);
-        """)
+        self._schema()
         self.cache = {}  # id -> Player: one object per player, whatever pages they have open
 
-    COLUMNS = "id, name, rating, games, wins, draws, losses"
+    def _schema(self):
+        db = self.db
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        old = db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'players'").fetchone()
+        with db:
+            if old and version < 2:
+                # from before passwords: each player's browser key becomes a session (they stay
+                # logged in there, and choose a password the first time they need one)
+                db.executescript("""
+                    CREATE TABLE sessions (token TEXT PRIMARY KEY, player INTEGER NOT NULL,
+                                           created INTEGER NOT NULL, used INTEGER NOT NULL);
+                    INSERT INTO sessions (token, player, created, used) SELECT secret_hash, id, created, seen FROM players;
+                    CREATE TABLE players_new (
+                      id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, password TEXT, recovery TEXT,
+                      rating INTEGER NOT NULL, games INTEGER NOT NULL DEFAULT 0, wins INTEGER NOT NULL DEFAULT 0,
+                      draws INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0,
+                      created INTEGER NOT NULL, seen INTEGER NOT NULL);
+                    INSERT INTO players_new (id, name, rating, games, wins, draws, losses, created, seen)
+                      SELECT id, name, rating, games, wins, draws, losses, created, seen FROM players;
+                    DROP TABLE players;
+                    ALTER TABLE players_new RENAME TO players;
+                    ALTER TABLE games ADD COLUMN rated INTEGER NOT NULL DEFAULT 1;
+                    ALTER TABLE games ADD COLUMN started INTEGER;
+                """)
+            db.executescript("""
+                CREATE TABLE IF NOT EXISTS players (
+                  id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, password TEXT, recovery TEXT,
+                  rating INTEGER NOT NULL, games INTEGER NOT NULL DEFAULT 0, wins INTEGER NOT NULL DEFAULT 0,
+                  draws INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0,
+                  created INTEGER NOT NULL, seen INTEGER NOT NULL);
+                CREATE INDEX IF NOT EXISTS players_by_rating ON players (rating DESC);
+                CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, player INTEGER NOT NULL,
+                                                     created INTEGER NOT NULL, used INTEGER NOT NULL);
+                CREATE INDEX IF NOT EXISTS sessions_by_player ON sessions (player);
+                CREATE TABLE IF NOT EXISTS games (
+                  id INTEGER PRIMARY KEY, white INTEGER, black INTEGER, result TEXT, why TEXT, moves TEXT,
+                  white_before INTEGER, white_after INTEGER, black_before INTEGER, black_after INTEGER,
+                  ended INTEGER NOT NULL, rated INTEGER NOT NULL DEFAULT 1, started INTEGER);
+                CREATE INDEX IF NOT EXISTS games_by_end ON games (ended);
+                PRAGMA user_version = 2;
+            """)
+
+    COLUMNS = "id, name, rating, games, wins, draws, losses, password IS NOT NULL"
 
     def _player(self, row):
         p = self.cache.get(row[0])
         if p is None:
             p = self.cache[row[0]] = Player(row)
+        p.haspw = bool(row[7])
         return p
 
-    def by_secret(self, secret):
-        h = hashlib.sha256(secret.encode()).hexdigest()
-        row = self.db.execute(f"SELECT {self.COLUMNS} FROM players WHERE secret_hash = ?", (h,)).fetchone()
+    def _by_name(self, name):
+        return self.db.execute(f"SELECT {self.COLUMNS}, password, recovery FROM players WHERE name = ?",
+                               (name,)).fetchone()
+
+    def _session(self, player_id):
+        key = secrets.token_urlsafe(24)
+        now = int(time.time())
+        self.db.execute("INSERT INTO sessions (token, player, created, used) VALUES (?, ?, ?, ?)",
+                        (sha(key), player_id, now, now))
+        return key
+
+    def by_session(self, key):
+        now = int(time.time())
+        row = self.db.execute(f"SELECT {', '.join('p.' + c for c in self.COLUMNS.split(', ')[:-1])}, "
+                              f"p.password IS NOT NULL FROM sessions s JOIN players p ON p.id = s.player "
+                              f"WHERE s.token = ?", (sha(key),)).fetchone()
         if row is None:
             return None
-        self.db.execute("UPDATE players SET seen = ? WHERE id = ?", (int(time.time()), row[0]))
-        self.db.commit()
+        with self.db:
+            self.db.execute("UPDATE sessions SET used = ? WHERE token = ?", (now, sha(key)))
+            self.db.execute("UPDATE players SET seen = ? WHERE id = ?", (now, row[0]))
         return self._player(row)
 
-    def register(self, name):
-        """A new player, and their secret key; None if the name is taken."""
-        secret = secrets.token_urlsafe(24)
+    def name_taken(self, name):
+        return self._by_name(name) is not None
+
+    def signup(self, name, password_hash):
+        """A new player: (player, session key, recovery code), or None if the name is taken."""
+        code = new_recovery_code()
         now = int(time.time())
         try:
-            cur = self.db.execute(
-                "INSERT INTO players (name, secret_hash, rating, created, seen) VALUES (?, ?, ?, ?, ?)",
-                (name, hashlib.sha256(secret.encode()).hexdigest(), START_RATING, now, now))
-            self.db.commit()
+            with self.db:
+                cur = self.db.execute("INSERT INTO players (name, password, recovery, rating, created, seen) "
+                                      "VALUES (?, ?, ?, ?, ?, ?)",
+                                      (name, password_hash, sha(normal_code(code)), START_RATING, now, now))
+                key = self._session(cur.lastrowid)
         except sqlite3.IntegrityError:
-            return None, None
+            return None
         row = self.db.execute(f"SELECT {self.COLUMNS} FROM players WHERE id = ?", (cur.lastrowid,)).fetchone()
-        return self._player(row), secret
+        return self._player(row), key, code
+
+    def stored_password(self, name):
+        """(player id, password hash or None) for a name, or None."""
+        row = self._by_name(name)
+        return (row[0], row[8]) if row else None
+
+    def login(self, player_id):
+        """A new session for a player whose password checked out."""
+        with self.db:
+            key = self._session(player_id)
+            self.db.execute("UPDATE players SET seen = ? WHERE id = ?", (int(time.time()), player_id))
+        row = self.db.execute(f"SELECT {self.COLUMNS} FROM players WHERE id = ?", (player_id,)).fetchone()
+        return self._player(row), key
+
+    def logout(self, key):
+        with self.db:
+            self.db.execute("DELETE FROM sessions WHERE token = ?", (sha(key),))
+
+    def password_of(self, player):
+        return self.db.execute("SELECT password FROM players WHERE id = ?", (player.id,)).fetchone()[0]
+
+    def set_password(self, player, password_hash, keep_key):
+        """A new password; the player's other browsers are logged out."""
+        with self.db:
+            self.db.execute("UPDATE players SET password = ? WHERE id = ?", (password_hash, player.id))
+            self.db.execute("DELETE FROM sessions WHERE player = ? AND token != ?", (player.id, sha(keep_key or "")))
+        player.haspw = True
+
+    def check_recovery(self, name, code):
+        row = self._by_name(name)
+        if row is None or not row[9]:
+            return None
+        return row[0] if secrets.compare_digest(row[9], sha(normal_code(code))) else None
+
+    def recover(self, player_id, password_hash):
+        """A forgotten password replaced: every browser logged out, a new session and a new recovery code."""
+        code = new_recovery_code()
+        with self.db:
+            self.db.execute("UPDATE players SET password = ?, recovery = ? WHERE id = ?",
+                            (password_hash, sha(normal_code(code)), player_id))
+            self.db.execute("DELETE FROM sessions WHERE player = ?", (player_id,))
+            key = self._session(player_id)
+        row = self.db.execute(f"SELECT {self.COLUMNS} FROM players WHERE id = ?", (player_id,)).fetchone()
+        return self._player(row), key, code
+
+    def new_code(self, player_id):
+        code = new_recovery_code()
+        with self.db:
+            self.db.execute("UPDATE players SET recovery = ? WHERE id = ?", (sha(normal_code(code)), player_id))
+        return code
+
+    def forget_old_sessions(self):
+        with self.db:
+            self.db.execute("DELETE FROM sessions WHERE used < ?", (int(time.time()) - SESSION_DAYS * 86400,))
 
     def top(self):
         rows = self.db.execute("SELECT name, rating, games FROM players WHERE games >= ? "
@@ -181,6 +323,7 @@ class Players:
         return above + 1
 
     def record(self, room, result, why, changes):
+        """A finished game: rated ones change both players' ratings and records."""
         w, b = room.players["w"], room.players["b"]
         with self.db:
             if changes:
@@ -196,11 +339,11 @@ class Players:
                     setattr(p, col, getattr(p, col) + 1)
             self.db.execute(
                 "INSERT INTO games (white, black, result, why, moves, white_before, white_after, black_before, "
-                "black_after, ended) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "black_after, ended, rated, started) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (w.id, b.id, result, why, " ".join(room.moves),
                  changes["w"][0] if changes else w.rating, changes["w"][1] if changes else w.rating,
                  changes["b"][0] if changes else b.rating, changes["b"][1] if changes else b.rating,
-                 int(time.time())))
+                 int(time.time()), 1 if room.rated else 0, int(room.created)))
 
 
 players = None
@@ -232,6 +375,7 @@ class Room:
         self.away = {"w": None, "b": None}  # (timer, when) while a player is away from a matched game
         self.draw_offer = None              # the side that offered
         self.touched = time.monotonic()
+        self.created = time.time()
 
     def to_move(self):
         return "w" if len(self.moves) % 2 == 0 else "b"
@@ -259,6 +403,7 @@ class Conn:
     def __init__(self, ws, ip):
         self.ws, self.ip = ws, ip
         self.player = None
+        self.session = None  # the key it logged in with
         self.room = self.seat = None
         self.seeking = None  # since when
 
@@ -268,6 +413,7 @@ queue = {}           # Conn -> since: the players waiting for an opponent
 recent = {}          # (kind, ip) -> times: new games and names from each address
 conns_by_ip = {}
 connections = 0
+all_conns = set()
 
 
 def limited(kind, ip, most, seconds):
@@ -337,8 +483,8 @@ async def end_game(room, result, why):
     room.stop_timers()
     room.game.close()  # (no more moves: the position isn't needed)
     room.draw_offer = None
-    if room.rated and players:
-        if result != "*":
+    if players and room.players["w"] and room.players["b"]:
+        if room.rated and result != "*":
             w, b = room.players["w"], room.players["b"]
             score = {"1-0": 1.0, "0-1": 0.0}.get(result, 0.5)
             room.changes = {"w": [w.rating, elo(w.rating, b.rating, score, w.games)],
@@ -394,6 +540,8 @@ async def attach(c, room, seat):
     old = room.conns[seat]
     room.conns[seat] = c
     c.room, c.seat = room, seat
+    if not room.rated and c.player:  # (friend games are recorded too, with both players logged in)
+        room.players[seat] = c.player
     room.touched = time.monotonic()
     if room.away[seat]:
         room.away[seat][0].cancel()
@@ -449,36 +597,133 @@ async def matchmaker():
 
 
 # ---------------------------------------------------------------------------
+# Accounts: the front page's forms, and the Account window in the game
+
+def failures(kind, key, seconds):
+    now = time.monotonic()
+    times = [t for t in recent.get((kind, key), []) if now - t < seconds]
+    recent[(kind, key)] = times
+    return times
+
+
+async def account(c, kind, msg):
+    async def no(why):
+        await send(c.ws, {"t": "auth_error", "for": kind, "why": why})
+
+    if not players:
+        return await no("This server keeps no accounts.")
+    name = str(msg.get("name", "")).strip()[:32]
+    password = str(msg.get("password", ""))[:PASSWORD_MAX + 1]
+
+    def password_ok(pw):
+        return PASSWORD_MIN <= len(pw) <= PASSWORD_MAX
+
+    # wrong passwords and recovery codes: a limit from each address, and for each name
+    if kind in ("login", "recover"):
+        if (len(failures("fail", c.ip, 600)) >= LOGIN_FAILS_PER_IP or
+                len(failures(kind, name.lower(), 600)) >= LOGIN_FAILS_PER_NAME):
+            return await no("Too many wrong tries. Wait 10 minutes and try again.")
+
+    if kind == "signup":
+        if not NAME.match(name):
+            return await no("A name is 3 to 16 letters, digits, _ or -.")
+        if not password_ok(password):
+            return await no(f"A password is {PASSWORD_MIN} to {PASSWORD_MAX} characters.")
+        if players.name_taken(name):
+            return await no(f"The name {name} is taken. Try another.")
+        if limited("name", c.ip, NAMES_PER_IP_PER_DAY, 86400):
+            return await no("Too many new accounts from here today. Try again tomorrow.")
+        made = players.signup(name, await asyncio.to_thread(hash_password, password))
+        if made is None:
+            return await no(f"The name {name} is taken. Try another.")
+        p, key, code = made
+        c.player, c.session = p, key
+        log.info("player %s signed up", p.name)
+        await send(c.ws, dict({"t": "account", "session": key, "recovery": code}, **p.me()))
+
+    elif kind == "login":
+        stored = players.stored_password(name)
+        ok = stored is not None and stored[1] is not None and await asyncio.to_thread(check_password, password, stored[1])
+        if not ok:
+            failures("fail", c.ip, 600).append(time.monotonic())
+            failures("login", name.lower(), 600).append(time.monotonic())
+            if stored is not None and stored[1] is None:
+                return await no("This account has no password yet: open the game in the browser you played on, "
+                                "and choose one under Account.")
+            return await no("That name and password don't match.")
+        p, key = players.login(stored[0])
+        c.player, c.session = p, key
+        await send(c.ws, dict({"t": "account", "session": key}, **p.me()))
+
+    elif kind == "recover":  # a forgotten password: the recovery code, and a new password
+        if not password_ok(password):
+            return await no(f"A password is {PASSWORD_MIN} to {PASSWORD_MAX} characters.")
+        player_id = players.check_recovery(name, str(msg.get("code", ""))[:64])
+        if player_id is None:
+            failures("fail", c.ip, 600).append(time.monotonic())
+            failures("recover", name.lower(), 600).append(time.monotonic())
+            return await no("That name and recovery code don't match.")
+        p, key, code = players.recover(player_id, await asyncio.to_thread(hash_password, password))
+        recent.pop(("login", name.lower()), None)  # (it's theirs: wrong guesses at the name no longer count)
+        recent.pop(("recover", name.lower()), None)
+        c.player, c.session = p, key
+        log.info("player %s recovered their account", p.name)
+        await send(c.ws, dict({"t": "account", "session": key, "recovery": code}, **p.me()))
+
+    elif c.player is None:
+        return await no("Log in first.")
+
+    elif kind == "passwd":  # a new password (the current one first, if there is one)
+        new = str(msg.get("new", ""))[:PASSWORD_MAX + 1]
+        if not password_ok(new):
+            return await no(f"A password is {PASSWORD_MIN} to {PASSWORD_MAX} characters.")
+        if len(failures("fail", c.ip, 600)) >= LOGIN_FAILS_PER_IP:
+            return await no("Too many wrong tries. Wait 10 minutes and try again.")
+        current = players.password_of(c.player)
+        if current is not None and not await asyncio.to_thread(check_password, password, current):
+            failures("fail", c.ip, 600).append(time.monotonic())
+            return await no("Your current password isn't right.")
+        players.set_password(c.player, await asyncio.to_thread(hash_password, new), c.session)
+        await send(c.ws, {"t": "done", "what": "passwd"})
+
+    elif kind == "newcode":  # a new recovery code (the password first)
+        current = players.password_of(c.player)
+        if current is None:
+            return await no("Choose a password first.")
+        if not await asyncio.to_thread(check_password, password, current):
+            failures("fail", c.ip, 600).append(time.monotonic())
+            return await no("That password isn't right.")
+        await send(c.ws, {"t": "code", "recovery": players.new_code(c.player.id)})
+
+    elif kind == "logout":
+        if c.session:
+            players.logout(c.session)
+        queue.pop(c, None)
+        c.seeking = None
+        c.player = c.session = None
+        await send(c.ws, {"t": "me"})
+
+
+# ---------------------------------------------------------------------------
 
 async def handle(c, msg):
     kind = msg.get("t")
     room, seat = c.room, c.seat
 
-    if kind == "hello":  # the browser's secret key, if it has one
-        p = players.by_secret(str(msg.get("secret", ""))[:64]) if players and msg.get("secret") else None
-        c.player = p
-        await send(c.ws, dict({"t": "me"}, **({"name": p.name, "rating": p.rating, "games": p.games} if p else {})))
+    if kind == "hello":  # the browser's session key, if it is logged in
+        key = str(msg.get("secret", ""))[:64]
+        p = players.by_session(key) if players and key else None
+        c.player, c.session = p, (key if p else None)
+        await send(c.ws, dict({"t": "me"}, **(p.me() if p else {})))
 
-    elif kind == "register":
-        name = str(msg.get("name", "")).strip()
-        if not players:
-            return await send(c.ws, {"t": "notice", "why": "This server keeps no names."})
-        if not NAME.match(name):
-            return await send(c.ws, {"t": "notice", "why": "3 to 16 letters, digits, _ or -, please."})
-        if limited("name", c.ip, NAMES_PER_IP_PER_DAY, 86400):
-            return await send(c.ws, {"t": "notice", "why": "Too many new names from here today."})
-        p, secret = players.register(name)
-        if p is None:
-            return await send(c.ws, {"t": "notice", "why": f"The name {name} is taken."})
-        c.player = p
-        log.info("player %s registered", name)
-        await send(c.ws, {"t": "me", "name": p.name, "rating": p.rating, "games": p.games, "secret": secret})
+    elif kind in ("signup", "login", "recover", "passwd", "newcode", "logout"):
+        await account(c, kind, msg)
 
     elif kind == "seek":
         if not rules or not players:
             return await send(c.ws, {"t": "notice", "why": "Games against other players aren't available here."})
         if c.player is None:
-            return await send(c.ws, {"t": "need_name"})
+            return await send(c.ws, {"t": "need_login"})
         if room and room.result is None:
             return await send(c.ws, {"t": "notice", "why": "Finish this game first."})
         await detach(c)
@@ -585,6 +830,7 @@ async def handle(c, msg):
             room.game = ChessGame()
             room.result = None
             room.draw_offer = None
+            room.created = time.time()
             await to_seat(room, other(seat), {"t": "new"})
 
 
@@ -597,6 +843,7 @@ async def player(ws, path=None):
     connections += 1
     conns_by_ip[ip] = conns_by_ip.get(ip, 0) + 1
     c = Conn(ws, ip)
+    all_conns.add(c)
     try:
         async for raw in ws:
             try:
@@ -613,12 +860,17 @@ async def player(ws, path=None):
         conns_by_ip[ip] -= 1
         if not conns_by_ip[ip]:
             del conns_by_ip[ip]
+        all_conns.discard(c)
         await detach(c)
 
 
 async def sweep():
+    rounds = 0
     while True:
         await asyncio.sleep(60)
+        rounds += 1
+        if players and rounds % 360 == 1:  # (every 6 hours)
+            players.forget_old_sessions()
         now = time.monotonic()
         for code, r in list(rooms.items()):
             idle = now - r.touched
@@ -629,6 +881,48 @@ async def sweep():
                 del rooms[code]
         for key in [k for k, t in recent.items() if not t or now - t[-1] > 86400]:
             del recent[key]
+
+
+async def write_status(path):
+    """For the admin app (web/admin.py): who is here, who is waiting and the games going on,
+    written to a file every 2 seconds."""
+    started = time.time()
+    while True:
+        await asyncio.sleep(2)
+
+        def who(r, seat):
+            p = r.players[seat]
+            return {"name": p.name if p else None, "rating": p.rating if p else None, "here": r.conns[seat] is not None}
+
+        going = [r for r in rooms.values() if r.result is None and (r.moves or (r.conns["w"] and r.conns["b"]))]
+        going.sort(key=lambda r: -r.created)
+        status = {
+            "time": int(time.time()), "started": int(started), "connections": len(all_conns),
+            "online": sorted({c.player.name for c in all_conns if c.player})[:5000],
+            "seeking": [{"name": c.player.name, "rating": c.player.rating, "waiting": int(time.monotonic() - since)}
+                        for c, since in list(queue.items()) if c.player],
+            "games_going": len(going),
+            "games": [{"code": r.code, "rated": r.rated, "w": who(r, "w"), "b": who(r, "b"), "moves": len(r.moves),
+                       "since": int(r.created), "clock": r.clock_now()} for r in going[:500]],
+        }
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(status, f)
+            os.replace(tmp, path)
+        except OSError as e:
+            log.warning("status file: %s", e)
+            await asyncio.sleep(60)
+
+
+def keep_owner(path):
+    """Run as root (an admin command), the database's files stay the game server's."""
+    if os.geteuid() != 0:
+        return
+    d = os.stat(os.path.dirname(os.path.abspath(path)))
+    for f in (path, path + "-wal", path + "-shm"):
+        if os.path.exists(f):
+            os.chown(f, d.st_uid, d.st_gid)
 
 
 def static_files(root):
@@ -666,6 +960,9 @@ async def main():
                     help="the chess rules library (web/chess_rules.cpp); without it moves aren't checked "
                          "and there are no matched games")
     ap.add_argument("--db", default="players.db", help="the players' database (SQLite); 'none': no names")
+    ap.add_argument("--status", help="the status file for the admin app (default: status.json beside the database)")
+    ap.add_argument("--reset-code", metavar="NAME",
+                    help="give a player a new recovery code (when they've lost theirs), print it and stop")
     ap.add_argument("--static", metavar="FOLDER", help="also serve the web page from FOLDER (local tests)")
     ap.add_argument("--allow-same-ip", action="store_true",
                     help="pair players from the same address (local tests)")
@@ -691,8 +988,22 @@ async def main():
         rules = Rules(args.rules)
     except OSError as e:
         log.warning("no chess rules (%s): moves aren't checked, no matched games", e)
+    if args.reset_code:
+        players = Players(args.db)
+        row = players._by_name(args.reset_code)
+        if row is None:
+            print(f"There is no player called {args.reset_code}.")
+        else:
+            code = players.new_code(row[0])
+            print(f"A new recovery code for {row[1]}: {code}")
+            print("They can use it with Forgot password on the front page, to choose a new password.")
+        players.db.close()
+        keep_owner(args.db)
+        return
     if args.db != "none":
         players = Players(args.db)
+        status = args.status or os.path.join(os.path.dirname(os.path.abspath(args.db)), "status.json")
+        asyncio.ensure_future(write_status(status))
     asyncio.ensure_future(sweep())
     asyncio.ensure_future(matchmaker())
     async with websockets.serve(player, args.host, args.port, max_size=MAX_MESSAGE, max_queue=16,
