@@ -66,18 +66,61 @@ struct Options {
 // Online: against a friend in another browser, through the relay (the web page only)
 enum class Mode { HumanWhite = 0, HumanBlack, TwoPlayer, Watch, Online };
 
-// An online game's state (Mode::Online)
+// An online game's state (Mode::Online): with a friend (by link), or matched with another
+// player by the server (rated, with clocks)
 struct OnlineGame {
   enum class Net { Connecting, Open, Lost, Closed };
+  enum class Kind { Friend, Match };
+  Kind kind = Kind::Friend;
   Net net = Net::Connecting;
   std::string room, link;  // the game's code and the link to it
   int side = chess::WHITE; // this player's
-  bool started = false;    // the friend has joined (the game can begin)
-  bool peer = false;       // the friend is here now
-  std::string error;       // why the relay said no
-  std::deque<std::string> moves;  // the friend's moves ("PLY UCI"), played when the board is at rest
+  bool started = false;    // the opponent has joined (the game can begin)
+  bool peer = false;       // the opponent is here now
+  bool rated = false;
+  std::string error;       // why the server said no
+  std::deque<std::string> moves;  // the opponent's moves ("PLY UCI"), played when the board is at rest
   float copied = 0;        // seconds left of "Copied"
   bool copyOk = false;
+  // finding an opponent
+  bool seeking = false;
+  double seekSince = 0;
+  bool needName = false;   // the server wants a name first
+  char nameBuf[24] = {};
+  // matched games
+  std::string names[2];    // by side
+  int ratings[2] = {0, 0};
+  bool clocks = false;
+  int clockMs[2] = {0, 0}; // at clockAt
+  int clockRun = -1;       // the side whose clock runs
+  double clockAt = 0;
+  int awaySeconds = -1;    // the opponent left: seconds until they lose (at awayAt)
+  double awayAt = 0;
+  bool drawOffered = false;  // by the opponent
+  bool myDrawOffer = false;
+  double resignAsked = -1;   // "Resign?" asked at (a second click resigns) ...
+  int resignFrame = 0;       // ... and in which frame (slow devices: a few frames at least)
+  // the end, as the server has it (resignation, time, a draw agreed ...)
+  std::string endText, ratingText;
+  bool endShown = false;
+};
+
+// This browser's player, as the server knows them (names and ratings)
+struct OnlinePlayer {
+  bool known = false;
+  std::string name;
+  int rating = 0, games = 0;
+};
+
+// The leaderboard window
+struct Leaderboard {
+  bool open = false, loading = false;
+  int minGames = 5, myRank = 0;
+  struct Row {
+    std::string name;
+    int rating, games;
+  };
+  std::vector<Row> rows;
 };
 
 class App {
@@ -126,9 +169,23 @@ class App {
   // online games (the web page): a new one (this player is White) or a friend's by its code
   bool onlineAvailable() const;
   void startOnline(const std::string& code);
+  void startMatch();  // find an opponent (a rated game)
   void leaveOnline();
   void copyOnlineLink();
+  void registerName();
+  void resignOnline();
+  void offerDraw(bool accept);
+  void declineDraw();
+  void openLeaderboard();
+  bool onlineGameOn() const;  // a game against someone is going on (not over)
+  int onlineClock(int side) const;  // milliseconds left
+  bool resignArmed() const;  // "Resign?": the next click resigns
+  const char* onlineEndText() const { return online.endText.c_str(); }
   OnlineGame online;
+  OnlinePlayer me;
+  Leaderboard leaders;
+  std::string notice;  // a passing message from the server (a name taken ...)
+  float noticeTime = 0;
   void flipCamera();
   void resetView();
   void setFullscreen(bool on);
@@ -166,6 +223,8 @@ class App {
   int pickSquare(double mx, double my, bool piecesFirst) const;
   void buildScene(SceneView& sv, int fbW, int fbH);
   void drawUI();
+  void drawOnline(float S);
+  void drawLeaderboard(float S);
   void drawBanner();
   void drawLoading();
   void saveScreenshot(const std::string& path, int w, int h);

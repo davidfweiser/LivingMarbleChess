@@ -2,7 +2,7 @@
 # Living Marble - sets up a server (a Linode, or any Ubuntu 24.04 machine) to serve the
 # game's web page: builds it from GitHub with Emscripten, serves it with nginx over HTTPS
 # (a free Let's Encrypt certificate) with the headers the game's threads need, and runs
-# the relay for online games (web/relay.py) as a service behind nginx at /ws.
+# the game server for online games (web/relay.py) as a service behind nginx at /ws.
 #
 #   sudo bash linode-setup.sh chess.example.com you@example.com
 #
@@ -48,10 +48,10 @@ if [ "$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)" -lt 3000 ] && ! swa
   grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
-say "Installing nginx, certbot, the Emscripten compiler and the relay's websockets"
+say "Installing nginx, certbot, the compilers and the game server's websockets"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q nginx certbot python3-certbot-nginx git cmake make emscripten python3-websockets
+apt-get install -y -q nginx certbot python3-certbot-nginx git cmake make g++ emscripten python3-websockets
 
 say "Getting the game ($BRANCH)"
 if [ -d "$SRC/.git" ]; then
@@ -79,16 +79,24 @@ if [ -d "$WEBROOT" ]; then mv "$WEBROOT" "$WEBROOT.old"; fi
 mv "$stage" "$WEBROOT"
 rm -rf "$WEBROOT.old"
 
-say "Starting the relay for online games"
-cat > /etc/systemd/system/living-marble-relay.service <<'EOF'
-# Living Marble - the relay for online games (written by web/linode-setup.sh)
+say "Starting the game server for online games"
+# web/relay.py, with the game's own chess rules (built here as a library) and the players'
+# names and ratings in /var/lib/living-marble/players.db
+mkdir -p "$SRC/build-rules"
+g++ -O2 -std=c++17 -shared -fPIC -I"$SRC/src" -o "$SRC/build-rules/liblmrules.so" \
+    "$SRC/src/chess.cpp" "$SRC/web/chess_rules.cpp"
+unit="$(mktemp)"
+cat > "$unit" <<'UNIT'
+# Living Marble - the game server for online games (written by web/linode-setup.sh)
 [Unit]
-Description=Living Marble relay for online games
+Description=Living Marble game server
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /opt/living-marble/relay.py --host 127.0.0.1 --port 8765
+ExecStart=/usr/bin/python3 /opt/living-marble/relay.py --host 127.0.0.1 --port 8765 --rules /opt/living-marble/liblmrules.so --db /var/lib/living-marble/players.db
 DynamicUser=yes
+StateDirectory=living-marble
+LimitNOFILE=65536
 Restart=always
 RestartSec=2
 NoNewPrivileges=yes
@@ -96,16 +104,29 @@ PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target
-EOF
+UNIT
+# (the games in progress live in the server's memory: it restarts only when something changed)
+changed=""
+cmp -s "$unit" /etc/systemd/system/living-marble-relay.service || changed=1
+cmp -s "$SRC/web/relay.py" /opt/living-marble/relay.py || changed=1
+cmp -s "$SRC/build-rules/liblmrules.so" /opt/living-marble/liblmrules.so || changed=1
+install -m 644 "$unit" /etc/systemd/system/living-marble-relay.service
+rm -f "$unit"
 systemctl daemon-reload
-# (the games in progress live in the relay's memory: it restarts only when it has changed)
-if ! cmp -s "$SRC/web/relay.py" /opt/living-marble/relay.py; then
+if [ -n "$changed" ]; then
   install -m 644 "$SRC/web/relay.py" /opt/living-marble/relay.py
+  install -m 644 "$SRC/build-rules/liblmrules.so" /opt/living-marble/liblmrules.so
   systemctl enable living-marble-relay >/dev/null 2>&1 || true
   systemctl restart living-marble-relay
 else
   systemctl enable --now living-marble-relay >/dev/null 2>&1 || true
 fi
+
+# Many players at once: nginx allows 768 connections by default, and each player's
+# WebSocket takes two (in from the browser, out to the game server)
+sed -i 's/^\(\s*\)worker_connections [0-9]*;/\1worker_connections 16384;/' /etc/nginx/nginx.conf
+grep -q '^worker_rlimit_nofile' /etc/nginx/nginx.conf ||
+  sed -i '/^worker_processes/a worker_rlimit_nofile 65535;' /etc/nginx/nginx.conf
 
 say "Configuring nginx for $DOMAIN"
 listen6=""
@@ -131,7 +152,7 @@ server {
     location ~ \.wasm\$ { default_type application/wasm; }
     location / { try_files \$uri \$uri/ =404; }
 
-    # Online games: the relay (web/relay.py), over a WebSocket
+    # Online games: the game server (web/relay.py), over a WebSocket
     location = /ws {
         proxy_pass http://127.0.0.1:8765;
         proxy_http_version 1.1;
@@ -164,4 +185,5 @@ fi
 
 say "Done: $url"
 echo "Run this script again to update the page. The certificate renews itself."
-echo "The relay's log: journalctl -u living-marble-relay"
+echo "The game server's log: journalctl -u living-marble-relay"
+echo "Players and ratings: /var/lib/living-marble/players.db (back it up now and then)"

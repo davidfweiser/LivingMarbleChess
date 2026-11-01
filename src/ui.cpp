@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <string>
 
 #include "app.h"
@@ -75,6 +76,149 @@ void App::drawBanner() {
   }
 }
 
+// A name for the leaderboard takes letters, digits, _ and -
+static int nameChars(ImGuiInputTextCallbackData* d) {
+  ImWchar c = d->EventChar;
+  bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+  return ok ? 0 : 1;
+}
+
+// The online part of the panel: the friend's link, or the players and their clocks; offering a
+// draw and resigning; how the game ended
+void App::drawOnline(float S) {
+  const bool match = online.kind == OnlineGame::Kind::Match;
+  const float half = (300 * S - 32 * S - 8 * S) * 0.5f;
+  const double now = glfwGetTime();
+  const ImVec4 kRed(1.0f, 0.45f, 0.35f, 1.0f);
+  if (!online.error.empty() || online.net == OnlineGame::Net::Closed) {
+    if (ImGui::Button(match ? "Look for an opponent again" : "Start a new online game", ImVec2(-1, 0))) {
+      if (match) startMatch();
+      else startOnline("");
+    }
+  } else if (online.needName) {
+    static bool focused = false;
+    ImGui::TextWrapped("Choose a name for the leaderboard (3 to 16 letters, digits, _ or -):");
+    ImGui::SetNextItemWidth(-1);
+    if (!focused) ImGui::SetKeyboardFocusHere();
+    focused = true;
+    bool enter = ImGui::InputText("##name", online.nameBuf, sizeof(online.nameBuf),
+                                  ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, nameChars);
+    if (ImGui::Button("Play", ImVec2(-1, 0)) || enter) registerName();
+  } else if (match && online.seeking) {
+    if (me.known) ImGui::TextDisabled("Playing as %s (%d)", me.name.c_str(), me.rating);
+    if (ImGui::Button("Cancel", ImVec2(-1, 0))) setMode(Mode::HumanWhite);
+  } else if (match && online.started) {
+    // the players and their clocks: the opponent above, this player below
+    for (int k = 0; k < 2; ++k) {
+      int side = k == 0 ? online.side ^ 1 : online.side;
+      ImDrawList* dl = ImGui::GetWindowDrawList();
+      ImVec2 p = ImGui::GetCursorScreenPos();
+      float r = 6.0f * S;
+      ImVec2 c(p.x + r, p.y + ImGui::GetTextLineHeight() * 0.5f + 1);
+      dl->AddCircleFilled(c, r, side == chess::WHITE ? IM_COL32(236, 230, 218, 255) : IM_COL32(30, 28, 28, 255));
+      dl->AddCircle(c, r, IM_COL32(200, 160, 100, 200), 0, 1.5f);
+      ImGui::Dummy(ImVec2(r * 2 + 6 * S, 0));
+      ImGui::SameLine();
+      ImGui::Text("%s (%d)%s", online.names[side].c_str(), online.ratings[side], side == online.side ? "  - you" : "");
+      if (online.clocks) {
+        int ms = onlineClock(side);
+        char clk[16];
+        if (ms < 10000) std::snprintf(clk, sizeof(clk), "%d.%d", ms / 1000, (ms % 1000) / 100);
+        else std::snprintf(clk, sizeof(clk), "%d:%02d", ms / 60000, (ms / 1000) % 60);
+        bool running = online.clockRun == side && online.endText.empty();
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(clk).x);
+        ImGui::TextColored(ms < 30000 && running ? kRed : running ? kGold : ImVec4(0.6f, 0.56f, 0.5f, 1.0f), "%s", clk);
+      }
+    }
+    if (online.awaySeconds >= 0 && online.endText.empty()) {
+      int left = std::max(0, online.awaySeconds - (int)(now - online.awayAt));
+      ImGui::TextWrapped("%s left: they lose in %d s unless they come back.", online.names[online.side ^ 1].c_str(), left);
+    }
+  } else if (!match && !online.room.empty()) {
+    // the game's link, for the friend (and for coming back to the game)
+    const char* you = online.side == chess::WHITE ? "White" : "Black";
+    if (!online.started) ImGui::TextWrapped("Send this link to a friend. You play %s; the game starts when they open it.", you);
+    else ImGui::TextDisabled("You play %s against your friend", you);
+    ImGui::PushStyleColor(ImGuiCol_Text, kGold);
+    ImGui::TextWrapped("%s", online.link.c_str());
+    ImGui::PopStyleColor();
+    if (ImGui::Button("Copy link", ImVec2(-1, 0))) copyOnlineLink();
+    if (online.copied > 0) ImGui::TextDisabled("%s", online.copyOk ? "Copied" : "Copy it from the address bar instead");
+  }
+
+  if (onlineGameOn() && online.net == OnlineGame::Net::Open) {
+    if (online.drawOffered) {
+      ImGui::TextColored(kGold, "%s offers a draw", match ? online.names[online.side ^ 1].c_str() : "Your friend");
+      if (ImGui::Button("Accept draw", ImVec2(half, 0))) offerDraw(true);
+      ImGui::SameLine();
+      if (ImGui::Button("Decline", ImVec2(half, 0))) declineDraw();
+    } else {
+      ImGui::BeginDisabled(online.myDrawOffer);
+      if (ImGui::Button(online.myDrawOffer ? "Draw offered" : "Offer draw", ImVec2(half, 0))) offerDraw(false);
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      bool asking = resignArmed();
+      if (asking) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.12f, 0.9f));
+      if (ImGui::Button(asking ? "Resign? Click" : "Resign", ImVec2(half, 0))) resignOnline();
+      if (asking) ImGui::PopStyleColor();
+    }
+  }
+  if (!online.endText.empty()) {
+    ImGui::TextColored(kGold, "%s", online.endText.c_str());
+    if (!online.ratingText.empty()) ImGui::TextDisabled("%s", online.ratingText.c_str());
+    if (match && ImGui::Button("Find another opponent", ImVec2(-1, 0))) startMatch();
+  }
+  if (match && ImGui::Button("Leaderboard", ImVec2(-1, 0))) openLeaderboard();
+  if (noticeTime > 0 && !notice.empty()) {
+    ImGui::PushStyleColor(ImGuiCol_Text, kRed);
+    ImGui::TextWrapped("%s", notice.c_str());
+    ImGui::PopStyleColor();
+  }
+}
+
+// The best players, and this one
+void App::drawLeaderboard(float S) {
+  if (!leaders.open) return;
+  ImGuiIO& io = ImGui::GetIO();
+  ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  if (ImGui::Begin("Leaderboard", &leaders.open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse)) {
+    if (leaders.loading) {
+      ImGui::TextDisabled("Loading...");
+    } else if (leaders.rows.empty()) {
+      ImGui::TextDisabled("Nobody yet: players appear after %d rated games.", leaders.minGames);
+    } else if (ImGui::BeginTable("##top", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+      ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 30 * S);
+      ImGui::TableSetupColumn("Player", ImGuiTableColumnFlags_WidthFixed, 170 * S);
+      ImGui::TableSetupColumn("Rating", ImGuiTableColumnFlags_WidthFixed, 64 * S);
+      ImGui::TableSetupColumn("Games", ImGuiTableColumnFlags_WidthFixed, 56 * S);
+      ImGui::TableHeadersRow();
+      for (size_t i = 0; i < leaders.rows.size(); ++i) {
+        const Leaderboard::Row& r = leaders.rows[i];
+        bool mine = me.known && r.name == me.name;
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextDisabled("%d", (int)i + 1);
+        ImGui::TableSetColumnIndex(1);
+        if (mine) ImGui::TextColored(kGold, "%s", r.name.c_str());
+        else ImGui::TextUnformatted(r.name.c_str());
+        ImGui::TableSetColumnIndex(2);
+        ImGui::Text("%d", r.rating);
+        ImGui::TableSetColumnIndex(3);
+        ImGui::TextDisabled("%d", r.games);
+      }
+      ImGui::EndTable();
+    }
+    ImGui::Separator();
+    if (!me.known) ImGui::TextDisabled("Play someone online to get a rating.");
+    else if (leaders.myRank > 0) ImGui::Text("You: %s, #%d with %d", me.name.c_str(), leaders.myRank, me.rating);
+    else
+      ImGui::TextDisabled("You: %s, %d - on the board after %d rated games (%d so far)", me.name.c_str(), me.rating,
+                          leaders.minGames, me.games);
+    if (ImGui::Button("Refresh")) openLeaderboard();
+  }
+  ImGui::End();
+}
+
 void App::drawUI() {
   ImGuiIO& io = ImGui::GetIO();
   const float S = ImGui::GetFontSize() / 16.0f;
@@ -124,29 +268,22 @@ void App::drawUI() {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
     ImGui::SetTooltip("Selects the best move for you: click the glowing square to play it");
   ImGui::Spacing();
-  const char* modes[] = {"You play White", "You play Black", "Two players", "Watch AI vs AI", "Play a friend online"};
-  int mi = (int)mode;
+  const char* modes[] = {"You play White", "You play Black",       "Two players",
+                         "Watch AI vs AI", "Play a friend online", "Play someone online"};
+  bool match = mode == Mode::Online && online.kind == OnlineGame::Kind::Match;
+  int mi = mode == Mode::Online ? (match ? 5 : 4) : (int)mode, was = mi;
   ImGui::SetNextItemWidth(-90 * S);
-  if (ImGui::Combo("Mode", &mi, modes, onlineAvailable() ? 5 : 4) && mi != (int)mode) {
-    if (mi == (int)Mode::Online) startOnline("");
+  ImGui::BeginDisabled(match && onlineGameOn());  // (a rated game: finish it, or resign)
+  if (ImGui::Combo("Mode", &mi, modes, onlineAvailable() ? 6 : 4) && mi != was) {
+    if (mi == 4) startOnline("");
+    else if (mi == 5) startMatch();
     else setMode((Mode)mi);
     if (mode == Mode::Watch) world.cam.autoSpin = 0.05f;
   }
-  if (mode == Mode::Online) {
-    // the game's link, for the friend (and for coming back to the game)
-    if (!online.error.empty() || online.net == OnlineGame::Net::Closed) {
-      if (ImGui::Button("Start a new online game", ImVec2(-1, 0))) startOnline("");
-    } else if (!online.room.empty()) {
-      const char* you = online.side == chess::WHITE ? "White" : "Black";
-      if (!online.started) ImGui::TextWrapped("Send this link to a friend. You play %s; the game starts when they open it.", you);
-      else ImGui::TextDisabled("You play %s against your friend", you);
-      ImGui::PushStyleColor(ImGuiCol_Text, kGold);
-      ImGui::TextWrapped("%s", online.link.c_str());
-      ImGui::PopStyleColor();
-      if (ImGui::Button("Copy link", ImVec2(-1, 0))) copyOnlineLink();
-      if (online.copied > 0) ImGui::TextDisabled("%s", online.copyOk ? "Copied" : "Copy it from the address bar instead");
-    }
-  }
+  ImGui::EndDisabled();
+  if (match && onlineGameOn() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+    ImGui::SetTooltip("Finish the game, or resign, first");
+  if (mode == Mode::Online) drawOnline(S);
   const char* levels[5];
   for (int i = 0; i < 5; ++i) levels[i] = chess::kAILevels[i].name;
   ImGui::SetNextItemWidth(-90 * S);
@@ -200,6 +337,8 @@ void App::drawUI() {
     else ImGui::TextDisabled("%.0f fps", fps);
   }
   ImGui::End();
+
+  drawLeaderboard(S);
 
   // ---------------- move list ----------------
   const auto& san = game.san();

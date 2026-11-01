@@ -463,6 +463,19 @@ bool findLegal(const Board& b, int from, int to, int promo, Move& out) {
   return false;
 }
 
+bool findLegalUci(const Board& b, const std::string& u, Move& out) {
+  if (u.size() < 4 || u.size() > 5 || u[0] < 'a' || u[0] > 'h' || u[2] < 'a' || u[2] > 'h' || u[1] < '1' ||
+      u[1] > '8' || u[3] < '1' || u[3] > '8')
+    return false;
+  int promo = 0;
+  if (u.size() == 5) {
+    size_t p = std::string(" pnbrqk").find(u[4]);
+    if (p == std::string::npos || p < KNIGHT || p > QUEEN) return false;
+    promo = (int)p;
+  }
+  return findLegal(b, makeSq(u[0] - 'a', u[1] - '1'), makeSq(u[2] - 'a', u[3] - '1'), promo, out);
+}
+
 uint64_t perft(const Board& b, int depth) {
   MoveList pl;
   b.genPseudo(pl);

@@ -86,6 +86,8 @@ struct Board {
 std::string toSAN(const Board& b, const Move& m);
 // Find the legal move matching from/to/promo (promo 0 = any -> queen).
 bool findLegal(const Board& b, int from, int to, int promo, Move& out);
+// The same for a move in long algebraic notation (e2e4, e7e8q); false if it isn't legal here
+bool findLegalUci(const Board& b, const std::string& uci, Move& out);
 
 uint64_t perft(const Board& b, int depth);
 
