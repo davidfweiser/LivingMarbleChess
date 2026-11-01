@@ -7,3 +7,4 @@ build/
 .DS_Store
 xcuserdata/
 macos/Signing.local.xcconfig
+build-web/

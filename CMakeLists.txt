@@ -20,8 +20,18 @@ option(LM_ENABLE_AUDIO "Build with procedural sound effects (miniaudio)" ON)
 # THIRD_PARTY_NOTICES.txt (update it along with a GIT_TAG)
 include(FetchContent)
 set(FETCHCONTENT_QUIET ON)
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)  # downloaded archives: files dated when extracted
+endif()
 # CMake 4.x refuses very old cmake_minimum_required() in dependencies
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+
+# The web page (emcmake cmake -B build-web): WebAssembly with threads, WebGL 2 and
+# Emscripten's own GLFW; see web/README.md
+if(EMSCRIPTEN)
+  add_compile_options(-pthread)
+  add_link_options(-pthread)
+endif()
 
 # Windows: the C/C++ runtime is linked into the exe, so the game is a single
 # file that needs no Visual C++ redistributable (GLFW has its own switch for it)
@@ -42,10 +52,13 @@ if(UNIX AND NOT APPLE)
   set(GLFW_BUILD_WAYLAND ${LM_GLFW_WAYLAND} CACHE BOOL "" FORCE)
   set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
 endif()
-FetchContent_Declare(glfw
-  GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG        3.4
-  GIT_SHALLOW    TRUE)
+if(NOT EMSCRIPTEN)  # (the web page uses Emscripten's)
+  FetchContent_Declare(glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.4
+    GIT_SHALLOW    TRUE)
+  FetchContent_MakeAvailable(glfw)
+endif()
 
 # --- GLM (math) --------------------------------------------------------------
 FetchContent_Declare(glm
@@ -60,7 +73,7 @@ FetchContent_Declare(imgui
   GIT_SHALLOW    TRUE
   SOURCE_SUBDIR  _no_cmake_)
 
-FetchContent_MakeAvailable(glfw glm imgui)
+FetchContent_MakeAvailable(glm imgui)
 
 add_library(imgui STATIC
   ${imgui_SOURCE_DIR}/imgui.cpp
@@ -70,7 +83,19 @@ add_library(imgui STATIC
   ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
   ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
-target_link_libraries(imgui PUBLIC glfw)
+if(EMSCRIPTEN)
+  target_compile_definitions(imgui PUBLIC IMGUI_IMPL_OPENGL_ES3)  # WebGL 2
+else()
+  target_link_libraries(imgui PUBLIC glfw)
+endif()
+
+# --- DejaVu fonts (the web page's text; a browser has no font files to load) --
+if(EMSCRIPTEN)
+  FetchContent_Declare(dejavu
+    URL      https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_2_37/dejavu-fonts-ttf-2.37.tar.bz2
+    URL_HASH SHA256=fa9ca4d13871dd122f61258a80d01751d603b4d3ee14095d65453b4e846e17d7)
+  FetchContent_MakeAvailable(dejavu)
+endif()
 
 # --- miniaudio (sound) -------------------------------------------------------
 if(LM_ENABLE_AUDIO)
@@ -111,7 +136,11 @@ add_executable(living_marble
   src/power.cpp)
 
 target_include_directories(living_marble PRIVATE src)
-target_link_libraries(living_marble PRIVATE glfw glm::glm imgui)
+if(EMSCRIPTEN)
+  target_link_libraries(living_marble PRIVATE glm::glm imgui)
+else()
+  target_link_libraries(living_marble PRIVATE glfw glm::glm imgui)
+endif()
 target_compile_definitions(living_marble PRIVATE GLFW_INCLUDE_NONE GLM_FORCE_SILENT_WARNINGS
                            LM_VERSION="${PROJECT_VERSION}")
 
@@ -120,13 +149,33 @@ if(LM_ENABLE_AUDIO)
   target_compile_definitions(living_marble PRIVATE LM_AUDIO=1)
 endif()
 
-find_package(Threads REQUIRED)
-target_link_libraries(living_marble PRIVATE Threads::Threads)
+if(EMSCRIPTEN)
+  # The web page: living_marble.js/.wasm/.worker.js/.data and index.html in the build folder.
+  # Threads come from a pool of web workers made as the page loads, enough for the
+  # sculpting (8 at most: sdf.cpp), the AI, the sound and two armies built at once.
+  target_link_options(living_marble PRIVATE
+    -sUSE_GLFW=3
+    -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2
+    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=256MB -sMAXIMUM_MEMORY=2GB
+    -Wno-pthreads-mem-growth
+    "-sPTHREAD_POOL_SIZE=Math.min(navigator.hardwareConcurrency||4,8)*2+4"
+    -sDEFAULT_PTHREAD_STACK_SIZE=2MB
+    -sENVIRONMENT=web,worker
+    "SHELL:--preload-file ${dejavu_SOURCE_DIR}/ttf/DejaVuSans.ttf@/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    "SHELL:--preload-file ${dejavu_SOURCE_DIR}/ttf/DejaVuSerif.ttf@/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf")
+  set(LM_DEJAVU_LICENSE "${dejavu_SOURCE_DIR}/LICENSE")
+  configure_file(web/index.html index.html @ONLY)
+  configure_file(LICENSE LICENSE.txt COPYONLY)
+  configure_file(THIRD_PARTY_NOTICES.txt THIRD_PARTY_NOTICES.txt COPYONLY)
+else()
+  find_package(Threads REQUIRED)
+  target_link_libraries(living_marble PRIVATE Threads::Threads)
+endif()
 
 if(APPLE)
   target_link_libraries(living_marble PRIVATE
     "-framework OpenGL" "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
-elseif(UNIX)
+elseif(UNIX AND NOT EMSCRIPTEN)
   target_link_libraries(living_marble PRIVATE ${CMAKE_DL_LIBS} m)
 endif()
 
@@ -162,7 +211,7 @@ endif()
 #   Windows installer: windows\build-installer.bat
 include(GNUInstallDirs)
 install(TARGETS living_marble RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
   # launcher entry + icon; the window class (= window title) ties the window to them
   set(LM_APP_ID io.github.davidfweiser.LivingMarble)
   install(FILES linux/${LM_APP_ID}.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

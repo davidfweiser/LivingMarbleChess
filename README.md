@@ -44,10 +44,12 @@ On the Mac the game is a native app written in Swift: Metal graphics, an
 AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
 [`macos/`](macos)). The same Swift code runs on iPhone and iPad with touch
 controls (see [`ios/`](ios)). Windows and Linux use the C++/OpenGL version in
-`src/`. All versions play, look and sound the same, with no depth-of-field blur
+`src/`, which also builds for a web page (WebAssembly and WebGL 2, see
+[`web/`](web)). All versions play, look and sound the same, with no depth-of-field blur
 by default. The Windows, Linux and Mac versions start at the finest sculpting
 detail and *Ultra* graphics; iPhone and iPad, to load quicker and stay cool,
-at one sculpting level less (`--quality 2`) and *High* graphics.
+at one sculpting level less (`--quality 2`) and *High* graphics, and so does
+the web page.
 
 ## Download
 
@@ -432,6 +434,12 @@ detail (`--quality 3`) this takes about 5–10 seconds on a fast multi-core PC
 (about 13 seconds on an M2 Mac), longer when starting with the medieval or
 alien army (shown on the loading screen). On a slower computer `--quality 1`
 starts much quicker.
+
+### Web page
+
+The same C++ code, compiled with Emscripten: see [`web/README.md`](web/README.md)
+for building it, and [`web/linode-setup.sh`](web/linode-setup.sh) for putting it
+on a server with one command.
 
 ## Controls
 

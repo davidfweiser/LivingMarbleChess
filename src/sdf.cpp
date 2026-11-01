@@ -146,7 +146,11 @@ float Profile::dist2D(const vec2& p) const {
 // ---------------------------------------------------------------------------
 void parallelFor(int n, const std::function<void(int)>& fn) {
   int nt = (int)std::max(1u, std::thread::hardware_concurrency());
+#ifdef __EMSCRIPTEN__
+  nt = std::min(nt, 8);  // (the web page's pool of threads is sized for this: CMakeLists.txt)
+#else
   nt = std::min(nt, 16);
+#endif
   if (n <= 1 || nt == 1) {
     for (int i = 0; i < n; ++i) fn(i);
     return;

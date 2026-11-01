@@ -9,6 +9,11 @@
 #include "app.h"
 #include "audio.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <vector>
+#endif
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -49,7 +54,31 @@ static void usage() {
       "  --no-ui\n");
 }
 
+#ifdef __EMSCRIPTEN__
+static int lmMain(int argc, char** argv);
+
+// The web page passes its options (from its address) in Module.arguments. Here main() takes
+// no arguments: with some pairings of Emscripten and Clang a main(argc, argv) is never called.
+int main() {
+  std::vector<std::string> args{"living_marble"};
+  int n = EM_ASM_INT({ return (Module['arguments'] || []).length; });
+  for (int i = 0; i < n; ++i) {
+    int len = EM_ASM_INT({ return lengthBytesUTF8(String(Module['arguments'][$0])) + 1; }, i);
+    std::string a((size_t)len, '\0');
+    EM_ASM({ stringToUTF8(String(Module['arguments'][$0]), $1, $2); }, i, &a[0], len);
+    a.resize(std::strlen(a.c_str()));
+    args.push_back(a);
+  }
+  std::vector<char*> argv;
+  for (std::string& a : args) argv.push_back(&a[0]);
+  argv.push_back(nullptr);
+  return lmMain((int)args.size(), argv.data());
+}
+
+static int lmMain(int argc, char** argv) {
+#else
 int main(int argc, char** argv) {
+#endif
 #ifdef _WIN32
   attachToTerminal();
 #endif
@@ -105,6 +134,12 @@ int main(int argc, char** argv) {
       return 1;
     }
   }
+#ifdef __EMSCRIPTEN__
+  // the web page: run() starts the browser's frame loop and returns, so the game outlives main()
+  App* app = new App(o);
+  return app->run();
+#else
   App app(o);
   return app.run();
+#endif
 }

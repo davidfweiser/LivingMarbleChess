@@ -184,7 +184,14 @@ void Renderer::fullscreen() {
 
 // ---------------------------------------------------------------------------
 void Renderer::buildPrograms() {
+#ifdef __EMSCRIPTEN__
+  // WebGL 2: GLSL ES 3.00, at full precision
+  const std::string H =
+      "#version 300 es\nprecision highp float;\nprecision highp int;\n"
+      "precision highp sampler2DShadow;\nprecision highp sampler3D;\n";
+#else
   const std::string H = "#version 330 core\n";
+#endif
   const std::string C = shaders::kCommon;
   const std::string L = shaders::kLighting;
   const std::string meshVS = H + shaders::kMeshVS;
@@ -308,6 +315,12 @@ void Renderer::applySettings(const RenderSettings& s) {
   set_ = s;
   GLint maxSamples = 1;
   glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+#ifdef __EMSCRIPTEN__
+  // WebGL can allow fewer samples for the half-float scene than GL_MAX_SAMPLES
+  GLint hdrSamples = 0;
+  glGetInternalformativ(GL_RENDERBUFFER, GL_RGBA16F, GL_SAMPLES, 1, &hdrSamples);
+  maxSamples = std::min(maxSamples, std::max(1, hdrSamples));
+#endif
   set_.msaa = std::min(set_.msaa, (int)maxSamples);
   if (shadowResAlloc != set_.shadowRes) {
     delFbo(shadowFbo);

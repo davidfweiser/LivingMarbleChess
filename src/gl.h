@@ -1,8 +1,13 @@
 // Minimal self-contained OpenGL 3.3 core loader (no external loader needed).
 // Function pointers are resolved through glfwGetProcAddress at startup.
+// (The web page uses WebGL 2 instead: gl_web.h.)
 #pragma once
 #include <cstddef>
 #include <cstdint>
+
+#ifdef __EMSCRIPTEN__
+#include "gl_web.h"
+#else
 
 #if defined(_WIN32)
 #define LM_APIENTRY __stdcall
@@ -395,6 +400,8 @@ LM_GL_FUNCS(LM_DECLARE_GL)
 #define glBindSampler lm_glBindSampler
 #define glSamplerParameteri lm_glSamplerParameteri
 #define glSamplerParameterf lm_glSamplerParameterf
+
+#endif  // __EMSCRIPTEN__
 
 typedef void* (*LMGLGetProc)(const char* name);
 // Returns false (and fills 'missing') if a required function failed to load.

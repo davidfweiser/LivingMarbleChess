@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Living Marble - 3D Battle Chess</title>
+<meta name="description" content="Chess on a floating board where the pieces come alive and fight for every capture.">
+<style>
+  :root { color-scheme: dark; --bg: #050403; --text: #ede5d6; --dim: #9d8f7f; --gold: #f2c873; --panel: rgba(14, 11, 10, 0.92); }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+               font: 16px/1.5 "Segoe UI", system-ui, -apple-system, "DejaVu Sans", sans-serif; }
+  /* the game keeps the canvas's drawing buffer at this size in device pixels */
+  #canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh; display: block;
+            outline: none; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+             padding: 16px; box-sizing: border-box; background: var(--bg); }
+  #overlay.hidden { display: none; }
+  .card { max-width: 34rem; text-align: center; }
+  h1 { font: 400 clamp(1.8rem, 6vw, 2.6rem)/1.2 Georgia, "DejaVu Serif", serif; color: var(--gold); margin: 0 0 0.2em; }
+  .sub { color: var(--dim); margin: 0 0 1.6em; }
+  #status { min-height: 1.5em; }
+  #error { display: none; text-align: left; background: var(--panel); border: 1px solid #5a4630; border-radius: 10px;
+           padding: 14px 18px; margin-top: 1em; }
+  #error.shown { display: block; }
+  #error p { margin: 0.4em 0; }
+  .version { color: var(--dim); font-size: 0.85em; margin-top: 2em; }
+  a { color: var(--gold); }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<div id="overlay">
+  <div class="card">
+    <h1>Living Marble</h1>
+    <p class="sub">3D Battle Chess</p>
+    <div id="status">Loading the game...</div>
+    <div id="error"></div>
+    <div class="version">Version @PROJECT_VERSION@ &middot;
+      <a href="https://github.com/davidfweiser/LivingMarbleChess" target="_blank" rel="noopener">source</a> &middot;
+      <a href="THIRD_PARTY_NOTICES.txt" target="_blank">notices</a></div>
+  </div>
+</div>
+<script>
+(function () {
+  var canvas = document.getElementById('canvas');
+  var overlay = document.getElementById('overlay');
+  var statusEl = document.getElementById('status');
+  var errorEl = document.getElementById('error');
+
+  function fail(html) {
+    overlay.classList.remove('hidden');
+    statusEl.textContent = '';
+    errorEl.innerHTML = html;
+    errorEl.classList.add('shown');
+  }
+
+  // Options in the address, as on the command line: ?pieces=medieval&quality=3&graphics=3&demo
+  var args = [];
+  var q = new URLSearchParams(location.search);
+  var pieces = q.get('pieces');
+  if (pieces && /^(marble|medieval|alien|aliens)$/.test(pieces)) args.push('--pieces', pieces);
+  [['quality', /^[0-3]$/], ['graphics', /^[0-3]$/], ['level', /^[0-4]$/]].forEach(function (o) {
+    var v = q.get(o[0]);
+    if (v !== null && o[1].test(v)) args.push('--' + o[0], v);
+  });
+  ['demo', 'mute', 'dof'].forEach(function (f) { if (q.has(f)) args.push('--' + f); });
+  if (q.has('no-music') || q.has('nomusic')) args.push('--no-music');
+  var fen = q.get('fen');
+  if (fen && /^[1-8pnbrqkPNBRQK\/]+ [wb] [KQkq-]+ [a-h1-8-]+( \d+ \d+)?$/.test(fen)) args.push('--fen', fen);
+
+  // What the game needs from the browser
+  var gl = document.createElement('canvas').getContext('webgl2');
+  if (!gl) {
+    fail('<p><b>This browser can\'t show the game.</b></p><p>It needs WebGL 2, which current versions of ' +
+         'Chrome, Edge, Firefox and Safari have. If yours is up to date, check that hardware acceleration ' +
+         'is turned on in its settings.</p>');
+    return;
+  }
+  if (!gl.getExtension('EXT_color_buffer_float')) {
+    fail('<p><b>This browser\'s graphics are missing a feature the game needs</b> (EXT_color_buffer_float). ' +
+         'A current version of Chrome, Edge, Firefox or Safari should have it.</p>');
+    return;
+  }
+  if (!self.crossOriginIsolated) {
+    fail('<p><b>The game can\'t start its threads on this page.</b></p><p>The web server has to send two headers ' +
+         'with the page: <code>Cross-Origin-Opener-Policy: same-origin</code> and ' +
+         '<code>Cross-Origin-Embedder-Policy: require-corp</code>. See web/README.md.</p>');
+    return;
+  }
+
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });  // right-drag turns the board
+  window.addEventListener('keydown', function (e) { if (e.key === 'F1') e.preventDefault(); });  // the game's help
+  canvas.addEventListener('webglcontextlost', function (e) {
+    e.preventDefault();
+    fail('<p><b>The graphics stopped working</b> (the browser took the WebGL context back). Reload the page to play again.</p>');
+  });
+
+  window.Module = {
+    canvas: canvas,
+    arguments: args,
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); },
+    setStatus: function (t) {
+      if (!t) return;
+      var m = t.match(/\((\d+(\.\d+)?)\/(\d+)\)/);
+      statusEl.textContent = m ? 'Loading the game... ' + Math.round(100 * m[1] / m[3]) + '%' : 'Loading the game...';
+    },
+    // from here the game draws its own loading screen while it sculpts the pieces
+    onRuntimeInitialized: function () { overlay.classList.add('hidden'); canvas.focus(); },
+    onAbort: function (what) {
+      fail('<p><b>The game stopped with an error.</b></p><p>' + String(what).replace(/[<&]/g, '') +
+           '</p><p>Reloading the page may help. With little memory free, close other tabs first.</p>');
+    }
+  };
+  window.addEventListener('error', function (e) {
+    if (e && e.message && /memory|wasm|WebAssembly/i.test(e.message))
+      fail('<p><b>The game couldn\'t start:</b> ' + e.message.replace(/[<&]/g, '') + '</p>');
+  });
+
+  var s = document.createElement('script');
+  s.src = 'living_marble.js';
+  s.onerror = function () { fail('<p><b>The game\'s files couldn\'t be loaded.</b> Check the connection and reload.</p>'); };
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>

@@ -245,7 +245,11 @@ void App::drawUI() {
     ImGui::BulletText("N new game, U undo, T hint, F flip view, R reset view");
     ImGui::BulletText("A hint selects the best move for you: click the glowing square to play it");
     ImGui::BulletText("B toggle battle animations, C toggle cinematic camera");
+#ifdef __EMSCRIPTEN__
+    ImGui::BulletText("H hide the interface, M music on/off, F11 full screen");
+#else
     ImGui::BulletText("H hide the interface, M music on/off, F11 full screen, F12 screenshot, Ctrl+Q quit");
+#endif
     ImGui::Spacing();
     ImGui::TextColored(kGold, "The battles (each capture picks one at random)");
     static const char* const kPieces[6] = {"Pawn", "Knight", "Bishop", "Rook", "Queen", "King"};

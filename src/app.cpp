@@ -15,10 +15,19 @@
 #include "imgui_impl_opengl3.h"
 #include "power.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#endif
+
 using glm::vec3;
 
 namespace {
+#ifdef __EMSCRIPTEN__
+void* getProc(const char*) { return nullptr; }  // (WebGL is linked in directly)
+#else
 void* getProc(const char* n) { return reinterpret_cast<void*>(glfwGetProcAddress(n)); }
+#endif
 void glfwError(int code, const char* desc) { std::fprintf(stderr, "[glfw] error %d: %s\n", code, desc); }
 void scrollCb(GLFWwindow* w, double, double dy) {
   App* app = static_cast<App*>(glfwGetWindowUserPointer(w));
@@ -26,6 +35,42 @@ void scrollCb(GLFWwindow* w, double, double dy) {
     app->world.cam.orbit(0, 0, (float)(-dy * 0.08));
   }
 }
+
+#ifdef __EMSCRIPTEN__
+// The page's mouse wheel and touchpad, in fractions of a wheel notch (Emscripten's GLFW
+// rounds every touchpad nudge up to a whole notch): ImGui's scrolling and the camera's zoom.
+EM_BOOL webWheelCb(int, const EmscriptenWheelEvent* ev, void* user) {
+  float perUnit = ev->deltaMode == DOM_DELTA_PIXEL ? 1.0f / 100.0f : (ev->deltaMode == DOM_DELTA_LINE ? 1.0f / 3.0f : 1.0f);
+  float wx = (float)ev->deltaX * -perUnit, wy = (float)ev->deltaY * -perUnit;
+  ImGui::GetIO().AddMouseWheelEvent(wx, wy);
+  App* app = static_cast<App*>(user);
+  if (!ImGui::GetIO().WantCaptureMouse) app->world.cam.orbit(0, 0, -wy * 0.08f);
+  return EM_TRUE;  // the page itself doesn't scroll or zoom
+}
+
+// Keeps the canvas's drawing buffer at the size it is shown at, in device pixels (sharp on
+// high-DPI screens). The page's style sheet sizes the canvas to fill the browser window.
+// (Not through glfwSetWindowSize: Emscripten's asks for full screen when the size is the
+// screen's, and sizes a full-screen canvas in CSS pixels. GLFW's window just takes the size.)
+void fitCanvas(GLFWwindow* win) {
+  double cw = 0, ch = 0;
+  emscripten_get_element_css_size("#canvas", &cw, &ch);
+  double dpr = emscripten_get_device_pixel_ratio();
+  int w = std::max(1, (int)std::lround(cw * dpr)), h = std::max(1, (int)std::lround(ch * dpr));
+  int ww, wh;
+  glfwGetWindowSize(win, &ww, &wh);
+  int bw = 0, bh = 0;
+  emscripten_get_canvas_element_size("#canvas", &bw, &bh);
+  if (w != ww || h != wh || w != bw || h != bh) {
+    EM_ASM({
+      var c = Module['canvas'];
+      if (c.width != $0) c.width = $0;
+      if (c.height != $1) c.height = $1;
+      if (GLFW.active) { GLFW.active.width = $0; GLFW.active.height = $1; }
+    }, w, h);
+  }
+}
+#endif
 
 RenderSettings presetSettings(int p) {
   RenderSettings s;
@@ -84,17 +129,27 @@ App::~App() {
 bool App::initWindow() {
   glfwSetErrorCallback(glfwError);
   if (!glfwInit()) return false;
+#ifdef __EMSCRIPTEN__
+  // WebGL 2 on the page's canvas; opaque, so the page never shows through
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+  glfwWindowHint(GLFW_ALPHA_BITS, 0);
+  glfwWindowHint(GLFW_SAMPLES, 0);
+#else
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
   glfwWindowHint(GLFW_SAMPLES, 0);
   glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
+#endif
 #ifdef __APPLE__
   glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
 #endif
   GLFWmonitor* mon = nullptr;
   int w = opt.width, h = opt.height;
+#ifndef __EMSCRIPTEN__  // (the page goes full screen through the browser: setFullscreen())
   if (opt.fullscreen) {
     mon = glfwGetPrimaryMonitor();
     const GLFWvidmode* vm = glfwGetVideoMode(mon);
@@ -108,18 +163,27 @@ bool App::initWindow() {
     winX = mx + (vm->width - winW) / 2;
     winY = my + (vm->height - winH) / 2;
   }
+#endif
   win = glfwCreateWindow(w, h, "Living Marble - 3D Battle Chess", mon, nullptr);
   if (!win) return false;
   fullscreen = mon != nullptr;
   glfwMakeContextCurrent(win);
+#ifdef __EMSCRIPTEN__
+  fitCanvas(win);  // (the browser paces the frames: the main loop's swap interval is set in run())
+#else
   glfwSwapInterval(fixedStep ? 0 : 1);
+#endif
   const char* missing = nullptr;
   if (!lmLoadGL(getProc, &missing)) {
     std::fprintf(stderr, "OpenGL 3.3 function missing: %s\n", missing ? missing : "?");
     return false;
   }
   glfwSetWindowUserPointer(win, this);
+#ifdef __EMSCRIPTEN__
+  emscripten_set_wheel_callback("#canvas", this, false, webWheelCb);
+#else
   glfwSetScrollCallback(win, scrollCb);
+#endif
   return true;
 }
 
@@ -132,7 +196,11 @@ void App::initUI() {
   glfwGetWindowSize(win, &ww, &wh);
   glfwGetFramebufferSize(win, &fw, &fh);
   float xs = 1, ys = 1;
+#ifdef __EMSCRIPTEN__
+  xs = ys = (float)emscripten_get_device_pixel_ratio();  // the canvas is in device pixels
+#else
   glfwGetWindowContentScale(win, &xs, &ys);
+#endif
   bool pointsCoords = fw > ww * 1.2f;  // macOS style (window in points)
   float px = pointsCoords ? xs : 1.0f;   // oversample factor for crisp text
   float uiScale = pointsCoords ? 1.0f : std::max(1.0f, xs);
@@ -209,8 +277,8 @@ void App::initUI() {
   if (uiScale > 1.0f) st.ScaleAllSizes(uiScale);
 
   ImGui_ImplGlfw_InitForOpenGL(win, true);
-#ifdef __APPLE__
-  ImGui_ImplOpenGL3_Init("#version 330 core");
+#ifdef __EMSCRIPTEN__
+  ImGui_ImplOpenGL3_Init("#version 300 es");  // (imgui is built with IMGUI_IMPL_OPENGL_ES3)
 #else
   ImGui_ImplOpenGL3_Init("#version 330 core");
 #endif
@@ -316,28 +384,17 @@ int App::run() {
   world.alib = &alib;
   world.reset();
   loadAssets();
-  double prev = glfwGetTime();
-  while (!glfwWindowShouldClose(win) && !quitRequested) {
-    // minimised: nothing to draw, and the game waits (the music plays on)
-    if (!fixedStep && glfwGetWindowAttrib(win, GLFW_ICONIFIED)) {
-      glfwWaitEventsTimeout(0.25);
-      prev = glfwGetTime();
-      continue;
-    }
-    // a lowered frame rate the driver doesn't keep to: wait for the frame's time (any input ends it)
-    double wait = frameDue - glfwGetTime();
-    if (wait > 0) glfwWaitEventsTimeout(wait);
-    else glfwPollEvents();
-    double now = glfwGetTime();
-    float dt = (float)(now - prev);
-    prev = now;
-    if (dt > 0) fps = fps * 0.95f + 0.05f / std::max(dt, 1e-4f);
-    dt = std::min(dt, 0.05f);
-    if (fixedStep && !loading) dt = 1.0f / 30.0f;
-    frame(dt);
-    pace(dt, now);
-    glfwSwapBuffers(win);
+  prevTime = glfwGetTime();
+#ifdef __EMSCRIPTEN__
+  // The browser runs the loop: it calls tick() for every frame it shows, and run() returns
+  // with the game still going. (A swap interval of n draws every n-th of the display's frames.)
+  emscripten_set_main_loop_arg([](void* app) { static_cast<App*>(app)->tick(); }, this, 0, false);
+  glfwSwapInterval(1);
+  return 0;
+#else
+  while (tick()) {
   }
+#endif
   if (fixedStep) {
     std::printf("moves:");
     for (size_t i = 0; i < game.san().size(); ++i) std::printf(" %s", game.san()[i].c_str());
@@ -345,6 +402,38 @@ int App::run() {
                 (int)world.actors.size(), world.chunks.size());
   }
   return 0;
+}
+
+// One pass of the main loop; false once the game is over (the window closed, or Quit).
+bool App::tick() {
+  if (glfwWindowShouldClose(win) || quitRequested) return false;
+#ifdef __EMSCRIPTEN__
+  // a lowered frame rate the swap interval can't keep to: skip the browser's frame (the canvas keeps the last one)
+  if (frameDue > 0 && glfwGetTime() < frameDue) return true;
+  fitCanvas(win);
+  fullscreen = EM_ASM_INT({ return document.fullscreenElement ? 1 : 0; }) != 0;  // (Esc leaves it too)
+#else
+  // minimised: nothing to draw, and the game waits (the music plays on)
+  if (!fixedStep && glfwGetWindowAttrib(win, GLFW_ICONIFIED)) {
+    glfwWaitEventsTimeout(0.25);
+    prevTime = glfwGetTime();
+    return true;
+  }
+  // a lowered frame rate the driver doesn't keep to: wait for the frame's time (any input ends it)
+  double wait = frameDue - glfwGetTime();
+  if (wait > 0) glfwWaitEventsTimeout(wait);
+  else glfwPollEvents();
+#endif
+  double now = glfwGetTime();
+  float dt = (float)(now - prevTime);
+  prevTime = now;
+  if (dt > 0) fps = fps * 0.95f + 0.05f / std::max(dt, 1e-4f);
+  dt = std::min(dt, 0.05f);
+  if (fixedStep && !loading) dt = 1.0f / 30.0f;
+  frame(dt);
+  pace(dt, now);
+  glfwSwapBuffers(win);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +530,12 @@ static GLFWmonitor* monitorOf(GLFWwindow* w) {
 
 void App::setFullscreen(bool on) {
   if (on == fullscreen || !win) return;
+#ifdef __EMSCRIPTEN__
+  // the browser's full screen, for the whole page (the canvas follows it in tick())
+  if (on) EM_ASM({ var e = document.documentElement; if (e.requestFullscreen) e.requestFullscreen().catch(function() {}); });
+  else EM_ASM({ if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function() {}); });
+  return;
+#endif
   if (on) {
     glfwGetWindowPos(win, &winX, &winY);
     glfwGetWindowSize(win, &winW, &winH);
@@ -469,9 +564,13 @@ void App::pace(float dt, double frameStart) {
   if (powerCheck <= 0) {
     powerCheck = 3;
     powerSaver = power::saverOn();
+#ifdef __EMSCRIPTEN__
+    GLFWmonitor* mon = glfwGetPrimaryMonitor();  // (the browser's screen)
+#else
     GLFWmonitor* mon = glfwGetWindowMonitor(win);
     // (Wayland doesn't tell where a window is)
     if (!mon) mon = glfwGetPlatform() == GLFW_PLATFORM_WAYLAND ? glfwGetPrimaryMonitor() : monitorOf(win);
+#endif
     const GLFWvidmode* vm = mon ? glfwGetVideoMode(mon) : nullptr;
     refreshHz = vm && vm->refreshRate > 0 ? vm->refreshRate : 60;
   }
@@ -754,6 +853,7 @@ void App::handleInput() {
     if (ImGui::IsKeyPressed(ImGuiKey_F11, false) || (io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_Enter, false)))
       setFullscreen(!fullscreen);
     if (ImGui::IsKeyPressed(ImGuiKey_Escape)) deselect();
+#ifndef __EMSCRIPTEN__  // (in a browser Ctrl+Q and F12 belong to the browser)
     if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Q)) quitRequested = true;
     if (ImGui::IsKeyPressed(ImGuiKey_F12)) {
       char name[64];
@@ -762,6 +862,7 @@ void App::handleInput() {
       glfwGetFramebufferSize(win, &fw, &fh);
       saveScreenshot(name, fw, fh);
     }
+#endif
   }
   hover = -1;
   if (io.WantCaptureMouse) return;

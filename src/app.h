@@ -25,8 +25,14 @@ struct ImFont;
 
 struct Options {
   int width = 1600, height = 900;
+#ifdef __EMSCRIPTEN__
+  // the web page, like iPhone and iPad: one sculpting level less (it loads quicker) and High graphics
+  int quality = 2;      // mesh/texture quality 0..3
+  int gfxPreset = 2;    // 0 low .. 3 ultra
+#else
   int quality = 3;      // mesh/texture quality 0..3
   int gfxPreset = 3;    // 0 low .. 3 ultra
+#endif
   bool fullscreen = false;
   // capture / testing
   std::string shotPath;           // single screenshot then exit
@@ -124,6 +130,8 @@ class App {
   bool initWindow();
   void initUI();
   void loadAssets();
+  bool tick();  // one pass of the main loop
+  double prevTime = 0;
   void frame(float dtReal);
   void pace(float dt, double frameStart);
   void updateGame(float dt);

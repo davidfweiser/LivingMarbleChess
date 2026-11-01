@@ -197,6 +197,9 @@ out vec3 vObjN;
 out float vAO;
 out float vAux;
 flat out float vMat;
+#ifdef GL_ES
+out float vClipDist;  // WebGL has no clip planes: the object shader discards below the mirror plane
+#endif
 
 vec3 deform(vec3 p, inout vec3 n) {
   float H = max(uRigH, 0.1);
@@ -252,7 +255,11 @@ void main() {
   vAux = aAux;
   vMat = floor(aMat + 0.0001);
   gl_Position = uViewProj * w;
+#ifdef GL_ES
+  vClipDist = (uClip == 1) ? (w.y + 0.002) : 1.0;
+#else
   gl_ClipDistance[0] = (uClip == 1) ? (w.y + 0.002) : 1.0;
+#endif
 }
 )GLSL";
 
@@ -296,6 +303,9 @@ in vec3 vObjN;
 in float vAO;
 in float vAux;
 flat in float vMat;
+#ifdef GL_ES
+in float vClipDist;
+#endif
 uniform int uMat;        // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass
 uniform int uTeam;       // medieval / aliens: 0 white army, 1 black army
 uniform float uTime;
@@ -625,6 +635,9 @@ vec4 ghostColor(vec3 lit, vec3 albedo, vec3 N, vec3 V) {
 }
 
 void main() {
+#ifdef GL_ES
+  if (vClipDist < 0.0) discard;
+#endif
   vec3 N = normalize(vNrm);
   if (!gl_FrontFacing) N = -N;
   vec3 V = normalize(uCamPos - vWorld);

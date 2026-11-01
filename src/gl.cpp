@@ -1,6 +1,10 @@
 #include "gl.h"
 #include <cstring>
 
+#ifdef __EMSCRIPTEN__
+// WebGL's functions are linked in directly
+bool lmLoadGL(LMGLGetProc, const char**) { return true; }
+#else
 #define LM_DEFINE_GL(ret, name, args) PFN_lm_gl##name lm_gl##name = nullptr;
 LM_GL_FUNCS(LM_DEFINE_GL)
 #undef LM_DEFINE_GL
@@ -17,6 +21,7 @@ bool lmLoadGL(LMGLGetProc getProc, const char** missing) {
 #undef LM_LOAD_GL
   return ok;
 }
+#endif
 
 bool lmHasExtension(const char* name) {
   GLint n = 0;
