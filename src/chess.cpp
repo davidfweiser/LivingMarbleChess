@@ -71,7 +71,7 @@ std::string sqName(int sq) {
 
 std::string Move::uci() const {
   std::string s = sqName(from) + sqName(to);
-  if (promo) s += " nbrqk"[promo];
+  if (promo) s += " pnbrqk"[promo];  // (promo is the piece type: QUEEN = 5 -> 'q')
   return s;
 }
 

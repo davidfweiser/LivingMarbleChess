@@ -113,7 +113,7 @@ void App::drawUI() {
   float bw = (300 * S - 32 * S - 16 * S) / 3.0f;
   if (ImGui::Button("New game", ImVec2(bw, 0))) newGame();
   ImGui::SameLine();
-  ImGui::BeginDisabled(animating() || game.plyCount() == 0);
+  ImGui::BeginDisabled(animating() || game.plyCount() == 0 || mode == Mode::Online);
   if (ImGui::Button("Undo", ImVec2(bw, 0))) undo();
   ImGui::EndDisabled();
   ImGui::SameLine();
@@ -124,17 +124,33 @@ void App::drawUI() {
   if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
     ImGui::SetTooltip("Selects the best move for you: click the glowing square to play it");
   ImGui::Spacing();
-  const char* modes[] = {"You play White", "You play Black", "Two players", "Watch AI vs AI"};
+  const char* modes[] = {"You play White", "You play Black", "Two players", "Watch AI vs AI", "Play a friend online"};
   int mi = (int)mode;
   ImGui::SetNextItemWidth(-90 * S);
-  if (ImGui::Combo("Mode", &mi, modes, 4)) {
-    setMode((Mode)mi);
+  if (ImGui::Combo("Mode", &mi, modes, onlineAvailable() ? 5 : 4) && mi != (int)mode) {
+    if (mi == (int)Mode::Online) startOnline("");
+    else setMode((Mode)mi);
     if (mode == Mode::Watch) world.cam.autoSpin = 0.05f;
+  }
+  if (mode == Mode::Online) {
+    // the game's link, for the friend (and for coming back to the game)
+    if (!online.error.empty() || online.net == OnlineGame::Net::Closed) {
+      if (ImGui::Button("Start a new online game", ImVec2(-1, 0))) startOnline("");
+    } else if (!online.room.empty()) {
+      const char* you = online.side == chess::WHITE ? "White" : "Black";
+      if (!online.started) ImGui::TextWrapped("Send this link to a friend. You play %s; the game starts when they open it.", you);
+      else ImGui::TextDisabled("You play %s against your friend", you);
+      ImGui::PushStyleColor(ImGuiCol_Text, kGold);
+      ImGui::TextWrapped("%s", online.link.c_str());
+      ImGui::PopStyleColor();
+      if (ImGui::Button("Copy link", ImVec2(-1, 0))) copyOnlineLink();
+      if (online.copied > 0) ImGui::TextDisabled("%s", online.copyOk ? "Copied" : "Copy it from the address bar instead");
+    }
   }
   const char* levels[5];
   for (int i = 0; i < 5; ++i) levels[i] = chess::kAILevels[i].name;
   ImGui::SetNextItemWidth(-90 * S);
-  ImGui::BeginDisabled(mode == Mode::TwoPlayer);
+  ImGui::BeginDisabled(mode == Mode::TwoPlayer || mode == Mode::Online);
   ImGui::Combo("Opponent", &aiLevel, levels, 5);
   ImGui::EndDisabled();
   {

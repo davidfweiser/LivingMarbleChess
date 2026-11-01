@@ -60,9 +60,25 @@ struct Options {
   std::string loadingShot;        // capture the loading screen           // e.g. e2, pre-select a piece (screenshots)          // e.g. e5d6, played right after setup          // simulate without drawing (stress tests)
   int scenario = 0;               // canned positions for screenshots
   int pieces = 0;                 // 0 Living Marble, 1 medieval, 2 aliens
+  std::string join;               // the web page: join a friend's online game (its code)
 };
 
-enum class Mode { HumanWhite = 0, HumanBlack, TwoPlayer, Watch };
+// Online: against a friend in another browser, through the relay (the web page only)
+enum class Mode { HumanWhite = 0, HumanBlack, TwoPlayer, Watch, Online };
+
+// An online game's state (Mode::Online)
+struct OnlineGame {
+  enum class Net { Connecting, Open, Lost, Closed };
+  Net net = Net::Connecting;
+  std::string room, link;  // the game's code and the link to it
+  int side = chess::WHITE; // this player's
+  bool started = false;    // the friend has joined (the game can begin)
+  bool peer = false;       // the friend is here now
+  std::string error;       // why the relay said no
+  std::deque<std::string> moves;  // the friend's moves ("PLY UCI"), played when the board is at rest
+  float copied = 0;        // seconds left of "Copied"
+  bool copyOk = false;
+};
 
 class App {
  public:
@@ -105,8 +121,14 @@ class App {
   ImFont* fontTitle = nullptr;
   ImFont* fontBanner = nullptr;
 
-  void newGame();
+  void newGame(bool tellFriend = true);
   void undo();
+  // online games (the web page): a new one (this player is White) or a friend's by its code
+  bool onlineAvailable() const;
+  void startOnline(const std::string& code);
+  void leaveOnline();
+  void copyOnlineLink();
+  OnlineGame online;
   void flipCamera();
   void resetView();
   void setFullscreen(bool on);
@@ -148,6 +170,10 @@ class App {
   void drawLoading();
   void saveScreenshot(const std::string& path, int w, int h);
   void startAIIfNeeded();
+  void pollOnline(float dt);
+  void playOnlineMoves();
+  void syncOnline(const std::vector<std::string>& uci);
+  void rebuildWorld();
   void setupBattleDemo();
   void setupScenario();
 

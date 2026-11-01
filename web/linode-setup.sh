@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Living Marble - sets up a server (a Linode, or any Ubuntu 24.04 machine) to serve the
 # game's web page: builds it from GitHub with Emscripten, serves it with nginx over HTTPS
-# (a free Let's Encrypt certificate) with the headers the game's threads need.
+# (a free Let's Encrypt certificate) with the headers the game's threads need, and runs
+# the relay for online games (web/relay.py) as a service behind nginx at /ws.
 #
 #   sudo bash linode-setup.sh chess.example.com you@example.com
 #
@@ -47,10 +48,10 @@ if [ "$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)" -lt 3000 ] && ! swa
   grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
-say "Installing nginx, certbot and the Emscripten compiler"
+say "Installing nginx, certbot, the Emscripten compiler and the relay's websockets"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q nginx certbot python3-certbot-nginx git cmake make emscripten
+apt-get install -y -q nginx certbot python3-certbot-nginx git cmake make emscripten python3-websockets
 
 say "Getting the game ($BRANCH)"
 if [ -d "$SRC/.git" ]; then
@@ -78,6 +79,34 @@ if [ -d "$WEBROOT" ]; then mv "$WEBROOT" "$WEBROOT.old"; fi
 mv "$stage" "$WEBROOT"
 rm -rf "$WEBROOT.old"
 
+say "Starting the relay for online games"
+cat > /etc/systemd/system/living-marble-relay.service <<'EOF'
+# Living Marble - the relay for online games (written by web/linode-setup.sh)
+[Unit]
+Description=Living Marble relay for online games
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/living-marble/relay.py --host 127.0.0.1 --port 8765
+DynamicUser=yes
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+# (the games in progress live in the relay's memory: it restarts only when it has changed)
+if ! cmp -s "$SRC/web/relay.py" /opt/living-marble/relay.py; then
+  install -m 644 "$SRC/web/relay.py" /opt/living-marble/relay.py
+  systemctl enable living-marble-relay >/dev/null 2>&1 || true
+  systemctl restart living-marble-relay
+else
+  systemctl enable --now living-marble-relay >/dev/null 2>&1 || true
+fi
+
 say "Configuring nginx for $DOMAIN"
 listen6=""
 if [ -s /proc/net/if_inet6 ]; then listen6="listen [::]:80;"; fi
@@ -101,6 +130,18 @@ server {
     gzip_static on;
     location ~ \.wasm\$ { default_type application/wasm; }
     location / { try_files \$uri \$uri/ =404; }
+
+    # Online games: the relay (web/relay.py), over a WebSocket
+    location = /ws {
+        proxy_pass http://127.0.0.1:8765;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
 }
 EOF
 ln -sf /etc/nginx/sites-available/living-marble /etc/nginx/sites-enabled/living-marble
@@ -123,3 +164,4 @@ fi
 
 say "Done: $url"
 echo "Run this script again to update the page. The certificate renews itself."
+echo "The relay's log: journalctl -u living-marble-relay"

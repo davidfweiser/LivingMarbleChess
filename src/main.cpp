@@ -104,6 +104,7 @@ int main(int argc, char** argv) {
       std::string v = next();
       o.pieces = (v == "medieval" || v == "1") ? 1 : ((v == "alien" || v == "aliens" || v == "2") ? 2 : 0);
     }
+    else if (a == "--join") o.join = next();  // (the web page: a friend's online game, from ?join=)
     else if (a == "--selftest") o.selftest = true;
     else if (a == "--shot") o.shotPath = next();
     else if (a == "--frames") o.frames = std::atoi(next().c_str());

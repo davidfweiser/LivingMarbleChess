@@ -13,7 +13,10 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "net.h"
 #include "power.h"
+
+#include <sstream>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -437,7 +440,14 @@ bool App::tick() {
 }
 
 // ---------------------------------------------------------------------------
-void App::newGame() {
+void App::newGame(bool tellFriend) {
+  if (mode == Mode::Online) {
+    if (tellFriend) {
+      if (online.net != OnlineGame::Net::Open) return;  // (the friend has to hear of it)
+      net::command("new");
+    }
+    online.moves.clear();
+  }
   anims.clear();
   cancelHint();
   ai.cancel();
@@ -448,18 +458,36 @@ void App::newGame() {
   announcePending = false;
   hasLastMove = false;
   deselect();
-  if (!opt.fen.empty()) game.setFEN(opt.fen);
+  if (!opt.fen.empty() && mode != Mode::Online) game.setFEN(opt.fen);
   else game.reset();
   world.reset();
   world.cam.release(0.6f);
   world.spawnFromBoard(game.board().sq, true);
   world.sound(SFX_CHIME, 0.6f);
   audio.resumeMusic();
-  world.cam.setSide(mode == Mode::HumanBlack ? 1 : 0);
+  world.cam.setSide(mode == Mode::HumanBlack ? 1 : mode == Mode::Online ? online.side : 0);
   bannerText = "";
 }
 
+// Sets out the pieces, the ghosts of the captured ones and the last move's marks as the game
+// stands (after an undo, or an online game brought up to date).
+void App::rebuildWorld() {
+  anims.clear();
+  gameOverShown = false;
+  deselect();
+  hasLastMove = game.plyCount() > 0;
+  if (hasLastMove) lastMove = game.moves().back();
+  world.chunks.clear();
+  world.props.clear();
+  world.cam.release(0.6f);
+  world.spawnFromBoard(game.board().sq, true);
+  world.ghosts.clear();
+  for (const chess::Move& m : game.moves())
+    if (m.isCapture() && m.captured) world.addGhost((m.captured & 7) - 1, m.captured >> 3, 0.0f, true);
+}
+
 void App::undo() {
+  if (mode == Mode::Online) return;  // (both players see the same game)
   if (animating() || promoPending) return;
   if (game.plyCount() == 0) return;
   cancelHint();
@@ -470,18 +498,7 @@ void App::undo() {
   for (int i = 0; i < n && game.plyCount() > 0; ++i) game.undo();
   // make sure the human is to move again
   if (!isHumanTurn() && game.plyCount() > 0 && mode != Mode::Watch) game.undo();
-  gameOverShown = false;
-  deselect();
-  hasLastMove = game.plyCount() > 0;
-  if (hasLastMove) lastMove = game.moves().back();
-  world.chunks.clear();
-  world.props.clear();
-  world.cam.release(0.6f);
-  world.spawnFromBoard(game.board().sq, true);
-  // the ghosts of the pieces still captured
-  world.ghosts.clear();
-  for (const chess::Move& m : game.moves())
-    if (m.isCapture() && m.captured) world.addGhost((m.captured & 7) - 1, m.captured >> 3, 0.0f, true);
+  rebuildWorld();
   world.sound(SFX_CHIME, 0.5f, vec3(0), 0.8f);
   audio.resumeMusic();  // in case the game had ended
 }
@@ -489,12 +506,16 @@ void App::undo() {
 void App::flipCamera() { world.cam.yaw = wrapAngle(world.cam.yaw + kPI); }
 
 void App::resetView() {
-  world.cam.setSide(mode == Mode::HumanBlack ? 1 : mode == Mode::TwoPlayer ? game.board().side : 0);
+  world.cam.setSide(mode == Mode::HumanBlack ? 1
+                    : mode == Mode::TwoPlayer ? game.board().side
+                    : mode == Mode::Online    ? online.side
+                                              : 0);
   world.cam.pitch = 0.80f;
   world.cam.dist = 12.6f;
 }
 
 void App::setMode(Mode m) {
+  if (mode == Mode::Online && m != Mode::Online) leaveOnline();
   mode = m;
   cancelHint();
   ai.cancel();
@@ -632,6 +653,7 @@ bool App::isHumanTurn() const {
     case Mode::HumanWhite: return side == chess::WHITE;
     case Mode::HumanBlack: return side == chess::BLACK;
     case Mode::TwoPlayer: return true;
+    case Mode::Online: return online.started && online.net == OnlineGame::Net::Open && side == online.side;
     default: return false;
   }
 }
@@ -639,6 +661,18 @@ bool App::isHumanTurn() const {
 const char* App::statusText() const {
   static std::string s;
   chess::Result r = game.result();
+  if (mode == Mode::Online) {
+    if (!online.error.empty()) return online.error.c_str();
+    if (online.net == OnlineGame::Net::Connecting) return "Connecting to the server...";
+    if (online.net == OnlineGame::Net::Lost) return "Connection lost - reconnecting...";
+    if (online.net == OnlineGame::Net::Closed) return "Not connected";
+    if (r != chess::Result::Ongoing) return chess::resultText(r);
+    if (!online.started) return "Waiting for your friend to join...";
+    if (isHumanTurn()) s = "Your move";
+    else s = online.peer ? "Your friend's move" : "Your friend's move (they're away)";
+    if (game.board().inCheck()) s += "  -  Check!";
+    return s.c_str();
+  }
   if (r != chess::Result::Ongoing) return chess::resultText(r);
   bool white = game.board().side == chess::WHITE;
   if (!isHumanTurn() && aiPending) s = std::string(white ? "White" : "Black") + " is thinking...";
@@ -665,6 +699,7 @@ void App::select(int sq) {
 }
 
 void App::startAIIfNeeded() {
+  if (mode == Mode::Online) return;  // (the friend moves)
   if (aiPending || game.result() != chess::Result::Ongoing || isHumanTurn()) return;
   ai.start(game.board(), game.hashHistory(), aiLevel);
   aiPending = true;
@@ -676,7 +711,7 @@ constexpr int kHintLevel = 3;
 
 bool App::canHint() const {
   return !loading && anims.empty() && isHumanTurn() && game.result() == chess::Result::Ongoing && !promoPending &&
-         !hintPending && !aiPending;
+         !hintPending && !aiPending && mode != Mode::Online;  // (no help from the computer against a friend)
 }
 
 void App::requestHint() {
@@ -741,6 +776,8 @@ void App::commitMove(const chess::Move& m) {
   world.stopFidgets();
   // the music of the piece that moves (a promoted pawn: of what it becomes)
   audio.playMusic((m.flags & chess::MF_PROMO) ? m.promo - 1 : chess::pieceType(game.board().sq[m.from]) - 1);
+  if (mode == Mode::Online && game.board().side == online.side)  // this player's move: to the friend
+    net::command("move " + std::to_string(game.plyCount()) + " " + m.uci());
   game.play(m);
   lastMove = m;
   hasLastMove = true;
@@ -748,6 +785,155 @@ void App::commitMove(const chess::Move& m) {
   anims.push_back(makeMoveAnim(world, plan));
   announcePending = true;
   startAIIfNeeded();
+}
+
+// ---------------------------------------------------------------------------
+// Online games (the web page): the moves go through the relay (web/relay.py) to a friend's
+// browser, and theirs come back the same way.
+
+bool App::onlineAvailable() const { return net::available(); }
+
+// A new online game (code empty: this player is White and gets a link for a friend), or a
+// friend's game by its code. The board starts afresh; the relay's moves follow.
+void App::startOnline(const std::string& code) {
+  if (!net::available()) return;
+  if (mode == Mode::Online) leaveOnline();
+  setMode(Mode::Online);
+  online = OnlineGame();
+  newGame(false);
+  net::command(code.empty() ? std::string("create") : "join " + code);
+}
+
+void App::leaveOnline() {
+  net::command("close");
+  online = OnlineGame();
+  opt.join.clear();
+}
+
+void App::copyOnlineLink() { net::command("copy"); }
+
+// A move in long algebraic notation (e2e4, e7e8q), if it is legal here
+static bool legalFromUci(const chess::Board& b, const std::string& u, chess::Move& out) {
+  if (u.size() < 4 || u[0] < 'a' || u[0] > 'h' || u[2] < 'a' || u[2] > 'h' || u[1] < '1' || u[1] > '8' ||
+      u[3] < '1' || u[3] > '8')
+    return false;
+  int promo = 0;
+  if (u.size() > 4) {
+    size_t p = std::string(" pnbrqk").find(u[4]);
+    if (p == std::string::npos || p == 0) return false;
+    promo = (int)p;
+  }
+  return chess::findLegal(b, chess::makeSq(u[0] - 'a', u[1] - '1'), chess::makeSq(u[2] - 'a', u[3] - '1'), promo, out);
+}
+
+// What the page has heard from the relay since the last frame
+void App::pollOnline(float dt) {
+  if (online.copied > 0) online.copied -= dt;
+  std::string msg;
+  while (net::next(msg)) {
+    if (mode != Mode::Online) continue;  // (still on its way when this player left)
+    std::istringstream in(msg);
+    std::string kind;
+    in >> kind;
+    if (kind == "status") {
+      std::string s;
+      in >> s;
+      online.net = s == "open"     ? OnlineGame::Net::Open
+                   : s == "lost"   ? OnlineGame::Net::Lost
+                   : s == "closed" ? OnlineGame::Net::Closed
+                                   : OnlineGame::Net::Connecting;
+    } else if (kind == "room") {
+      std::string code, seat;
+      int full = 0, peer = 0;
+      in >> code >> seat >> full >> peer;
+      std::vector<std::string> uci;
+      for (std::string u; in >> u;) uci.push_back(u);
+      int side = seat == "b" ? chess::BLACK : chess::WHITE;
+      bool turn = online.room.empty() || side != online.side;
+      online.room = code;
+      online.side = side;
+      online.started = full != 0;
+      online.peer = peer != 0;
+      online.net = OnlineGame::Net::Open;
+      online.error.clear();
+      if (turn) world.cam.setSide(side);  // (the first time: from this player's side of the board)
+      syncOnline(uci);
+    } else if (kind == "link") {
+      std::getline(in >> std::ws, online.link);
+    } else if (kind == "move") {
+      std::string rest;
+      std::getline(in >> std::ws, rest);
+      online.moves.push_back(rest);
+    } else if (kind == "peer") {
+      int here = 0;
+      in >> here;
+      if (here && !online.peer) {
+        bannerText = online.started ? "Your friend is back" : "Your friend is here";
+        bannerTime = 2.5f;
+        world.sound(SFX_CHIME, 0.6f, vec3(0), 1.2f);
+      } else if (!here && online.peer) {
+        bannerText = "Your friend left";
+        bannerTime = 2.5f;
+      }
+      online.peer = here != 0;
+      if (here) online.started = true;
+    } else if (kind == "new") {
+      newGame(false);
+      bannerText = "Your friend started a new game";
+      bannerTime = 2.5f;
+    } else if (kind == "error") {
+      std::getline(in >> std::ws, online.error);
+    } else if (kind == "copied") {
+      int ok = 0;
+      in >> ok;
+      online.copyOk = ok != 0;
+      online.copied = 2.5f;
+    }
+  }
+}
+
+// The friend's moves, one at a time while the board is at rest
+void App::playOnlineMoves() {
+  if (!anims.empty() || promoPending || online.moves.empty() || game.result() != chess::Result::Ongoing) return;
+  std::string m = online.moves.front();
+  online.moves.pop_front();
+  int ply = std::atoi(m.c_str());
+  std::string u = m.substr(std::min(m.size(), m.find(' ') + 1));
+  if (ply < game.plyCount()) return;  // (already played)
+  chess::Move legal;
+  if (ply == game.plyCount() && game.board().side != online.side && legalFromUci(game.board(), u, legal)) {
+    commitMove(legal);
+  } else {
+    online.moves.clear();
+    net::command("sync");  // out of step: the relay sends the game as it stands
+  }
+}
+
+// The relay's record of the game (on joining, and coming back after a reload or a lost
+// connection): the friend's one missed move is played as usual; further off, the board is
+// set out afresh.
+void App::syncOnline(const std::vector<std::string>& uci) {
+  const std::vector<chess::Move>& mine = game.moves();
+  size_t same = 0;
+  while (same < mine.size() && same < uci.size() && mine[same].uci() == uci[same]) ++same;
+  online.moves.clear();
+  if (same == mine.size() && same == uci.size()) return;
+  if (same == mine.size() && uci.size() == same + 1) {
+    online.moves.push_back(std::to_string(same) + " " + uci[same]);
+    return;
+  }
+  cancelHint();
+  promoPending = false;
+  announcePending = false;
+  game.reset();
+  for (const std::string& u : uci) {
+    chess::Move m;
+    if (!legalFromUci(game.board(), u, m)) break;
+    game.play(m);
+  }
+  rebuildWorld();
+  world.sound(SFX_CHIME, 0.5f, vec3(0), 0.8f);
+  audio.resumeMusic();
 }
 
 // ---------------------------------------------------------------------------
@@ -945,6 +1131,10 @@ void App::updateGame(float dt) {
     hintPending = false;
     showHint(ai.result());
   }
+  if (mode == Mode::Online) {
+    playOnlineMoves();
+    return;
+  }
   if (!isHumanTurn()) {
     if (!aiPending) startAIIfNeeded();
     if (aiPending && ai.done()) {
@@ -1105,6 +1295,7 @@ void App::frame(float dt) {
         if (opt.selectSq.size() == 2) select(chess::makeSq(opt.selectSq[0] - 'a', opt.selectSq[1] - '1'));
       } else newGame();
       if (mode == Mode::Watch) world.cam.autoSpin = 0.05f;
+      if (!opt.join.empty()) startOnline(opt.join);  // the page was opened with a friend's link
     } else {
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
       glViewport(0, 0, fbW, fbH);
@@ -1120,6 +1311,8 @@ void App::frame(float dt) {
       return;
     }
   }
+
+  pollOnline(dt);
 
   // the medieval army finished building in the background
   for (int s = 1; s < 3; ++s) {

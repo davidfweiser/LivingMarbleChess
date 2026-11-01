@@ -5,7 +5,8 @@ The C++ version in `src/` also builds for the browser with
 Audio. It plays, looks and sounds like the Windows and Linux versions; like the
 iPhone and iPad it starts at one sculpting level less (`quality=2`) and *High*
 graphics. The whole page is about 1.3 MB to download (gzipped): the game,
-plus the DejaVu fonts for its text.
+plus the DejaVu fonts for its text. On the web you can also play a friend in
+another browser (see [Online games](#online-games)).
 
 It needs a current Chrome, Edge, Firefox or Safari (WebGL 2 with
 `EXT_color_buffer_float`), and it must be served with two headers, over HTTPS
@@ -25,10 +26,11 @@ sudo bash linode-setup.sh chess.example.com you@example.com
 ```
 
 [`linode-setup.sh`](linode-setup.sh) installs nginx, certbot and Emscripten,
-builds the page from GitHub, serves it with the headers above and gets a free
-Let's Encrypt certificate (it renews itself). Run it again to update the page
-to the latest version. The smallest plan is enough to serve it: once loaded,
-the game runs entirely in the player's browser. (On plans with less than 3 GB
+builds the page from GitHub, serves it with the headers above, gets a free
+Let's Encrypt certificate (it renews itself) and runs the relay for online
+games. Run it again to update the page to the latest version. The smallest
+plan is enough to serve it: once loaded, the game runs entirely in the player's
+browser, and the relay only passes moves along. (On plans with less than 3 GB
 of memory the script adds swap for the build.)
 
 The name has to be one you control: Let's Encrypt won't certify Linode's own
@@ -46,6 +48,16 @@ cmake --build build-web -j
 python3 web/serve.py build-web     # then open http://localhost:8080/
 ```
 
+`serve.py` serves only the page. To try online games on your own computer, the
+relay can serve the page as well (it needs `python3-websockets`):
+
+```sh
+python3 web/relay.py --static build-web   # then open http://localhost:8765/
+```
+
+Open the game's link in a private window (or another browser) to play the
+other side: each browser remembers which side it plays.
+
 The page is `build-web/index.html` with `living_marble.js`, `.wasm`,
 `.worker.js` and `.data` (the fonts) beside it.
 
@@ -62,6 +74,23 @@ The command line's options, as in `?pieces=medieval&quality=3&graphics=3`:
 | `level=0` .. `4` | the computer's strength |
 | `mute`, `no-music`, `dof` | no sound, no music, depth of field |
 | `fen=...` | start from a position |
+
+## Online games
+
+Choose *Play a friend online* under *Mode*. The game shows a link (and puts it
+in the address bar): send it to a friend. You play White, your friend Black,
+and the game starts when they open it. Every move goes through the relay,
+[`relay.py`](relay.py), running on the same server; both browsers check each
+move against the rules.
+
+- Reloading the page, or a dropped connection, comes back to the same game and
+  side: the relay keeps the moves, and each browser keeps a secret token for its
+  side. Anyone else opening the link once both sides are taken is turned away.
+- *New game* starts a new one for both players. *Undo* and *Hint* are off in
+  online games.
+- A game the relay hasn't heard from for a day is forgotten. Restarting the
+  relay forgets the games in progress, so `linode-setup.sh` restarts it only when
+  `relay.py` has changed. Its log: `journalctl -u living-marble-relay`.
 
 ## What is different in the browser
 

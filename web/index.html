@@ -67,6 +67,8 @@
   if (q.has('no-music') || q.has('nomusic')) args.push('--no-music');
   var fen = q.get('fen');
   if (fen && /^[1-8pnbrqkPNBRQK\/]+ [wb] [KQkq-]+ [a-h1-8-]+( \d+ \d+)?$/.test(fen)) args.push('--fen', fen);
+  var join = q.get('join');  // a friend's online game
+  if (join && /^[A-Za-z0-9]{4,16}$/.test(join)) args.push('--join', join.toUpperCase());
 
   // What the game needs from the browser
   var gl = document.createElement('canvas').getContext('webgl2');
@@ -87,6 +89,106 @@
          '<code>Cross-Origin-Embedder-Policy: require-corp</code>. See web/README.md.</p>');
     return;
   }
+
+  // Online games: the connection to the relay (web/relay.py, at /ws on this server). The game
+  // (src/net.cpp) sends plain commands and reads plain lines from the inbox.
+  window.lmNet = (function () {
+    var ws = null, room = null, inbox = [], wanted = false, tries = 0, timer = 0;
+    function post(s) { inbox.push(s); }
+    function linkTo(code) {
+      var u = new URL(location.href);
+      u.search = ''; u.hash = '';
+      u.searchParams.set('join', code);
+      return u.toString();
+    }
+    function setAddress(code) {  // the address bar shows the game's link (a reload comes back to it)
+      try {
+        var u = new URL(location.href);
+        if (code) u.searchParams.set('join', code); else u.searchParams.delete('join');
+        history.replaceState(null, '', u.toString());
+      } catch (e) {}
+    }
+    function token(code, value) {  // each player's seat, kept in this browser
+      try {
+        if (value) localStorage.setItem('lm-game-' + code, value);
+        return localStorage.getItem('lm-game-' + code) || '';
+      } catch (e) { return ''; }
+    }
+    function hello() { return room ? { t: 'join', room: room, token: token(room) } : { t: 'create' }; }
+    function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
+    function connect() {
+      clearTimeout(timer);
+      post(tries ? 'status lost' : 'status connecting');
+      var s;
+      try { s = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); }
+      catch (e) { post('error Online games aren\'t available here.'); post('status closed'); wanted = false; return; }
+      ws = s;
+      s.onopen = function () { s.send(JSON.stringify(hello())); };
+      s.onmessage = function (e) {
+        var m;
+        try { m = JSON.parse(e.data); } catch (x) { return; }
+        if (m.t === 'room') {
+          tries = 0;
+          room = m.room;
+          token(room, m.token);
+          setAddress(room);
+          post('link ' + linkTo(room));
+          post(['room', room, m.seat, m.full ? 1 : 0, m.peer ? 1 : 0].concat(m.moves || []).join(' '));
+          post('status open');
+        } else if (m.t === 'move') post('move ' + (m.ply | 0) + ' ' + m.uci);
+        else if (m.t === 'peer') post('peer ' + (m.here ? 1 : 0));
+        else if (m.t === 'new') post('new');
+        else if (m.t === 'error') { wanted = false; post('error ' + m.why); post('status closed'); }
+      };
+      s.onclose = function (e) {
+        if (ws !== s) return;
+        ws = null;
+        if (!wanted) return;
+        if (e.code === 4000) {
+          wanted = false;
+          post('error This game is now open in another tab or window.');
+          post('status closed');
+          return;
+        }
+        tries++;  // lost: try again, waiting longer each time (up to half a minute)
+        if (!room && tries > 3) {
+          wanted = false;
+          post('error The server for online games can\'t be reached.');
+          post('status closed');
+          return;
+        }
+        post('status lost');
+        timer = setTimeout(connect, Math.min(30000, 1000 * Math.pow(2, Math.min(tries - 1, 5))));
+      };
+    }
+    function copy() {
+      var l = room ? linkTo(room) : '';
+      if (l && navigator.clipboard && navigator.clipboard.writeText)
+        navigator.clipboard.writeText(l).then(function () { post('copied 1'); }, function () { post('copied 0'); });
+      else post('copied 0');
+    }
+    return {
+      inbox: inbox,
+      cmd: function (c) {
+        var a = c.split(' ');
+        if (a[0] === 'create' || a[0] === 'join') {
+          if (ws) { var old = ws; ws = null; old.close(); }
+          wanted = true; tries = 0;
+          room = a[0] === 'join' ? String(a[1] || '').toUpperCase() : null;
+          connect();
+        } else if (a[0] === 'move') send({ t: 'move', ply: +a[1], uci: a[2] });
+        else if (a[0] === 'new') send({ t: 'new' });
+        else if (a[0] === 'sync') send(hello());
+        else if (a[0] === 'copy') copy();
+        else if (a[0] === 'close') {
+          wanted = false; clearTimeout(timer);
+          if (ws) { var s = ws; ws = null; s.close(); }
+          room = null;
+          setAddress(null);
+        }
+      }
+    };
+  })();
 
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });  // right-drag turns the board
   window.addEventListener('keydown', function (e) { if (e.key === 'F1') e.preventDefault(); });  // the game's help

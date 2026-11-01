@@ -133,7 +133,8 @@ add_executable(living_marble
   src/music_score.cpp
   src/ui.cpp
   src/image_io.cpp
-  src/power.cpp)
+  src/power.cpp
+  src/net.cpp)
 
 target_include_directories(living_marble PRIVATE src)
 if(EMSCRIPTEN)
