@@ -96,6 +96,10 @@ logs in or creates an account before playing: a name (3 to 16 letters, digits,
   password. A player who has lost the code too: run
   `sudo living-marble-admin --reset-code NAME` on the server and give them the
   new code it prints.
+- In the game, **Home page** (in the panel, or the Menu on a touch screen) goes
+  back to the front page. The game waits there as it was, silent and paused,
+  and *Back to the game* returns to it at once (logging out there ends it). It
+  is off during a rated game, and it stops a search for an opponent.
 - In the game, the **Account** button (bottom right) changes the password, makes
   a new recovery code, or logs out. Changing the password, or using a recovery
   code, logs the account out everywhere else, pages open there included (a
@@ -204,12 +208,14 @@ screen), with the touch controls of the iPhone and iPad app:
   to tilt it.
 - The status (and in rated games the players and their clocks) is at the top, a
   toolbar at the bottom (down the right edge of a phone on its side): *New*
-  (tapped twice, so a stray tap doesn't end a game), *Undo*, *Hint*, *Flip*,
-  *Moves* and *Menu*. In an online game *Draw* and *Resign* take Undo's and
-  Hint's places. On an iPad the move list stays beside the board.
-- *Menu* has everything else: the mode (online games too), the opponent, the
-  pieces, the sound, the graphics, the account, *Reset view*, help, and *Hide*
-  for a clear view of the board. Drag it up or down to scroll it.
+  (during a game it asks first, so a stray tap doesn't end one), *Undo*,
+  *Hint*, *Flip*, *Moves* and *Menu*. In an online game *Draw* and *Resign*
+  take Undo's and Hint's places. On an iPad the move list stays beside the
+  board.
+- *Menu* has everything else: *Home page* (back to the front page), the mode
+  (online games too), the opponent, the pieces, the sound, the graphics, the
+  account, *Reset view*, help, and *Hide* for a clear view of the board. Drag
+  it up or down to scroll it.
 - *Share link* sends a friend's game with the share sheet.
 - A phone sculpts one level less (`quality=1`) and draws *Medium* graphics, to
   load quicker and spare its memory and battery; an iPad starts like a computer.

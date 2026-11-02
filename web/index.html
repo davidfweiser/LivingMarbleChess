@@ -635,7 +635,12 @@
   $('codeSaved').addEventListener('change', function () { $('codePlay').disabled = !this.checked; });
   $('codePlay').addEventListener('click', function () { startGame(); });
   $('welcomePlay').addEventListener('click', function () { startGame(); });
-  $('welcomeOut').addEventListener('click', function () { lmNet.logout().then(function () { show('login'); }); });
+  $('welcomeOut').addEventListener('click', function () {
+    lmNet.logout().then(function () {
+      if (started) location.href = location.pathname;  // (the game waiting behind the front page was theirs)
+      else show('login');
+    });
+  });
 
   function welcome(me) {
     $('welcomeName').textContent = me.name;
@@ -655,14 +660,24 @@
 
   // ---- the game
   var started = false;
+  var atHome = false;  // the game's Home page button: the front page over the game, which waits as it is
   function fail(html) {
     overlay.hidden = false;
     statusEl.textContent = '';
     errorEl.innerHTML = html;
     errorEl.hidden = false;
   }
+  function showGame(on) {  // the game, or the front page
+    document.body.classList.toggle('front', !on);
+    document.body.classList.toggle('game', on);
+    document.documentElement.classList.toggle('game', on);  // (no scrolling under the game)
+    window.scrollTo(0, 0);
+  }
   function startGame() {
-    if (started) return;
+    if (started) {
+      if (atHome) backToGame();
+      return;
+    }
     var bad = unsupported();
     if (bad) {
       $('unsupported').innerHTML = bad;
@@ -671,10 +686,7 @@
       return;
     }
     started = true;
-    document.body.classList.remove('front');
-    document.body.classList.add('game');
-    document.documentElement.classList.add('game');  // (no scrolling under the game)
-    window.scrollTo(0, 0);
+    showGame(true);
     overlay.hidden = false;
     canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });  // right-drag turns the board
     canvas.addEventListener('webglcontextlost', function (e) {
@@ -783,7 +795,8 @@
     $('newCodeErr').textContent = 'Your new recovery code (the old one no longer works). Save it somewhere safe.';
   };
   lmNet.onLoggedOut = function () {
-    if (!started) { show('login'); return; }
+    if (!started || atHome) show('login');
+    if (!started) return;
     $('dialog').hidden = true;
     $('accountBtn').textContent = 'Log in';
   };
@@ -792,8 +805,36 @@
     if (lmNet.player()) openDialog();
     else location.reload();
   };
+
+  // The game's Home page button: the front page, with the game waiting behind it as it was
+  // (silent, its frames stopped). Its Play button, now "Back to the game", returns to it at once.
+  window.lmHome = function () {
+    if (!started || atHome) return;
+    atHome = true;
+    $('dialog').hidden = true;
+    $('accountBtn').hidden = true;
+    $('invite').hidden = true;
+    $('welcomePlay').textContent = 'Back to the game';
+    var d = document;
+    if (d.fullscreenElement && d.exitFullscreen) d.exitFullscreen().catch(function () {});
+    else if (d.webkitFullscreenElement && d.webkitExitFullscreen) d.webkitExitFullscreen();
+    showGame(false);
+    var me = lmNet.player();
+    if (me) welcome(me);
+    else show('login');  // (logged out meanwhile: log in, then back to the game)
+  };
+  function backToGame() {
+    atHome = false;
+    showGame(true);
+    var me = lmNet.player();
+    $('accountBtn').textContent = me ? me.name : 'Log in';
+    $('accountBtn').hidden = false;
+    canvas.focus();
+    if (window.Module && Module._lm_back_to_game) Module._lm_back_to_game();
+  }
+
   // iPhone and iPad: two fingers on the game zoom the board, never the page
-  document.addEventListener('gesturestart', function (e) { if (started) e.preventDefault(); });
+  document.addEventListener('gesturestart', function (e) { if (started && !atHome) e.preventDefault(); });
   // iPhone and iPad stop the sound when the browser is put away: the next touch brings it back
   ['touchend', 'click'].forEach(function (type) {
     document.addEventListener(type, function () {

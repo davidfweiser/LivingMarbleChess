@@ -184,7 +184,14 @@ class App {
   ImFont* fontBanner = nullptr;
 
   void newGame(bool tellFriend = true);
+  bool canStartNew() const;  // whether New would start a game now (not during a rated game, or while it connects)
   void undo();
+  // the web page's Home page button: back to the front page, with the game kept as it is (the
+  // front page's "Back to the game" comes back to it). Not during a rated game.
+  bool canGoHome() const;
+  void goHome();
+  void backFromHome();
+  bool atHome = false;
   // online games (the web page): a new one (this player is White) or a friend's by its code
   bool onlineAvailable() const;
   void startOnline(const std::string& code);
@@ -251,6 +258,7 @@ class App {
   void drawTouchUI();
   void drawTouchShowButton();
   void drawSettings(float S);
+  void drawHomeButton();
   void drawMoves(const ImVec2& pos, const ImVec2& pivot, float width, float maxHeight, float S);
   void drawHelp(float S);
   void drawClocks(float S);
@@ -302,7 +310,7 @@ class App {
   bool checkAnnounced = false;
   bool rightDrag = false;
   TouchInput touch;
-  double newAsked = -1;  // the touch toolbar's "New?": a second tap starts a new game
+  bool askNew = false;  // the touch toolbar's New: ask before a game in progress ends
   // the camera at rest: tall (portrait) views look down more steeply from closer in, so the
   // board fills their width (as on the iPhone and iPad)
   int tallView = -1;  // the view is portrait-shaped (1) or not (0); -1 before the first frame

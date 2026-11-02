@@ -296,7 +296,9 @@ void App::drawUI() {
     }
     ImGui::Spacing();
     float bw = (300 * S - 32 * S - 16 * S) / 3.0f;
+    ImGui::BeginDisabled(!canStartNew());
     if (ImGui::Button("New game", ImVec2(bw, 0))) newGame();
+    ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::BeginDisabled(animating() || game.plyCount() == 0 || mode == Mode::Online);
     if (ImGui::Button("Undo", ImVec2(bw, 0))) undo();
@@ -312,6 +314,10 @@ void App::drawUI() {
                                   : "Selects the best move for you: click the glowing square to play it");
     ImGui::Spacing();
     drawSettings(S);
+#ifdef __EMSCRIPTEN__
+    ImGui::Spacing();
+    drawHomeButton();
+#endif
     ImGui::End();
 
     drawLeaderboard(S);
@@ -428,6 +434,18 @@ void App::drawSettings(float S) {
   }
 }
 
+// The web page's way back to its front page (the game waits there as it is)
+void App::drawHomeButton() {
+#ifdef __EMSCRIPTEN__
+  const bool can = canGoHome();
+  ImGui::BeginDisabled(!can);
+  if (ImGui::Button("Home page", ImVec2(-1, 0))) goHome();
+  ImGui::EndDisabled();
+  if (!can) ImGui::TextDisabled("Finish the game, or resign, to leave it");
+  else if (ImGui::IsItemHovered()) ImGui::SetTooltip("Back to the front page; the game waits for you there");
+#endif
+}
+
 // The moves so far, in a window at pos (pivot: which of its corners that is)
 void App::drawMoves(const ImVec2& pos, const ImVec2& pivot, float width, float maxHeight, float S) {
   const auto& san = game.san();
@@ -499,8 +517,9 @@ void App::drawHelp(float S) {
     bullet("Drag with one finger: turn the board - even look underneath");
     bullet("Two fingers: pinch to zoom, twist to turn the board, slide up or down to tilt");
     bullet("Hint selects the best move for you: tap the glowing square to play it");
-    bullet("New asks once more (tap it again) before it ends a game");
+    bullet("New starts a new game (it asks first if a game is going on)");
     bullet("Menu: the mode (online games too), the opponent, the pieces, the sound and the graphics");
+    bullet("Menu, Home page: back to the front page; Back to the game there returns to it as it was");
     if (!fullscreenAvailable) bullet("The whole screen: Safari's Share button, then Add to Home Screen");
   } else {
     ImGui::BulletText("Left-click a piece, then a glowing square to move");
@@ -558,11 +577,10 @@ void App::drawTouchUI() {
     What what;
   } tools[7];
   int n = 0;
-  // a stray tap mustn't throw a game away: New asks once more
-  const bool newArmed = newAsked >= 0 && now - newAsked < 3.0;
+  // a stray tap mustn't throw a game away: New asks first, if one is going on
   const bool playing = game.plyCount() > 0 && game.result() == chess::Result::Ongoing &&
                        (mode != Mode::Online || online.endText.empty());
-  tools[n++] = {newArmed ? "New?" : "New", !(match && (onlineGameOn() || online.seeking)), NEW};
+  tools[n++] = {"New", canStartNew(), NEW};
   if (live) {
     tools[n++] = {online.myDrawOffer ? "Offered" : "Draw", !online.myDrawOffer && !online.drawOffered, DRAW};
     tools[n++] = {resignArmed() ? "Sure?" : "Resign", true, RESIGN};
@@ -596,7 +614,7 @@ void App::drawTouchUI() {
   for (int i = 0; i < n; ++i) {
     const Tool& t = tools[i];
     if (i && !side) ImGui::SameLine();
-    bool armed = (t.what == NEW && newArmed) || (t.what == RESIGN && resignArmed());
+    bool armed = t.what == RESIGN && resignArmed();
     bool on = (t.what == MENU && showMenu) || (t.what == MOVES && showMoves);
     if (armed) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.12f, 0.9f));
     else if (on) ImGui::PushStyleColor(ImGuiCol_Button, st.Colors[ImGuiCol_ButtonActive]);
@@ -607,12 +625,8 @@ void App::drawTouchUI() {
     if (!pressed) continue;
     switch (t.what) {
       case NEW:
-        if (newArmed || !playing || mode == Mode::Watch) {
-          newAsked = -1;
-          newGame();
-        } else {
-          newAsked = now;
-        }
+        if (playing && mode != Mode::Watch) askNew = true;
+        else newGame();
         break;
       case UNDO: undo(); break;
       case HINT: requestHint(); break;
@@ -711,6 +725,7 @@ void App::drawTouchUI() {
       ImGui::TextDisabled("%s", ver);
     }
     ImGui::Separator();
+    drawHomeButton();
     drawSettings(S);
     ImGui::Separator();
 #ifdef __EMSCRIPTEN__
@@ -728,6 +743,32 @@ void App::drawTouchUI() {
       showMenu = false;
     }
     ImGui::End();
+  }
+
+  // ---------------- New, during a game: are you sure? ----------------
+  if (askNew) {
+    ImGui::OpenPopup("##new");
+    askNew = false;
+  }
+  ImGui::SetNextWindowPos(ImVec2(D.x * 0.5f, D.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowSize(ImVec2(std::min(D.x - 32 * S, 340 * S), 0), ImGuiCond_Always);
+  if (ImGui::BeginPopupModal("##new", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize)) {
+    ImGui::PushFont(fontTitle);
+    ImGui::TextColored(kGold, "Start a new game?");
+    ImGui::PopFont();
+    ImGui::TextWrapped("%s", mode == Mode::Online ? "The game starts again for your friend too."
+                                                  : "The game you are playing will end.");
+    ImGui::Spacing();
+    const float half = (ImGui::GetContentRegionAvail().x - st.ItemSpacing.x) * 0.5f;
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.12f, 0.9f));
+    if (ImGui::Button("New game", ImVec2(half, 44 * S))) {
+      newGame();
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    if (ImGui::Button("Keep playing", ImVec2(half, 44 * S))) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
   }
 
   drawLeaderboard(S);

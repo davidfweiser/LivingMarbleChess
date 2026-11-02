@@ -52,6 +52,8 @@ EM_BOOL webWheelCb(int, const EmscriptenWheelEvent* ev, void* user) {
   return EM_TRUE;  // the page itself doesn't scroll or zoom
 }
 
+App* webApp = nullptr;  // the game, for the page's calls into it (lm_back_to_game)
+
 // Fingers on the canvas (App::onTouch)
 EM_BOOL webTouchCb(int type, const EmscriptenTouchEvent* ev, void* user) {
   static_cast<App*>(user)->onTouch(type, ev);
@@ -112,6 +114,13 @@ RenderSettings presetSettings(int p) {
   return s;
 }
 }  // namespace
+
+#ifdef __EMSCRIPTEN__
+// The front page's "Back to the game" (web/index.html), after the game's Home page button
+extern "C" EMSCRIPTEN_KEEPALIVE void lm_back_to_game() {
+  if (webApp) webApp->backFromHome();
+}
+#endif
 
 App::App(const Options& o) : opt(o) {
   gfxPreset = o.gfxPreset;
@@ -422,6 +431,7 @@ int App::run() {
 #ifdef __EMSCRIPTEN__
   // The browser runs the loop: it calls tick() for every frame it shows, and run() returns
   // with the game still going. (A swap interval of n draws every n-th of the display's frames.)
+  webApp = this;
   emscripten_set_main_loop_arg([](void* app) { static_cast<App*>(app)->tick(); }, this, 0, false);
   glfwSwapInterval(1);
   return 0;
@@ -442,6 +452,7 @@ int App::run() {
 bool App::tick() {
   if (glfwWindowShouldClose(win) || quitRequested) return false;
 #ifdef __EMSCRIPTEN__
+  if (atHome) return true;  // the front page is showing (the canvas hidden): nothing to draw
   // a lowered frame rate the swap interval can't keep to: skip the browser's frame (the canvas keeps the last one)
   if (frameDue > 0 && glfwGetTime() < frameDue) return true;
   fitCanvas(win);
@@ -478,6 +489,10 @@ void App::newGame(bool tellFriend) {
         if (!onlineGameOn() && !online.seeking) startMatch();
         return;
       }
+      if (!online.error.empty() || online.net == OnlineGame::Net::Closed) {  // (no game to start again: a new
+        startOnline("");                                                     // one, with a new link)
+        return;
+      }
       if (online.net != OnlineGame::Net::Open) return;  // (the friend has to hear of it)
       net::command("new");
     }
@@ -507,6 +522,41 @@ void App::newGame(bool tellFriend) {
   audio.resumeMusic();
   world.cam.setSide(mode == Mode::HumanBlack ? 1 : mode == Mode::Online ? online.side : 0);
   bannerText = "";
+}
+
+bool App::canStartNew() const {
+  if (mode != Mode::Online) return true;
+  if (online.kind == OnlineGame::Kind::Match) return !onlineGameOn() && !online.seeking;  // (another opponent, after)
+  return online.net == OnlineGame::Net::Open || online.net == OnlineGame::Net::Closed || !online.error.empty();
+}
+
+bool App::canGoHome() const { return !(mode == Mode::Online && online.kind == OnlineGame::Kind::Match && onlineGameOn()); }
+
+// The front page over the game, which waits as it is: silent, its frames stopped (the browser
+// keeps the WebAssembly and the sculpted pieces, so coming back is at once). An online game with
+// a friend stays open; looking for an opponent stops (a game would start with nobody there).
+void App::goHome() {
+#ifdef __EMSCRIPTEN__
+  if (atHome || !canGoHome()) return;
+  if (!EM_ASM_INT({ return window.lmHome ? 1 : 0; })) return;  // (a page without a front page to show)
+  if (mode == Mode::Online && online.seeking) setMode(Mode::HumanWhite);
+  atHome = true;
+  showMenu = false;
+  showHelp = false;
+  audio.setVolume(0);
+  emscripten_pause_main_loop();
+  EM_ASM({ if (window.lmHome) window.lmHome(); });
+#endif
+}
+
+void App::backFromHome() {
+#ifdef __EMSCRIPTEN__
+  if (!atHome) return;
+  atHome = false;
+  audio.setVolume(volume);
+  prevTime = glfwGetTime();
+  emscripten_resume_main_loop();
+#endif
 }
 
 // Sets out the pieces, the ghosts of the captured ones and the last move's marks as the game
@@ -1003,6 +1053,7 @@ void App::pollOnline(float dt) {
       online.seeking = false;
     } else if (kind == "seeking") {
       online.seeking = true;
+      online.net = OnlineGame::Net::Open;  // (the page was connected already: no "status open" comes)
     } else if (kind == "room") {
       std::string code, seat;
       int full = 0, peer = 0, rated = 0;
