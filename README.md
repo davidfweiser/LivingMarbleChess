@@ -2,9 +2,9 @@
 
 ![The marble set on the floating board, with the game's panel](docs/screenshots/board.jpg)
 
-| Living Marble | Medieval | Aliens |
-| :---: | :---: | :---: |
-| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) |
+| Living Marble | Medieval | Aliens | Romans |
+| :---: | :---: | :---: | :---: |
+| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) | ![A legionary pole-vaults over his enemy in a somersault](docs/screenshots/roman-battle.jpg) |
 
 A photoreal 3D chess game in C++ where carved marble Staunton pieces come alive:
 they hop, lean, wobble and turn to face each other — and every capture is a

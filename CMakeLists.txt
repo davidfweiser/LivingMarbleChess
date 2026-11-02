@@ -173,7 +173,7 @@ if(EMSCRIPTEN)
   configure_file(LICENSE LICENSE.txt COPYONLY)
   configure_file(THIRD_PARTY_NOTICES.txt THIRD_PARTY_NOTICES.txt COPYONLY)
   # the front page's pictures
-  foreach(shot web-board marble-battle medieval-battle alien-battle)
+  foreach(shot web-board marble-battle medieval-battle alien-battle roman-battle)
     configure_file(docs/screenshots/${shot}.jpg screens/${shot}.jpg COPYONLY)
   endforeach()
   # iPhone and iPad: the icon of the game added to the Home Screen
