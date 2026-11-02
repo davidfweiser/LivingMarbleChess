@@ -136,7 +136,6 @@ const vec3 gripR = K(-0.13f, 0.83f, 0.13f), gripL = K(0.10f, 0.815f, 0.12f);
 namespace cj {
 const vec3 bridge(0, 0.012f, 0.174f), gate(0, 0.0f, 0.11f), flag(0.215f, 1.2f, 0.1f);
 const vec3 hipL(0.115f, 0.02f, -0.04f), kneeL(0.125f, -0.17f, 0.0f), ankleL(0.125f, -0.35f, -0.03f);
-const float legH = 0.42f;  // how far the tower rises when it stands up
 }  // namespace cj
 
 // The dragon: body centred over the origin, facing +z, about 1.4 long.
@@ -966,7 +965,7 @@ Model knightModel() {
              float r = glm::mix(0.013f, 0.007f, t) * KS;
              return glm::length(p - (butt + ab * t)) - r;
            }, (butt + tip) * 0.5f, glm::length(tip - butt) * 0.5f + 0.02f));
-    m.paint(MT_CLOTH2, fnS([butt, g](const vec3& p) {
+    m.paint(MT_CLOTH2, fnS([g](const vec3& p) {
               vec3 q = p - g;
               float a = std::atan2(q.x, q.z);
               float band = std::sin(q.y / KS * 60.0f + a * 2.0f);

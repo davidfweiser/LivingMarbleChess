@@ -152,7 +152,7 @@ void horsePose(const Controls& c, Pose& out) {
 void castlePose(const Controls& c, Pose& out) {
   const Skeleton& sk = skeleton(A_ROOK);
   Builder b(sk);
-  const float legH = 0.42f;
+  const float legH = 0.42f;  // how far the tower rises when it stands up
   float L = glm::clamp(c.legs, 0.0f, 1.0f);
   float st = c.stride;
   float sL = std::sin(c.gait), cL = std::cos(c.gait);
