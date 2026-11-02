@@ -239,6 +239,7 @@
   #outgoing { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; border-radius: 12px;
               background: rgba(242, 200, 115, 0.07); border: 1px solid var(--gold2); }
   #outgoing .otext { flex: 1; min-width: 0; }
+  .unrated-note { display: block; color: var(--gold2); font-size: 0.84rem; margin: 8px 0 0; }
   #lobbyToast { position: fixed; z-index: 13; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
                 width: max-content; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 10px;
                 background: #2a2016; border: 1px solid var(--gold2); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6); }
@@ -456,7 +457,8 @@
 
     <div id="outgoing" hidden>
       <span class="avatar small" id="outIcon"></span>
-      <span class="otext">Asking <b id="outName"></b> to play&hellip; <span class="hint" id="outTime"></span></span>
+      <span class="otext">Asking <b id="outName"></b> to play&hellip; <span class="hint" id="outTime"></span>
+        <span class="unrated-note" id="outUnrated" hidden></span></span>
       <button type="button" class="act" id="outCancel">Cancel</button>
     </div>
 
@@ -505,6 +507,7 @@
       <button type="button" class="linkish hint" id="incLook">See their stats</button>
     </div>
   </div>
+  <p class="unrated-note" id="incUnrated" hidden></p>
   <div class="timebar"><i id="incBar"></i></div>
   <div class="inc-buttons">
     <button type="button" class="btn" id="incYes">Play</button>
@@ -632,6 +635,7 @@
         post('link ' + linkTo(room));
         post(['room', room, m.seat, m.full ? 1 : 0, m.peer ? 1 : 0, m.rated ? 1 : 0].concat(m.moves || []).join(' '));
         if (m.players) post(['players', m.players.w.name, m.players.w.rating, m.players.b.name, m.players.b.rating].join(' '));
+        if (m.unrated) post('unrated ' + m.unrated);
         if (m.clock) post(clockLine(m.clock));
         if (m.end) post(endLine(m.end));
         if (m.draw) post('draw');
@@ -1433,6 +1437,8 @@
     if (!o) return;
     setAvatar($('outIcon'), o.to.icon, o.to.name);
     $('outName').textContent = o.to.name;
+    $('outUnrated').hidden = !o.unrated;
+    $('outUnrated').textContent = o.unrated || '';
     tick();
   }
   $('outCancel').addEventListener('click', function () { lmNet.send({ t: 'unchallenge' }); });
@@ -1445,6 +1451,8 @@
     var stats = $('incStats');
     stats.textContent = 'Rating ' + x.from.rating + ' · ';
     if (x.from.games) addRecord(stats, x.from); else stats.appendChild(document.createTextNode('new player'));
+    $('incUnrated').hidden = !x.unrated;
+    $('incUnrated').textContent = x.unrated || '';
     $('incMore').hidden = lob.inc.length < 2;
     $('incMore').textContent = lob.inc.length > 1 ? plural(lob.inc.length - 1, 'more player') + ' asked you too.' : '';
     $('incYes').disabled = $('incNo').disabled = false;
@@ -1485,7 +1493,8 @@
     } else if (m.t === 'challenged') {
       if (incomingFrom(m.from.name) && incomingFrom(m.from.name).id === m.id) return;
       lob.inc = lob.inc.filter(function (x) { return !same(x.from.name, m.from.name); });
-      lob.inc.push({ id: m.id, from: m.from, until: Date.now() + m.seconds * 1000, total: m.seconds * 1000 });
+      lob.inc.push({ id: m.id, from: m.from, until: Date.now() + m.seconds * 1000, total: m.seconds * 1000,
+                     unrated: m.unrated || null });
       $('incYes').textContent = 'Play';
       renderIncoming();
       chime();
@@ -1493,7 +1502,7 @@
       renderLobby();
       if (lob.card && same(lob.card.name, m.from.name)) renderCard();
     } else if (m.t === 'challenge_sent') {
-      lob.out = { id: m.id, to: m.to, until: Date.now() + m.seconds * 1000 };
+      lob.out = { id: m.id, to: m.to, until: Date.now() + m.seconds * 1000, unrated: m.unrated || null };
       renderOutgoing();
       lob.key = '';
       renderLobby();
@@ -1625,7 +1634,7 @@
       }
       var facts = el('div', 'facts');
       if (m.played) fact(facts, String(m.played), (m.played === 1 ? 'game' : 'games') + ' played' +
-                         (m.friendly ? ' (' + m.friendly + ' with friends)' : ''));
+                         (m.unrated_games ? ' (' + m.unrated_games + ' unrated)' : ''));
       if (m.mates) fact(facts, String(m.mates), plural(m.mates, 'checkmate').replace(/^\d+ /, '') + ' delivered' +
                         (m.quickest ? ', the fastest in ' + plural(m.quickest, 'move') : ''));
       if (m.best_streak >= 2) fact(facts, String(m.best_streak), 'wins in a row at best');
@@ -1652,7 +1661,7 @@
           row.appendChild(oav);
           var tx = el('span', 'rtext', 'vs ' + (g.opp ? g.opp.name : 'a deleted player'));
           var how = howItEnded(g);
-          tx.appendChild(el('small', '', [how, g.moves ? plural(g.moves, 'move') : '', g.rated ? '' : 'with a friend',
+          tx.appendChild(el('small', '', [how, g.moves ? plural(g.moves, 'move') : '', g.rated ? '' : 'unrated',
                                           ago(g.ended)].filter(Boolean).join(' · ')));
           row.appendChild(tx);
           if (g.change != null) {
@@ -1679,6 +1688,7 @@
     b.className = 'btn' + (a.go ? '' : ' quiet');
     if (a.fn && !mineCard) b.addEventListener('click', function () { $('profile').hidden = true; });
     act.appendChild(b);
+    if (m.unrated && a.fn && !mineCard) act.appendChild(el('p', 'unrated-note', m.unrated));
     body.appendChild(act);
   }
 

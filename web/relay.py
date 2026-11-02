@@ -12,8 +12,10 @@ Browsers connect with a WebSocket at /ws (behind nginx). The server
 
 Two kinds of game:
 - with a friend: one player creates it and sends the link (?join=CODE). Untimed, unrated.
-- matched: two players from the queue, 10 minutes each plus 5 seconds a move. Rated (Elo).
-  Resigning, running out of time or staying away for 90 seconds loses; a game that ends
+- matched: two players from the lobby, 10 minutes each plus 5 seconds a move. Rated (Elo),
+  unless the two are on the same internet connection, or have played 3 rated games with each
+  other in the last 24 hours (then it's played the same way, and their ratings stay as they
+  are). Resigning, running out of time or staying away for 90 seconds loses; a game that ends
   before both players have moved is aborted (unrated).
 
 Players have accounts: a name and a password (kept as a scrypt hash), and a recovery code
@@ -72,6 +74,8 @@ TOP_MIN_GAMES = 5                # on the leaderboard after this many rated game
 TOP_SIZE = 20
 LOBBY_SIZE = 80                  # the lobby lists this many players at most,
 LOBBY_GAMES = 30                 # and this many of the games going on
+PAIR_RATED_GAMES = 3             # rated games between the same two players in 24 hours; more aren't rated
+SAME_NETWORK_WAIT = 20           # two waiting players on one connection are paired after this long (unrated)
 CHALLENGE_SECONDS = 30           # an invitation to play waits this long for an answer
 CHALLENGES_PER_IP = 30           # invitations from one address in 10 minutes
 ASK_AGAIN_SECONDS = 60           # after a "no thanks", the same player can't ask again for this long
@@ -430,7 +434,7 @@ class Players:
             o["opp"] = named.get(o["opp"])  # (None: a deleted player)
         card = {"name": name, "icon": icon, "rating": rating, "peak": peak, "games": rated, "wins": wins,
                 "draws": draws, "losses": losses, "rank": self.rank_of(rating, rated), "since": created,
-                "played": played, "friendly": played - int(played_rated), "form": "".join(results[:10]),
+                "played": played, "unrated_games": played - int(played_rated), "form": "".join(results[:10]),
                 "streak": [results[0], streak] if results else None, "best_streak": best, "mates": mates,
                 "quickest": quickest, "opening": favourite,
                 "avg_moves": round(sum(lengths) / len(lengths)) if lengths else None, "recent": recent}
@@ -438,6 +442,13 @@ class Players:
             self.cards.clear()
         self.cards[player_id] = (now, card)
         return card
+
+    def rated_together(self, a, b, seconds):
+        """Rated games (not aborted) between players a and b that ended in the last so many seconds."""
+        return self.db.execute(
+            "SELECT COUNT(*) FROM games WHERE rated = 1 AND result IN ('1-0', '0-1', '1/2-1/2') AND ended >= ? "
+            "AND ((white = ? AND black = ?) OR (white = ? AND black = ?))",
+            (int(time.time()) - seconds, a, b, b, a)).fetchone()[0]
 
     def head_to_head(self, player_id, other_id):
         """[won, drawn, lost]: player_id's games against other_id (aborted ones aside)."""
@@ -491,7 +502,7 @@ class Players:
                 (w.id, b.id, result, why, " ".join(room.moves),
                  changes["w"][0] if changes else w.rating, changes["w"][1] if changes else w.rating,
                  changes["b"][0] if changes else b.rating, changes["b"][1] if changes else b.rating,
-                 int(time.time()), 1 if room.rated else 0, int(room.created)))
+                 int(time.time()), 1 if room.rated and not room.unrated else 0, int(room.created)))
         for p in (w, b):
             self.cards.pop(p.id, None)  # (their cards, with this game)
 
@@ -520,6 +531,7 @@ class Room:
         self.result = None   # (result, why)
         self.changes = None  # ratings: {"w": [before, after], "b": [...]}
         self.clock = {"w": CLOCK_MS, "b": CLOCK_MS} if rated else None
+        self.unrated = None  # (a game from the lobby that doesn't change ratings: why, for the players)
         self.turn_since = time.monotonic()
         self.flag_timer = None
         self.away = {"w": None, "b": None}  # (timer, when) while a player is away from a matched game
@@ -635,6 +647,8 @@ def room_message(room, seat):
     if room.rated:
         m["players"] = {s: room.players[s].public() for s in "wb"}
         m["clock"] = room.clock_now()
+        if room.unrated:
+            m["unrated"] = room.unrated
     if room.result:
         m["end"] = end_fields(room)
     elif room.draw_offer == other(seat):
@@ -662,7 +676,7 @@ async def end_game(room, result, why):
                 del in_game[p.id]
         lobby_change()  # (they're free again, with their new ratings)
     if players and room.players["w"] and room.players["b"]:
-        if room.rated and result != "*":
+        if room.rated and result != "*" and not room.unrated:
             w, b = room.players["w"], room.players["b"]
             score = {"1-0": 1.0, "0-1": 0.0}.get(result, 0.5)
             room.changes = {"w": [w.rating, elo(w.rating, b.rating, score, w.games)],
@@ -752,9 +766,11 @@ async def start_match(a, b):
     room = Room(new_code(), rated=True)
     rooms[room.code] = room
     room.players = {"w": a.player, "b": b.player}
+    room.unrated = unrated_why(a, b)
     in_game[a.player.id] = in_game[b.player.id] = room
     lobby_change()
-    log.info("game %s: %s (%d) - %s (%d)", room.code, a.player.name, a.player.rating, b.player.name, b.player.rating)
+    log.info("game %s: %s (%d) - %s (%d)%s", room.code, a.player.name, a.player.rating, b.player.name, b.player.rating,
+             " (not rated)" if room.unrated else "")
     for c, seat in ((a, "w"), (b, "b")):
         room.conns[seat] = c
         c.room, c.seat = room, seat
@@ -764,9 +780,21 @@ async def start_match(a, b):
         await to_seat(room, seat, room_message(room, seat))
 
 
+def unrated_why(a, b):
+    """Why a game between pages a and b won't change ratings (None: it will). Two players on one
+    internet connection may be one person with two accounts; and two who keep playing each other
+    could be trading wins."""
+    if a.ip == b.ip and not allow_same_ip:
+        return "Not rated: you're both on the same internet connection."
+    if players and players.rated_together(a.player.id, b.player.id, 86400) >= PAIR_RATED_GAMES:
+        return f"Not rated: you've played {PAIR_RATED_GAMES} rated games with each other in the last 24 hours."
+    return None
+
+
 async def matchmaker():
     """Pairs the players waiting for an opponent, closest ratings first. The range of
-    ratings a player takes on widens the longer they wait."""
+    ratings a player takes on widens the longer they wait. Two on the same internet connection
+    are paired only once both have waited a while (for a game that isn't rated)."""
     while True:
         await asyncio.sleep(1)
         now = time.monotonic()
@@ -777,7 +805,9 @@ async def matchmaker():
             a = waiting[i]
             for j in range(i + 1, min(i + 6, len(waiting))):
                 b = waiting[j]
-                if b.player.id == a.player.id or (b.ip == a.ip and not allow_same_ip):
+                if b.player.id == a.player.id:
+                    continue
+                if b.ip == a.ip and not allow_same_ip and min(now - queue[a], now - queue[b]) < SAME_NETWORK_WAIT:
                     continue
                 if a.player.id in in_game or b.player.id in in_game:  # (playing on another page)
                     continue
@@ -806,8 +836,12 @@ class Challenge:
         self.src, self.asker, self.dst = src, src.player, dst
         self.timer = None
 
-    def offer(self):  # what the player asked sees
-        return {"t": "challenged", "id": self.id, "from": self.asker.brief(), "seconds": CHALLENGE_SECONDS}
+    def offer(self, page):  # what the player asked sees, on one of their pages
+        m = {"t": "challenged", "id": self.id, "from": self.asker.brief(), "seconds": CHALLENGE_SECONDS}
+        why = unrated_why(self.src, page)
+        if why:
+            m["unrated"] = why
+        return m
 
 
 def lobby_change():
@@ -870,7 +904,7 @@ async def enter_lobby(c):
     await send(c.ws, lobby_list())
     for ch in list(challenges.values()):  # (invitations that came while this page was away)
         if ch.dst.id == c.player.id:
-            await send(c.ws, ch.offer())
+            await send(c.ws, ch.offer(c))
 
 
 async def leave_lobby(c, p=None):
@@ -931,20 +965,18 @@ async def challenge(c, name):
         return await no("That's you!")
     if them.id in in_game:
         return await no(f"{them.name} is playing a game right now.")
-    reachable = [o for o in theirs if o.ip != c.ip or allow_same_ip]
-    if not reachable:
-        return await no(f"You and {them.name} are on the same internet connection, so you can't play each other "
-                        "in a rated game. Play a friend online instead.")
-    waiting = [o for o in reachable if o in queue]
+    waiting = sorted((o for o in theirs if o in queue), key=lambda o: o.ip == c.ip)  # (another connection first)
     if waiting:  # (they're waiting for anyone: the game starts now)
         return await start_match(c, waiting[0])
     asked = next((ch for ch in challenges.values() if ch.asker.id == them.id and ch.dst.id == me.id), None)
-    if asked and asked.src in lobby and (asked.src.ip != c.ip or allow_same_ip):
+    if asked and asked.src in lobby:
         # (they asked this player already: that's a yes from both)
         await drop_challenge(asked, "accepted")
         return await start_match(asked.src, c)
+    pages = pages_of(them, lobby)
+    unrated = unrated_why(c, pages[0]) if pages else None  # (as it would be with the page that answers, most likely)
     if c.challenge and c.challenge.dst.id == them.id:  # (asked already: still waiting for their answer)
-        return await send(c.ws, {"t": "challenge_sent", "id": c.challenge.id, "to": them.brief(),
+        return await send(c.ws, {"t": "challenge_sent", "id": c.challenge.id, "to": them.brief(), "unrated": unrated,
                                  "seconds": max(1, round(c.challenge.timer.when() - asyncio.get_running_loop().time()))})
     if failures("declined", (me.id, them.id), ASK_AGAIN_SECONDS):
         return await no(f"{them.name} said no thanks a moment ago. You can ask again in a minute.")
@@ -955,9 +987,10 @@ async def challenge(c, name):
     challenges[ch.id] = ch
     ch.timer = asyncio.get_running_loop().call_later(
         CHALLENGE_SECONDS, lambda: asyncio.ensure_future(drop_challenge(ch, "expired")))
-    await send(c.ws, {"t": "challenge_sent", "id": ch.id, "to": them.brief(), "seconds": CHALLENGE_SECONDS})
-    for o in pages_of(them, lobby):
-        await send(o.ws, ch.offer())
+    await send(c.ws, {"t": "challenge_sent", "id": ch.id, "to": them.brief(), "unrated": unrated,
+                      "seconds": CHALLENGE_SECONDS})
+    for o in pages:
+        await send(o.ws, ch.offer(o))
 
 
 async def profile(c, name):
@@ -985,6 +1018,9 @@ async def profile(c, name):
     out = dict(card, t="profile", where=where)
     if pid != c.player.id:
         out["vs"] = players.head_to_head(c.player.id, pid)  # (the asker's wins, draws and losses against them)
+        theirs = [o for o in pages if o in lobby or o in queue]
+        if theirs:  # (a game with them now: rated or not)
+            out["unrated"] = unrated_why(c, sorted(theirs, key=lambda o: o.ip == c.ip)[0])
     await send(c.ws, out)
 
 
@@ -1001,10 +1037,6 @@ async def answer(c, cid, yes):
         return await drop_challenge(ch, "left")
     if ch.asker.id in in_game or ch.dst.id in in_game:
         return await drop_challenge(ch, "playing")
-    if src.ip == c.ip and not allow_same_ip:
-        await send(c.ws, {"t": "lobby_error", "why": f"You and {ch.asker.name} are on the same internet connection, "
-                                                     "so you can't play each other in a rated game."})
-        return await drop_challenge(ch, "left")
     await drop_challenge(ch, "accepted")
     await start_match(src, c)
 
@@ -1530,7 +1562,7 @@ async def write_status(path):
                         for c, since in list(queue.items()) if c.player],
             "lobby": sorted({c.player.name for c in lobby if c.player})[:5000],
             "games_going": len(going),
-            "games": [{"code": r.code, "rated": r.rated, "w": who(r, "w"), "b": who(r, "b"), "moves": len(r.moves),
+            "games": [{"code": r.code, "rated": r.rated, "unrated": bool(r.unrated), "w": who(r, "w"), "b": who(r, "b"), "moves": len(r.moves),
                        "since": int(r.created), "clock": r.clock_now()} for r in going[:500]],
         }
         try:
@@ -1611,7 +1643,10 @@ async def main():
                     help="delete a player (logged out, their games kept without them), print what happened and stop")
     ap.add_argument("--static", metavar="FOLDER", help="also serve the web page from FOLDER (local tests)")
     ap.add_argument("--allow-same-ip", action="store_true",
-                    help="pair players from the same address (local tests)")
+                    help="pair players from the same address at once, and rate their games (local tests)")
+    ap.add_argument("--pair-games", type=int, default=PAIR_RATED_GAMES,
+                    help=f"rated games between the same two players in 24 hours; more are played unrated "
+                         f"(default {PAIR_RATED_GAMES})")
     ap.add_argument("--per-ip", type=int, default=MAX_CONNECTIONS_PER_IP,
                     help=f"connections from one address at most (default {MAX_CONNECTIONS_PER_IP})")
     ap.add_argument("--clock", type=float, default=CLOCK_MS / 60000, help="matched games: minutes each (default 10)")
@@ -1629,7 +1664,7 @@ async def main():
     allow_same_ip = args.allow_same_ip
     globals().update(MAX_CONNECTIONS_PER_IP=args.per_ip, CLOCK_MS=int(args.clock * 60000),
                      INCREMENT_MS=int(args.increment * 1000), AWAY_SECONDS=args.away, TOP_MIN_GAMES=args.top_min,
-                     NAMES_PER_IP_PER_DAY=args.names_per_ip)
+                     NAMES_PER_IP_PER_DAY=args.names_per_ip, PAIR_RATED_GAMES=args.pair_games)
     try:
         rules = Rules(args.rules)
     except OSError as e:

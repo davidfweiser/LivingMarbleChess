@@ -201,13 +201,13 @@ def now_lines(data, width):
     if not games:
         out.append(("  none", DIM))
     else:
-        out.append((f"  {'':6} {'White':<26} {'Black':<26} {'Moves':>5}  {'Clocks (*: to move)':<20} {'Playing for':>11}", DIM))
+        out.append((f"  {'':7} {'White':<26} {'Black':<26} {'Moves':>5}  {'Clocks (*: to move)':<20} {'Playing for':>11}", DIM))
         for g in games:
             c = g.get("clock")
             clocks = (f"{clock(c['w'])}{'*' if c.get('run') == 'w' else ' '} {clock(c['b'])}"
                       f"{'*' if c.get('run') == 'b' else ''}") if c else ""
-            kind = "rated" if g.get("rated") else "friend"
-            out.append((f"  {kind:<6} {who(g['w']):<26.26} {who(g['b']):<26.26} {g.get('moves', 0):>5}  {clocks:<20} "
+            kind = "unrated" if g.get("unrated") else "rated" if g.get("rated") else "friend"
+            out.append((f"  {kind:<7} {who(g['w']):<26.26} {who(g['b']):<26.26} {g.get('moves', 0):>5}  {clocks:<20} "
                         f"{span(time.time() - g.get('since', time.time())):>11}", 0))
     out.append(("", 0))
     out.append(("WAITING FOR AN OPPONENT", HEAD))
@@ -241,7 +241,7 @@ def player_lines(rows, online, playing):
 
 
 def game_lines(rows):
-    out = [(f"  {'Ended':<12} {'Type':<6} {'White':<24} {'Black':<24} {'Result':<16} {'Moves':>5}", DIM)]
+    out = [(f"  {'Ended':<12} {'Type':<7} {'White':<24} {'Black':<24} {'Result':<16} {'Moves':>5}", DIM)]
     now = time.time()
     for ended, rated, w, wb, wa, b, bb, ba, result, why, moves, started in rows:
         def side(name, before, after):
@@ -249,7 +249,7 @@ def game_lines(rows):
             if not rated or after is None or before is None or result == "*":
                 return name
             return f"{name} {after - before:+d}"
-        out.append((f"  {ago(ended, now):<12} {'rated' if rated else 'friend':<6} {side(w, wb, wa):<24.24} "
+        out.append((f"  {ago(ended, now):<12} {'rated' if rated else 'unrated':<7} {side(w, wb, wa):<24.24} "
                     f"{side(b, bb, ba):<24.24} {result_words(result, why):<16.16} {(moves_in(moves) + 1) // 2:>5}", 0))
     return out
 
@@ -260,7 +260,7 @@ def stats_lines(s, width):
             f"{s['new_month']} this month   seen: {s['seen_day']} today, {s['seen_week']} this week", 0),
            ("", 0), ("GAMES", HEAD)]
     total = s["games"] or 1
-    out.append((f"  {s['games']} played ({s['rated']} rated, {s['games'] - s['rated']} with a friend)   "
+    out.append((f"  {s['games']} played ({s['rated']} rated, {s['games'] - s['rated']} unrated)   "
                 f"{s['games_day']} today, {s['games_week']} this week   "
                 f"about {int((s['avg_moves'] or 0) + 1) // 2} moves a game", 0))
     out.append((f"  White won {100 * s['white'] // total}%   Black won {100 * s['black'] // total}%   "

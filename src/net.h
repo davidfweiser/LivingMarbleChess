@@ -18,6 +18,7 @@ void command(const std::string& cmd);
 //   "status connecting|open|lost|closed"
 //   "room CODE SEAT FULL PEER RATED [UCI ...]"   SEAT w or b; FULL, PEER, RATED 0 or 1
 //   "players WNAME WRATING BNAME BRATING"        "clock WMS BMS RUN" (RUN w, b or -)
+//   "unrated TEXT" (why this rated game's ratings won't change: after "room")
 //   "move PLY UCI"  "peer 0|1"  "away SECONDS" (the opponent loses unless they come back)
 //   "draw" (offered)  "declined"  "end RESULT WHY [WBEFORE WAFTER BBEFORE BAFTER]"  "new"
 //   "me NAME RATING GAMES" or "me -" (the front page logs in)

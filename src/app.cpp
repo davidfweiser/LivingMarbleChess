@@ -1080,6 +1080,7 @@ void App::pollOnline(float dt) {
         online.ratingText.clear();
         online.endShown = false;
         online.clocks = false;
+        online.unrated.clear();
       }
       online.room = code;
       online.side = side;
@@ -1098,6 +1099,8 @@ void App::pollOnline(float dt) {
         world.sound(SFX_CHIME, 0.6f, vec3(0), 1.2f);
       }
       syncOnline(uci);
+    } else if (kind == "unrated") {
+      std::getline(in >> std::ws, online.unrated);
     } else if (kind == "players") {
       in >> online.names[0] >> online.ratings[0] >> online.names[1] >> online.ratings[1];
     } else if (kind == "clock") {

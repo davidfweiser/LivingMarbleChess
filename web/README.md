@@ -63,8 +63,9 @@ python3 web/relay.py --static build-web --rules build-rules/liblmrules.so --allo
 ```
 
 Open the game in a private window (or another browser) to play the other side:
-each browser remembers its player and its side. (`--allow-same-ip` lets two
-players from one computer be paired, which the real server doesn't allow.)
+each browser remembers its player and its side. (`--allow-same-ip` treats two
+players on one computer as if they were on different connections: paired at
+once, and their games rated.)
 
 The page is `build-web/index.html` with `avatars.js` (the players' pictures),
 `living_marble.js`, `.wasm`, `.worker.js` and `.data` (the fonts) beside it, the front page's pictures in
@@ -147,8 +148,20 @@ The game waits behind it, paused and silent:
   can't ask again for a minute. Two players asking each other start the game.
 - *Back to the game* closes the lobby, and stops waiting and any invitation.
 
-The games are rated and timed, 10 minutes each plus 5 seconds a move, with
-random colours:
+The games are timed, 10 minutes each plus 5 seconds a move, with random
+colours, and rated, except in two cases, where the game is played just the same
+but the ratings stay as they are. The card, the invitation and the game itself
+say so ("Not rated: ..."):
+
+- **The same internet connection** (for IPv6, the same /64 network): a family
+  at home, or one person with two accounts. They can join or invite each other;
+  and if both are waiting, the server pairs them once both have waited 20
+  seconds with nobody else.
+- **Too many games together:** after 3 rated games between the same two players
+  in 24 hours (aborted games don't count), the next are unrated until a day has
+  passed since the first of them.
+
+And for every game:
 
 - Losing on time, resigning, or staying away for 90 seconds loses the game;
   a draw can be offered and accepted. A game that ends before both players have
@@ -156,13 +169,11 @@ random colours:
 - Ratings are Elo, starting at 1200 (a new player's moves faster for the first
   30 games). *Leaderboard* shows the best 20, from 5 rated games on.
 - Against cheating: the server checks every move with the game's own rules
-  ([`chess_rules.cpp`](chess_rules.cpp)) and decides how games end, two players
-  from the same internet address (for IPv6, the same /64 network) can't play
-  each other (neither paired, nor by joining or inviting), and a rated game's
-  side can be taken up again only by its player, logged in. It can't tell
-  whether someone uses a chess engine. Since the lobby lets players choose each
-  other, two friends on different connections could arrange games to move
-  their ratings.
+  ([`chess_rules.cpp`](chess_rules.cpp)) and decides how games end, and a rated
+  game's side can be taken up again only by its player, logged in. Games on one
+  connection aren't rated (no handing wins to a second account), and two
+  players can move each other's ratings by at most 3 games a day. It can't tell
+  whether someone uses a chess engine.
 
 In both, reloading the page or a dropped connection comes back to the same game
 and side; *Undo* and *Hint* are off.
@@ -200,7 +211,8 @@ and side; *Undo* and *Hint* are off.
 - Settings (in the service's `ExecStart` line, then `systemctl daemon-reload`
   and `systemctl restart living-marble-relay`): `--clock` minutes and
   `--increment` seconds for rated games, `--away` seconds, `--top-min` games
-  for the leaderboard, `--per-ip` connections and `--names-per-ip` new accounts
+  for the leaderboard, `--pair-games` rated games between two players a day
+  (3), `--per-ip` connections and `--names-per-ip` new accounts
   a day from one address (40 and 20). `python3 relay.py --help` lists them all.
 
 ### How many players

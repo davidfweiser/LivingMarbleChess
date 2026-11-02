@@ -208,6 +208,11 @@ void App::drawClocks(float S) {
       ImGui::TextColored(ms < 30000 && running ? kRed : running ? kGold : ImVec4(0.6f, 0.56f, 0.5f, 1.0f), "%s", clk);
     }
   }
+  if (!online.unrated.empty()) {  // (the same internet connection, or many games together today)
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", online.unrated.c_str());
+    ImGui::PopStyleColor();
+  }
 }
 
 // The best players, and this one

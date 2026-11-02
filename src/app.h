@@ -105,6 +105,7 @@ struct OnlineGame {
   float copied = 0;        // seconds left of "Copied"
   int copyHow = 0;         // 0 not copied, 1 copied, 2 shared (iPhone and iPad: the share sheet)
   // matched games
+  std::string unrated;     // why this one doesn't change ratings ("" if it does)
   std::string names[2];    // by side
   int ratings[2] = {0, 0};
   bool clocks = false;
