@@ -497,7 +497,8 @@ Stuck? Ask for a **hint** (*Hint* in the panel or the toolbar, **T**, or on the
 Mac *Game › Hint*) when it is your move: the AI thinks for a couple of seconds
 at full strength, then selects the piece to move with only the square it should
 go to glowing, and names the move ("Hint: Nf3"). Click or tap that square to
-play it, or pick something else. In two-player mode it helps whoever is to move.
+play it, or pick something else. Against another person (two players on one
+screen, or online) there are no hints.
 
 ## Command-line options
 

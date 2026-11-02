@@ -421,7 +421,8 @@ final class GameController: NSObject, MTKViewDelegate {
   /// The hint searches at full strength ("King": about 2.5 s), whatever the opponent's level.
   private let hintLevel = 3
 
-  var canHint: Bool { !loading && canAct && !hintPending && !aiPending }
+  /// No help from the computer against another person (two players on one screen).
+  var canHint: Bool { !loading && canAct && !hintPending && !aiPending && model.mode != .twoPlayer }
 
   func requestHint() {
     guard canHint else { return }

@@ -772,7 +772,8 @@ constexpr int kHintLevel = 3;
 
 bool App::canHint() const {
   return !loading && anims.empty() && isHumanTurn() && game.result() == chess::Result::Ongoing && !promoPending &&
-         !hintPending && !aiPending && mode != Mode::Online;  // (no help from the computer against a friend)
+         !hintPending && !aiPending &&
+         mode != Mode::TwoPlayer && mode != Mode::Online;  // (no help from the computer against another person)
 }
 
 void App::requestHint() {
