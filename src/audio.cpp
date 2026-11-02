@@ -1169,6 +1169,373 @@ void synthAlien(std::vector<Buf>& S) {
 }
 
 // ---------------------------------------------------------------------------
+// The Romans' sounds
+// ---------------------------------------------------------------------------
+// A voice: a buzzing glottal source (a sawtooth whose pitch wanders) through the
+// formants of a vowel that can change into another, with breath and rasp.
+struct Vowel {
+  float f1, f2, f3, a2, a3;
+};
+const Vowel kAh{730, 1090, 2440, 0.5f, 0.25f}, kUh{640, 1190, 2390, 0.45f, 0.2f}, kOh{570, 840, 2410, 0.4f, 0.15f},
+    kEh{530, 1840, 2480, 0.45f, 0.2f}, kAw{600, 900, 2500, 0.5f, 0.15f};
+template <class FreqF, class EnvF, class MixF>
+void addVoice(Buf& b, Rng& r, float t0, float dur, FreqF f0, EnvF env, Vowel v0, Vowel v1, MixF vmix, float breath,
+              float rasp, float gain = 1.0f) {
+  size_t s0 = (size_t)(t0 * SR), n = (size_t)(dur * SR);
+  double ph = 0;
+  float jit = 0;
+  Biquad b1, b2, b3, nb, lp;
+  nb.bandpass(1800, 0.8f);
+  lp.lowpass(3400, 0.6f);
+  for (size_t i = 0; i < n && s0 + i < b.size(); ++i) {
+    float t = (float)i / SR;
+    if (i % 32 == 0) {
+      float m = std::min(1.0f, std::max(0.0f, vmix(t)));
+      b1.bandpass(v0.f1 + (v1.f1 - v0.f1) * m, 5.0f);
+      b2.bandpass(v0.f2 + (v1.f2 - v0.f2) * m, 7.0f);
+      b3.bandpass(v0.f3 + (v1.f3 - v0.f3) * m, 9.0f);
+    }
+    double dt = f0(t) * (1.0f + jit) / SR;
+    ph += dt;
+    if (ph >= 1.0) {
+      ph -= 1.0;
+      jit = r.bi() * rasp;  // each glottal pulse a little off: roughness
+    }
+    float src = (float)(2.0 * ph - 1.0) - polyblep(ph, dt);
+    float x = src + breath * r.bi() * 0.7f;
+    float mv = std::min(1.0f, std::max(0.0f, vmix(t)));
+    float a2 = v0.a2 + (v1.a2 - v0.a2) * mv, a3 = v0.a3 + (v1.a3 - v0.a3) * mv;
+    float y = b1.run(x) + b2.run(x) * a2 + b3.run(x) * a3 + nb.run(r.bi()) * breath * 0.12f;
+    b[s0 + i] += lp.run(y) * env(t) * gain;
+  }
+}
+
+void synthRoman(std::vector<Buf>& S) {
+  Rng r;
+  r.s = 7331;
+  {  // SLASH: a blade swung through flesh
+    Buf b = make(0.6f);
+    Biquad f;
+    for (size_t i = 0; i < (size_t)(0.16f * SR); ++i) {
+      float t = (float)i / SR, u = t / 0.16f;
+      if (i % 32 == 0) f.bandpass(1500.0f + 5000.0f * u, 2.0f);
+      b[i] += f.run(r.bi()) * std::pow(std::sin(u * 3.14159f), 2.0f) * 0.7f;
+    }
+    Biquad w;
+    w.bandpass(1300, 1.2f);
+    addNoise(b, r, 0.13f, 1.4f, 35, w, 0.004f);
+    Biquad lo;
+    lo.lowpass(500);
+    addNoise(b, r, 0.13f, 1.2f, 22, lo, 0.003f);
+    addDampedSine(b, 0.13f, 140, 0.6f, 25, 1.5f);
+    normalize(b, 0.85f);
+    S[SFX_SLASH] = b;
+  }
+  {  // STAB: a blade driven in: a wet, heavy thud
+    Buf b = make(0.7f);
+    addDampedSine(b, 0.0f, 120, 1.0f, 18, 1.2f);
+    addDampedSine(b, 0.0f, 240, 0.4f, 30);
+    Biquad sq;
+    for (size_t i = 0; i < (size_t)(0.35f * SR); ++i) {
+      float t = (float)i / SR;
+      if (i % 64 == 0) sq.bandpass(500.0f + 500.0f * std::sin(t * 70.0f) + 300.0f * r.next(), 3.0f);
+      b[i] += sq.run(r.bi()) * std::exp(-t * 10.0f) * 1.3f;
+    }
+    Biquad hp;
+    hp.highpass(3000);
+    addNoise(b, r, 0.0f, 0.12f, 150, hp);
+    normalize(b, 0.9f);
+    S[SFX_STAB] = b;
+  }
+  {  // BLOOD: spattering on the board
+    Buf b = make(0.8f);
+    Biquad slap;
+    slap.bandpass(700, 1.0f);
+    addNoise(b, r, 0.0f, 0.8f, 30, slap, 0.003f);
+    for (int k = 0; k < 40; ++k) {
+      float t = 0.03f + -std::log(1.0f - r.next() * 0.99f) * 0.12f;
+      Biquad d;
+      d.bandpass(1500 + r.next() * 3500, 4.0f);
+      addNoise(b, r, t, 0.15f + 0.3f * r.next(), 250, d);
+      if (r.next() < 0.3f) addDampedSine(b, t, 900 + r.next() * 1500, 0.08f, 90, 3.0f);
+    }
+    normalize(b, 0.7f);
+    S[SFX_BLOOD] = b;
+  }
+  {  // DRAW: a sword drawn from its scabbard: rising steel scrape and a ring
+    Buf b = make(1.2f);
+    Biquad f1, f2, f3;
+    const float L = 0.38f;
+    for (size_t i = 0; i < (size_t)(L * SR); ++i) {
+      float t = (float)i / SR, u = t / L;
+      if (i % 32 == 0) {
+        f1.bandpass(2300.0f + 1400.0f * u, 18.0f);
+        f2.bandpass(4100.0f + 2000.0f * u, 22.0f);
+        f3.bandpass(6400.0f + 1800.0f * u, 25.0f);
+      }
+      float x = r.bi() * (0.6f + 0.4f * std::sin(t * 260.0f));
+      float env = std::min(1.0f, u * 6.0f) * (0.6f + 0.4f * u);
+      b[i] += (f1.run(x) + f2.run(x) * 0.8f + f3.run(x) * 0.5f) * env * 4.0f;
+    }
+    addDampedSine(b, L, 3150, 0.25f, 6);
+    addDampedSine(b, L, 4870, 0.18f, 8);
+    addDampedSine(b, L, 7210, 0.1f, 10);
+    reverb(b, 0.2f, 0.8f, 0.4f, 0.8f);
+    normalize(b, 0.7f);
+    S[SFX_DRAW] = b;
+  }
+  {  // PARRY: blade on blade: a bright, inharmonic clash and a scrape
+    Buf b = make(1.4f);
+    const float ratio[6] = {1.0f, 2.32f, 3.91f, 5.48f, 7.6f, 1.47f};
+    const float amp[6] = {0.8f, 0.6f, 0.5f, 0.35f, 0.2f, 0.4f};
+    const float dec[6] = {4.0f, 5.0f, 7.0f, 9.0f, 12.0f, 6.0f};
+    for (int k = 0; k < 6; ++k) {
+      addDampedSine(b, 0, 1180 * ratio[k], amp[k], dec[k]);
+      addDampedSine(b, 0.004f, 1210 * ratio[k], amp[k] * 0.6f, dec[k] * 1.2f);
+    }
+    Biquad hp;
+    hp.highpass(3500);
+    addNoise(b, r, 0, 1.6f, 70, hp);
+    Biquad sc;
+    sc.bandpass(5000, 3.0f);
+    noiseShaped(b, r, 0.01f, 0.12f, sc, 0.5f, [](float t) { return std::exp(-t * 25.0f); });
+    reverb(b, 0.18f, 0.8f, 0.4f, 0.8f);
+    normalize(b, 0.85f);
+    S[SFX_PARRY] = b;
+  }
+  {  // SHIELD: a blow on a wooden shield with a bronze boss
+    Buf b = make(0.9f);
+    addDampedSine(b, 0, 165, 1.0f, 16, 0.6f);
+    addDampedSine(b, 0, 410, 0.6f, 28);
+    addDampedSine(b, 0, 655, 0.35f, 35);
+    addDampedSine(b, 0.002f, 2130, 0.25f, 14);
+    addDampedSine(b, 0.002f, 3280, 0.15f, 18);
+    Biquad bp;
+    bp.bandpass(900, 0.9f);
+    addNoise(b, r, 0, 1.3f, 45, bp);
+    reverb(b, 0.12f, 0.75f, 0.5f, 0.7f);
+    normalize(b, 0.9f);
+    S[SFX_SHIELD] = b;
+  }
+  {  // GRUNT: a soldier's grunt of effort ("hm-ah!")
+    Buf b = make(0.45f);
+    addVoice(b, r, 0.0f, 0.35f, [](float t) { return 125.0f - 50.0f * t; },
+             [](float t) { return envAR(t, 0.015f, 0.12f, 0.2f); }, kUh, kAh, [](float t) { return t * 4.0f; }, 0.35f, 0.06f);
+    normalize(b, 0.75f);
+    S[SFX_GRUNT] = b;
+  }
+  {  // SHOUT: a battle cry from many throats - "Ro-ma!"
+    Buf b = make(1.6f);
+    for (int k = 0; k < 6; ++k) {
+      float d = r.next() * 0.06f, p = 0.85f + 0.35f * r.next();
+      addVoice(b, r, d, 0.32f, [p](float t) { return (150.0f + 30.0f * t / 0.32f) * p; },
+               [](float t) { return envAR(t, 0.03f, 0.18f, 0.1f); }, kOh, kOh, [](float) { return 0.0f; }, 0.25f, 0.05f, 0.7f);
+      addVoice(b, r, d + 0.3f, 0.75f, [p](float t) { return (190.0f + 25.0f * std::sin(std::min(t, 0.3f) * 9.0f) - 50.0f * std::max(0.0f, t - 0.35f)) * p; },
+               [](float t) { return envAR(t, 0.02f, 0.38f, 0.35f); }, kAh, kUh, [](float t) { return (t - 0.4f) * 3.0f; }, 0.3f,
+               0.06f, 0.9f);
+    }
+    reverb(b, 0.35f, 0.82f, 0.4f, 1.1f);
+    normalize(b, 0.8f);
+    S[SFX_SHOUT] = b;
+  }
+  {  // DEATH: a dying cry, breaking and falling away
+    Buf b = make(1.5f);
+    addVoice(b, r, 0.0f, 1.25f, [](float t) { return 230.0f * std::exp(-t * 0.8f) + 10.0f * std::sin(t * 37.0f); },
+             [](float t) { return envAR(t, 0.04f, 0.45f, 0.7f) * (0.75f + 0.25f * std::sin(t * 23.0f)); }, kAh, kUh,
+             [](float t) { return t * 1.4f; }, 0.4f, 0.12f);
+    reverb(b, 0.2f, 0.8f, 0.4f, 0.9f);
+    normalize(b, 0.75f);
+    S[SFX_DEATH] = b;
+  }
+  {  // FALL: a body in armour crashing down: a heavy thud, the slap of cloth, mail and plates rattling
+    Buf b = make(0.9f);
+    addDampedSine(b, 0, 85, 1.0f, 14, 0.7f);
+    Biquad lp;
+    lp.lowpass(800);
+    addNoise(b, r, 0, 1.4f, 25, lp, 0.004f);
+    for (int k = 0; k < 26; ++k) {
+      float t = 0.01f + r.next() * 0.35f * r.next();
+      addDampedSine(b, t, 2800 + r.next() * 4500, 0.08f + 0.08f * r.next(), 110 + r.next() * 120);
+    }
+    normalize(b, 0.85f);
+    S[SFX_FALL] = b;
+  }
+  {  // CROWD: the arena roars
+    Buf b = make(3.6f);
+    const Vowel vs[4] = {kAh, kEh, kOh, kAw};
+    for (int k = 0; k < 22; ++k) {
+      float t0 = r.next() * 0.5f, dur = 1.8f + 1.2f * r.next(), f = 120.0f + 200.0f * r.next(), vib = r.next() * 6.28f;
+      Vowel v = vs[k % 4];
+      addVoice(b, r, t0, dur, [f, vib](float t) { return f * (1.0f + 0.25f * std::min(t / 0.3f, 1.0f) + 0.02f * std::sin(t * 5.0f + vib)); },
+               [dur](float t) { return envAR(t, 0.25f, dur * 0.4f, dur * 0.5f); }, v, kAh, [](float t) { return t * 0.3f; }, 0.4f,
+               0.05f, 0.4f);
+    }
+    Biquad hiss;
+    hiss.bandpass(1400, 0.6f);
+    noiseShaped(b, r, 0.0f, 3.4f, hiss, 0.6f, [](float t) { return envAR(t, 0.4f, 1.4f, 1.6f); });
+    for (int k = 0; k < 60; ++k) {  // stamping and clapping
+      Biquad c;
+      c.bandpass(1100 + r.next() * 900, 1.5f);
+      addNoise(b, r, 0.3f + r.next() * 2.5f, 0.15f + 0.2f * r.next(), 80, c);
+    }
+    reverb(b, 0.55f, 0.86f, 0.4f, 1.4f);
+    normalize(b, 0.7f);
+    S[SFX_CROWD] = b;
+  }
+  {  // CORNU: a great bronze horn of the legions: a rough, low call
+    Buf b = make(3.2f), src = make(3.2f);
+    struct N {
+      float t, d, f;
+    };
+    const N notes[3] = {{0.0f, 0.55f, 98.0f}, {0.6f, 0.4f, 146.8f}, {1.05f, 1.6f, 196.0f}};
+    for (const N& n : notes) {
+      float d = n.d, f = n.f;
+      auto env = [d](float t) { return envAR(t, 0.06f, d - 0.06f, 0.35f); };
+      addSaw(src, n.t, d + 0.4f, [f](float t) { return f * (0.97f + 0.03f * std::min(1.0f, t / 0.08f)) * (1.0f + 0.004f * std::sin(t * 30.0f)); }, env);
+      addSaw(src, n.t, d + 0.4f, [f](float t) { return f * 1.006f; }, [env](float t) { return env(t) * 0.6f; });
+    }
+    Biquad lp;
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      float local = t < 0.6f ? t : (t < 1.05f ? t - 0.6f : t - 1.05f);
+      if (i % 64 == 0) lp.lowpass(700.0f + 1600.0f * std::exp(-local * 3.0f), 1.5f);
+      b[i] = std::tanh(lp.run(src[i]) * 1.6f);
+    }
+    reverb(b, 0.45f, 0.86f, 0.35f, 1.3f);
+    normalize(b, 0.8f);
+    S[SFX_CORNU] = b;
+  }
+  {  // WHEELS: iron-shod chariot wheels rumbling over the board
+    Buf b = make(1.8f);
+    Biquad lo, rat;
+    lo.lowpass(220);
+    rat.bandpass(1300, 2.0f);
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      float env = envAR(t, 0.15f, 0.9f, 0.7f);
+      float spoke = 0.7f + 0.3f * std::sin(t * 6.2831f * 14.0f);
+      b[i] = (lo.run(r.bi()) * 9.0f * spoke + rat.run(r.bi()) * 0.12f * (r.next() < 0.02f ? 4.0f : 0.6f)) * env;
+    }
+    for (int k = 0; k < 18; ++k) addDampedSine(b, 0.1f + k * 0.08f + r.next() * 0.03f, 90 + r.next() * 40, 0.35f, 30);
+    normalize(b, 0.7f);
+    S[SFX_WHEELS] = b;
+  }
+  {  // WHIP: a swish, and the crack
+    Buf b = make(0.6f);
+    Biquad f;
+    for (size_t i = 0; i < (size_t)(0.14f * SR); ++i) {
+      float t = (float)i / SR, u = t / 0.14f;
+      if (i % 32 == 0) f.bandpass(800.0f + 3000.0f * u * u, 1.5f);
+      b[i] += f.run(r.bi()) * u * u * 0.6f;
+    }
+    Biquad hp;
+    hp.highpass(1800);
+    addNoise(b, r, 0.14f, 2.5f, 300, hp, 0.0003f);
+    addDampedSine(b, 0.14f, 2600, 0.5f, 150);
+    reverb(b, 0.25f, 0.8f, 0.4f, 0.9f);
+    normalize(b, 0.85f);
+    S[SFX_WHIP] = b;
+  }
+  {  // CREAK: timber groaning under a load (stick-slip friction)
+    Buf b = make(1.1f);
+    Biquad r1, r2, r3;
+    r1.bandpass(380, 8.0f);
+    r2.bandpass(870, 10.0f);
+    r3.bandpass(1650, 12.0f);
+    double ph = 0;
+    for (size_t i = 0; i < (size_t)(0.95f * SR); ++i) {
+      float t = (float)i / SR, u = t / 0.95f;
+      float rate = 45.0f + 70.0f * std::sin(u * 3.14159f) + 15.0f * std::sin(t * 13.0f);
+      ph += rate / SR;
+      float pulse = 0;
+      if (ph >= 1.0) {
+        ph -= 1.0;
+        pulse = 1.0f + 0.5f * r.bi();
+      }
+      float env = std::pow(std::sin(u * 3.14159f), 0.7f);
+      b[i] = (r1.run(pulse) + r2.run(pulse) * 0.7f + r3.run(pulse) * 0.35f) * env;
+    }
+    normalize(b, 0.6f);
+    S[SFX_CREAK] = b;
+  }
+  {  // RAM: an iron-headed beam swung into its target: a deep boom and the shudder of timber
+    Buf b = make(2.0f);
+    addDampedSine(b, 0, 52, 1.0f, 5, 0.6f);
+    addDampedSine(b, 0, 118, 0.7f, 9);
+    addDampedSine(b, 0, 190, 0.5f, 13);
+    addDampedSine(b, 0, 305, 0.35f, 18);
+    Biquad lo;
+    lo.lowpass(600);
+    addNoise(b, r, 0, 2.5f, 12, lo);
+    Biquad cr;
+    cr.bandpass(2000, 1.0f);
+    addNoise(b, r, 0, 1.2f, 70, cr);
+    for (int k = 0; k < 20; ++k) {
+      float t = 0.05f + -std::log(1.0f - r.next() * 0.99f) * 0.15f;
+      Biquad c;
+      c.bandpass(500 + r.next() * 1800, 2.0f);
+      addNoise(b, r, t, 0.2f + 0.3f * r.next(), 120, c);
+    }
+    reverb(b, 0.3f, 0.85f, 0.4f, 1.2f);
+    normalize(b, 0.95f);
+    S[SFX_RAM] = b;
+  }
+  {  // SCORPION: the torsion springs let go: a hard knock, the string's twang, the bolt away
+    Buf b = make(1.0f);
+    addDampedSine(b, 0, 920, 0.6f, 60);
+    addDampedSine(b, 0, 1530, 0.4f, 80);
+    addDampedSine(b, 0.0f, 210, 0.9f, 7, 0.5f);
+    addDampedSine(b, 0.0f, 422, 0.4f, 9, 0.5f);
+    Biquad bp;
+    bp.bandpass(1200, 1.0f);
+    addNoise(b, r, 0, 1.0f, 90, bp);
+    Biquad f;
+    for (size_t i = 0; i < (size_t)(0.3f * SR); ++i) {
+      float t = (float)i / SR, u = t / 0.3f;
+      if (i % 32 == 0) f.bandpass(2500.0f - 1500.0f * u, 2.0f);
+      b[(size_t)(0.02f * SR) + i] += f.run(r.bi()) * (1.0f - u) * 0.4f;
+    }
+    reverb(b, 0.25f, 0.82f, 0.4f, 1.0f);
+    normalize(b, 0.85f);
+    S[SFX_SCORPION] = b;
+  }
+  {  // LION: a roar - a huge, rough voice with a growl in it
+    Buf b = make(2.4f);
+    addVoice(b, r, 0.0f, 2.1f, [](float t) { return 95.0f + 55.0f * std::sin(std::min(t / 1.4f, 1.0f) * 3.14159f) - 20.0f * std::max(0.0f, t - 1.4f); },
+             [](float t) { return envAR(t, 0.25f, 0.9f, 0.9f) * (0.7f + 0.3f * std::sin(t * 6.2831f * 27.0f)); }, kAw, kUh,
+             [](float t) { return t * 0.6f; }, 0.45f, 0.25f);
+    addVoice(b, r, 0.0f, 2.1f, [](float t) { return 48.0f + 20.0f * std::sin(std::min(t / 1.4f, 1.0f) * 3.14159f); },
+             [](float t) { return envAR(t, 0.3f, 0.9f, 0.8f) * 0.8f; }, kAw, kAw, [](float) { return 0.0f; }, 0.5f, 0.3f);
+    Biquad dark;
+    dark.lowpass(1600, 0.7f);
+    for (float& x : b) x = dark.run(x);
+    reverb(b, 0.35f, 0.84f, 0.35f, 1.3f);
+    normalize(b, 0.9f);
+    S[SFX_LION] = b;
+  }
+  {  // GULP: two deep swallows, then a choking cough
+    Buf b = make(1.4f);
+    for (int k = 0; k < 2; ++k) {
+      float t0 = 0.05f + 0.32f * k;
+      addDampedSine(b, t0, 320, 0.8f, 22, 2.5f);
+      Biquad g;
+      g.bandpass(450, 3.0f);
+      addNoise(b, r, t0, 0.5f, 40, g);
+    }
+    for (int k = 0; k < 3; ++k) {
+      float t0 = 0.8f + 0.17f * k;
+      Biquad c;
+      c.bandpass(900, 1.2f);
+      addNoise(b, r, t0, 1.2f - 0.25f * k, 30, c, 0.005f);
+      addVoice(b, r, t0, 0.1f, [](float t) { return 180.0f - 200.0f * t; }, [](float t) { return envAR(t, 0.005f, 0.03f, 0.06f); }, kAh,
+               kUh, [](float t) { return t * 8.0f; }, 0.6f, 0.2f, 0.6f);
+    }
+    normalize(b, 0.7f);
+    S[SFX_GULP] = b;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The ghosts
 // ---------------------------------------------------------------------------
 void synthGhosts(std::vector<Buf>& S) {
@@ -1219,13 +1586,14 @@ std::vector<Buf> synthEverything() {
   std::vector<Buf> S = synthAll();
   synthMedieval(S);
   synthAlien(S);
+  synthRoman(S);
   synthGhosts(S);
   return S;
 }
 
 struct Audio::Impl {
   std::vector<Buf> sounds;
-  std::thread medievalSynth;  // the medieval army's, the aliens' and the ghosts' sounds are made in the background
+  std::thread medievalSynth;  // the medieval army's, the aliens', the Romans' and the ghosts' sounds are made in the background
   struct Voice {
     int sfx = -1;
     double pos = 0;
@@ -1289,6 +1657,7 @@ bool Audio::init() {
     std::vector<Buf> med(SFX_COUNT);
     synthMedieval(med);
     synthAlien(med);
+    synthRoman(med);
     synthGhosts(med);
     std::lock_guard<std::mutex> lk(impl->mtx);
     for (int i = SFX_HYMN; i < SFX_COUNT; ++i) impl->sounds[i] = std::move(med[i]);
@@ -1363,7 +1732,8 @@ static float musicDuck(Sfx s) {
     case SFX_ORGAN: case SFX_THEREMIN: return 0.2f;
     case SFX_MATE: return 0.25f;
     case SFX_BELL: case SFX_DRONE: return 0.35f;
-    case SFX_CHECK: case SFX_HORN: return 0.45f;
+    case SFX_CHECK: case SFX_HORN: case SFX_CORNU: return 0.45f;
+    case SFX_CROWD: return 0.6f;
     default: return 1.0f;
   }
 }
@@ -1424,7 +1794,10 @@ bool Audio::dumpWav(const char* dir) {
                                          "bell",    "splinter", "armor",  "slide",   "bite",   "pew",
                                          "ufo",     "theremin", "beam",   "gibber",  "slurp",  "burp",   "boing",
                                          "whistle", "splat",   "moo",     "pop",     "shrink", "heatray", "horn",
-                                         "twinkle", "sizzle",  "hatch",   "drone",   "sputter", "cheer"};
+                                         "twinkle", "sizzle",  "hatch",   "drone",   "sputter",
+                                         "slash",   "stab",    "blood",   "draw",    "parry",  "shield", "grunt",
+                                         "shout",   "death",   "fall",    "crowd",   "cornu",  "wheels", "whip",
+                                         "creak",   "ram",     "scorpion", "lion",   "gulp",   "cheer"};
   std::vector<Buf> S = synthEverything();
   for (int i = 0; i < SFX_COUNT; ++i) {
     std::string path = std::string(dir) + "/" + names[i] + ".wav";
@@ -1441,7 +1814,7 @@ bool Audio::dumpWav(const char* dir) {
   }
   // and every song of the music, in stereo: music-<army>-<piece>-<title>.wav
   static const char* const kPiece[::music::kPieces] = {"pawn", "knight", "bishop", "rook", "queen", "king"};
-  static const char* const kArmy[::music::kArmies] = {"marble", "medieval", "alien"};
+  static const char* const kArmy[::music::kArmies] = {"marble", "medieval", "alien", "roman"};
   ::music::Engine m;
   for (const std::string& w : m.warnings()) std::printf("[music] %s\n", w.c_str());
   for (int i = 0; i < m.songCount(); ++i) {

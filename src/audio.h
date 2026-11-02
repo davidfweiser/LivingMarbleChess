@@ -59,6 +59,26 @@ enum Sfx {
   SFX_HATCH,     // an egg cracking open, chirps
   SFX_DRONE,     // the mothership
   SFX_SPUTTER,   // a machine sputtering and dying
+  // the Romans
+  SFX_SLASH,     // a blade cutting through flesh
+  SFX_STAB,      // a blade driven in
+  SFX_BLOOD,     // blood splashing on the board
+  SFX_DRAW,      // a sword drawn from its scabbard
+  SFX_PARRY,     // blade on blade
+  SFX_SHIELD,    // a blow on a wooden shield with a bronze boss
+  SFX_GRUNT,     // a soldier's grunt of effort
+  SFX_SHOUT,     // a battle cry
+  SFX_DEATH,     // a dying groan
+  SFX_FALL,      // a body in armour hitting the ground
+  SFX_CROWD,     // the arena's crowd roaring
+  SFX_CORNU,     // a Roman horn call
+  SFX_WHEELS,    // chariot wheels rumbling over the board
+  SFX_WHIP,      // a whip crack
+  SFX_CREAK,     // timber creaking (the siege tower)
+  SFX_RAM,       // the battering ram striking
+  SFX_SCORPION,  // the bolt-thrower loosing
+  SFX_LION,      // a lion's roar
+  SFX_GULP,      // drinking, then choking
   // the ghosts of captured pieces
   SFX_CHEER,     // a far-off little crowd of ghosts cheering
   SFX_COUNT
@@ -79,7 +99,7 @@ class Audio {
 
   // The background music: every piece type has its own themes in each army (music.h).
   void playMusic(int piece);  // the music of this piece (0 pawn .. 5 king), from the next bar
-  void setMusicArmy(int set); // whose music: 0 Living Marble, 1 medieval, 2 aliens
+  void setMusicArmy(int set); // whose music: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans
   void resumeMusic();         // a new game: start it again if it was stopped
   void stopMusic();           // the game is over: fade it out
   void setMusic(bool on);

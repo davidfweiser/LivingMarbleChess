@@ -116,6 +116,7 @@ void Actor::update(float dt, float t, Audio* audio) {
 
 void figurePose(int set, int asset, const medieval::Controls& c, medieval::Pose& out) {
   if (set == 2) alien::buildPose(asset, c, out);
+  else if (set == 3) roman::buildPose(asset, c, out);
   else medieval::buildPose(asset, c, out);
 }
 
@@ -132,11 +133,17 @@ void Actor::resetControls() {
 }
 
 float Actor::height() const {
-  float h = set == 1 ? medieval::pieceHeight(kind) : (set == 2 ? alien::pieceHeight(kind) : meshgen::pieceHeight(kind));
+  float h = set == 1   ? medieval::pieceHeight(kind)
+            : set == 2 ? alien::pieceHeight(kind)
+            : set == 3 ? roman::pieceHeight(kind)
+                       : meshgen::pieceHeight(kind);
   return h * scale;
 }
 float Actor::radius() const {
-  float r = set == 1 ? medieval::pieceRadius(kind) : (set == 2 ? alien::pieceRadius(kind) : meshgen::pieceRadius(kind));
+  float r = set == 1   ? medieval::pieceRadius(kind)
+            : set == 2 ? alien::pieceRadius(kind)
+            : set == 3 ? roman::pieceRadius(kind)
+                       : meshgen::pieceRadius(kind);
   return r * scale;
 }
 
@@ -158,13 +165,13 @@ void Actor::neutralize() {
 quat Actor::rotation() const { return glm::angleAxis(yaw, vec3(0, 1, 0)) * tilt; }
 
 glm::mat4 Actor::rigidModel() const {
-  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 ? bob * 0.3f : bob, 0));
+  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 || set == 3 ? bob * 0.3f : bob, 0));
   M = glm::rotate(M, yaw, vec3(0, 1, 0));
   return glm::scale(M, vec3(scale));
 }
 
 glm::mat4 Actor::model() const {
-  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 ? bob * 0.3f : bob, 0));
+  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 || set == 3 ? bob * 0.3f : bob, 0));
   M = glm::rotate(M, yaw, vec3(0, 1, 0));
   if (std::fabs(tilt.w) < 0.99999f) {
     M = glm::translate(M, tiltPivot * scale);
@@ -276,6 +283,7 @@ glm::mat4 World::seatModel(const Actor& a) const {
 }
 
 const meshgen::PieceAssets& World::figureAssets(int set, int asset) const {
+  if (set == 3) return rlib->asset[asset];
   return set == 2 ? alib->asset[asset] : mlib->asset[asset];
 }
 
@@ -736,6 +744,52 @@ void World::updateFidgets(float dt) {
       }
       continue;
     }
+    if (a.set == 3) {
+      // Romans: soldiers look about and shift their grip, horses toss their heads,
+      // the siege tower sways and its banner catches the wind
+      medieval::Controls& c = a.ctl;
+      switch (a.fidgetType) {
+        case 0: {  // a glance to one side
+          end = 2.2f;
+          float u = std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI);
+          if (a.kind == meshgen::K_ROOK) {
+            c.idle += dt * 3.0f;
+          } else {
+            c.headYaw = a.fidgetDir * 0.6f * u;
+            c.twist = a.fidgetDir * 0.1f * u;
+          }
+          break;
+        }
+        case 1: {  // shift the weight, heft the spear; the horses toss their heads
+          end = 1.3f;
+          float u = glm::clamp(t / end, 0.0f, 1.0f);
+          if (a.kind == meshgen::K_KNIGHT) {
+            c.headPitch = -0.35f * std::sin(u * kPI * 2.0f) * (1.0f - u);
+            c.tail = u * 6.0f;
+          } else if (a.kind == meshgen::K_ROOK) {
+            c.lean = 0.025f * std::sin(u * kPI * 3.0f) * (1.0f - u);
+          } else {
+            c.armR = vec3(0.22f * std::sin(u * kPI), 0, -0.15f * std::sin(u * kPI));
+            c.lean = -0.04f * std::sin(u * kPI);
+          }
+          break;
+        }
+        default: {  // stretch, look up at the sky
+          end = 1.6f;
+          float u = std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI);
+          c.lean = -0.06f * u;
+          c.headPitch = -0.25f * u;
+          if (a.kind == meshgen::K_KNIGHT) c.headPitch = 0.3f * u;
+          break;
+        }
+      }
+      if (t >= end) {
+        a.fidgetT = -1;
+        c.headYaw = c.headPitch = c.lean = c.twist = 0;
+        c.armR = vec3(0);
+      }
+      continue;
+    }
     if (a.set == 2) {
       // aliens: antennae twitch, a look round with a blink of the lights, a nervous hop
       medieval::Controls& c = a.ctl;
@@ -969,6 +1023,9 @@ void World::updateGhosts(float dt) {
     if (a.set == 1 && a.kind == meshgen::K_ROOK) k.bridge = 0.35f * std::fabs(std::sin(g.t * 6.0f + ph)) * cs;
     if (a.set == 2 && a.kind == meshgen::K_KNIGHT) k.spin += dt * (2.0f + 14.0f * cs);
     if (a.set == 2 && a.kind == meshgen::K_ROOK) k.crouch = 0.3f * std::fabs(std::sin(g.t * 8.0f + ph)) * cs;
+    if (a.set == 3 && a.kind == meshgen::K_KNIGHT) k.rear = 0.45f * cs;  // the horses rear
+    if (a.set == 3 && a.kind == meshgen::K_ROOK) k.bridge = 0.3f * std::fabs(std::sin(g.t * 6.0f + ph)) * cs;
+    if (a.set == 3) k.cape = 0.5f * cs;
     // a faint pale glow, brighter when cheering, and it materialises out of the wisps
     a.glow = glm::vec4(kGhostLight, 0.1f + 0.45f * cs + 0.15f * ws);
     a.dissolve = (1.0f - g.appear) * 0.85f;
@@ -1027,6 +1084,18 @@ void World::simulate(float dt) {
   for (Puppet& p : puppets) {
     p.ctl.idle += dt;
     figurePose(p.set, p.asset, p.ctl, p.pose);
+    if (p.growRate != 0.0f) {  // a pool of blood spreading
+      p.scale = p.growRate > 0 ? std::min(p.growTo, p.scale + p.growRate * dt) : std::max(p.growTo, p.scale + p.growRate * dt);
+      if (p.scale == p.growTo) p.growRate = 0;
+    }
+    if (p.life >= 0.0f) {  // left to fade away (a body, a pool of blood)
+      p.life -= dt;
+      if (p.life < 0.0f) {
+        p.life = 0.0f;
+        p.dissolve = std::min(1.0f, p.dissolve + p.fadeRate * dt);
+        if (p.dissolve >= 1.0f) p.alive = false;
+      }
+    }
   }
   puppets.erase(std::remove_if(puppets.begin(), puppets.end(), [](const Puppet& p) { return !p.alive; }),
                 puppets.end());
@@ -1049,7 +1118,7 @@ void World::figureItems(Renderer& r, const Actor& a, std::vector<DrawItem>& out)
     d.mesh = &G[a.kind].lod0;
     d.meshLow = &G[a.kind].lod1;
     d.model = a.model();
-    if (a.set == 1) {
+    if (a.set == 1 || a.set == 3) {
       // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
       d.rig = glm::vec4(a.rig.x * 0.3f, a.rig.y, 1.0f + (a.rig.z - 1.0f) * 0.12f, a.rig.w * 0.25f);
     } else {
@@ -1058,7 +1127,8 @@ void World::figureItems(Renderer& r, const Actor& a, std::vector<DrawItem>& out)
       d.rig = glm::vec4(a.rig.x * k, a.rig.y, 1.0f + (a.rig.z - 1.0f) * k, a.rig.w * k);
     }
     d.rigH = a.height() / std::max(a.scale, 1e-3f);
-    d.material = a.set == 2 ? MAT_ALIEN : MAT_MEDIEVAL;
+    d.material = a.set == 2 ? MAT_ALIEN : (a.set == 3 ? MAT_ROMAN : MAT_MEDIEVAL);
+    d.interior = a.set == 3 && a.kind != meshgen::K_ROOK ? 1.0f : 0.0f;
     d.team = a.color;
     d.bones = a.pose.bone;
     d.boneCount = a.pose.count;
@@ -1152,7 +1222,11 @@ void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
     d.mesh = &v[c.index];
     d.meshLow = &v[c.index];
     d.model = glm::translate(glm::mat4(1.0f), c.pos) * glm::mat4_cast(c.rot) * glm::scale(glm::mat4(1.0f), vec3(c.scale));
-    d.material = c.set == 1 ? MAT_MEDIEVAL : (c.set == 2 ? MAT_ALIEN : (c.color == 0 ? MAT_WHITE : MAT_BLACK));
+    d.material = c.set == 1   ? MAT_MEDIEVAL
+                 : c.set == 2 ? MAT_ALIEN
+                 : c.set == 3 ? MAT_ROMAN
+                              : (c.color == 0 ? MAT_WHITE : MAT_BLACK);
+    d.interior = c.set == 3 && c.kind != roman::R_ROOK && c.kind != roman::R_BOLT && c.kind != roman::R_PILUM ? 1.0f : 0.0f;
     if (c.set == 2 && (c.kind == alien::AL_CANOPY || c.kind == alien::AL_JAR)) {
       d.material = MAT_GLASS;
       d.glass = true;
@@ -1173,14 +1247,20 @@ void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
     d.meshLow = &G[p.asset].lod1;
     d.model = p.model();
     d.rigH = 1.0f;
-    d.material = p.set == 2 ? MAT_ALIEN : MAT_MEDIEVAL;
+    d.material = p.set == 2 ? MAT_ALIEN : (p.set == 3 ? MAT_ROMAN : MAT_MEDIEVAL);
     d.team = p.color;
     d.bones = p.pose.bone;
     d.boneCount = p.pose.count;
     d.texOffset = p.texOffset;
     d.glow = p.glow;
     d.dissolve = p.dissolve;
-    d.dissolveColor = vec3(1.0f, 0.5f, 0.15f);
+    d.dissolveColor = p.set == 3 ? vec3(0.0f) : vec3(1.0f, 0.5f, 0.15f);  // the Romans' dead simply fade
+    d.interior = p.interior;
+    if (!p.shadow) {
+      d.castShadow = false;
+      d.reflect = false;
+      d.groundAO = false;
+    }
     out.push_back(d);
   }
   for (const Prop& p : props) {

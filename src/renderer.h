@@ -10,6 +10,7 @@
 #include "gl.h"
 #include "medieval.h"
 #include "meshgen.h"
+#include "roman.h"
 #include "textures.h"
 
 struct GpuMesh {
@@ -40,7 +41,8 @@ class Shader {
   std::unordered_map<std::string, GLint> locs_;
 };
 
-enum Material { MAT_WHITE = 0, MAT_BLACK = 1, MAT_SWORD = 2, MAT_IRON = 3, MAT_MEDIEVAL = 4, MAT_ALIEN = 5, MAT_GLASS = 6 };
+enum Material { MAT_WHITE = 0, MAT_BLACK = 1, MAT_SWORD = 2, MAT_IRON = 3, MAT_MEDIEVAL = 4, MAT_ALIEN = 5, MAT_GLASS = 6,
+                MAT_ROMAN = 7 };
 
 struct DrawItem {
   const GpuMesh* mesh = nullptr;
@@ -57,6 +59,7 @@ struct DrawItem {
   glm::vec3 dissolveColor{1.0f, 0.8f, 0.4f};
   float heat = 0;
   float stone = 0;  // medieval: turned to salt
+  float interior = 0;  // Romans: what fresh fracture faces show (0 splintered wood, 1 flesh)
   bool castShadow = true;
   bool reflect = true;
   bool groundAO = true;
@@ -136,9 +139,13 @@ class Renderer {
   PieceGpu alien[alien::AL_COUNT];
   bool alienReady = false;
   void uploadAlien(const alien::Library& lib);
-  // the GPU meshes of a skinned set (1 medieval, 2 aliens) once uploaded, else null
+  PieceGpu roman[roman::R_COUNT];
+  bool romanReady = false;
+  void uploadRoman(const roman::Library& lib);
+  // the GPU meshes of a skinned set (1 medieval, 2 aliens, 3 Romans) once uploaded, else null
   const PieceGpu* figures(int set) const {
     if (set == 2) return alienReady ? alien : nullptr;
+    if (set == 3) return romanReady ? roman : nullptr;
     return medievalReady ? medieval : nullptr;
   }
 

@@ -339,9 +339,11 @@ void App::loadAssets() {
     progress.stage = "Inlaying the board";
     int res = opt.quality == 0 ? 1024 : (opt.quality == 1 ? 2048 : 4096);
     tex::bakeBoard(res, lib.boardHalf, boardAlbedo, boardDetail);
-    if (opt.pieces == 1 || opt.pieces == 2) {
+    if (opt.pieces >= 1 && opt.pieces <= 3) {
       // starting with another army: make it before the game begins
-      progress.stage = opt.pieces == 1 ? "Raising the medieval army" : "Landing the aliens";
+      progress.stage = opt.pieces == 1   ? "Raising the medieval army"
+                       : opt.pieces == 2 ? "Landing the aliens"
+                                         : "Mustering the legions";
       buildArmy(opt.pieces, nullptr);
       army[opt.pieces].ready = true;
     }
@@ -351,12 +353,14 @@ void App::loadAssets() {
 
 void App::buildArmy(int set, meshgen::BuildProgress* prog) {
   if (set == 1) medieval::buildLibrary(mlib, opt.quality, prog);
-  else alien::buildLibrary(alib, opt.quality, prog);
+  else if (set == 2) alien::buildLibrary(alib, opt.quality, prog);
+  else roman::buildLibrary(rlib, opt.quality, prog);
 }
 
 void App::uploadArmy(int set) {
   if (set == 1) renderer.uploadMedieval(mlib);
-  else renderer.uploadAlien(alib);
+  else if (set == 2) renderer.uploadAlien(alib);
+  else renderer.uploadRoman(rlib);
   army[set].uploaded = true;
 }
 
@@ -377,7 +381,7 @@ float App::armyProgress(int set) const {
 }
 
 void App::setPieceSet(int s) {
-  s = (s == 1 || s == 2) ? s : 0;
+  s = (s >= 1 && s <= 3) ? s : 0;
   if (s == pieceSet && pendingSet < 0) return;
   if (s != 0 && !army[s].uploaded) startArmyBuild(s);
   pendingSet = s;
@@ -396,9 +400,13 @@ void App::applyPieceSet(int s) {
     a.resetControls();
     a.dissolve = 1.0f;
     a.dissolveVel = -world.fx.rnd(1.1f, 1.6f);
-    a.dissolveColor = s == 1 ? vec3(1.0f, 0.62f, 0.25f) : (s == 2 ? vec3(0.4f, 1.0f, 0.5f) : vec3(1.0f, 0.75f, 0.35f));
+    a.dissolveColor = s == 1   ? vec3(1.0f, 0.62f, 0.25f)
+                      : s == 2 ? vec3(0.4f, 1.0f, 0.5f)
+                      : s == 3 ? vec3(1.0f, 0.3f, 0.15f)
+                               : vec3(1.0f, 0.75f, 0.35f);
   }
-  world.sound(SFX_CHIME, 0.6f, vec3(0), s == 1 ? 0.75f : (s == 2 ? 1.4f : 1.0f));
+  world.sound(SFX_CHIME, 0.6f, vec3(0), s == 1 ? 0.75f : (s == 2 ? 1.4f : (s == 3 ? 0.6f : 1.0f)));
+  if (s == 3) world.sound(SFX_CORNU, 0.5f, vec3(0));  // the legions answer with a horn call
   audio.setMusicArmy(s);  // and its music
 }
 
@@ -431,6 +439,7 @@ int App::run() {
   world.lib = &lib;
   world.mlib = &mlib;
   world.alib = &alib;
+  world.rlib = &rlib;
   world.reset();
   loadAssets();
   prevTime = glfwGetTime();
@@ -1849,7 +1858,7 @@ void App::frame(float dt) {
   pollOnline(dt);
 
   // the medieval army finished building in the background
-  for (int s = 1; s < 3; ++s) {
+  for (int s = 1; s < 4; ++s) {
     ArmyBuild& b = army[s];
     if (b.running && b.ready) {
       b.thread.join();

@@ -56,7 +56,7 @@ enum Mat {
   MT_COUNT
 };
 
-constexpr int kMaxBones = 20;
+constexpr int kMaxBones = 24;  // (the shaders' uBones arrays match)
 
 // Bones of each skeleton. "Left" is the figure's own left (+x when it faces +z).
 enum HumanBone {
@@ -139,6 +139,12 @@ struct Controls {
   float hover = 0;         // the base floats this much higher than at rest
   float spin = 0;          // saucer light ring, throne fans (radians)
   float hatch = 0;         // saucer belly hatch / tripod eye opening (0..1)
+  // the Romans (roman.h)
+  float draw = 0;          // the blade drawn from its scabbard into the right hand (0..1)
+  float cape = 0;          // the cloak streams out behind (0..1)
+  float dead = 0;          // limp: a body falling and lying still (0..1)
+  glm::vec3 rider{0};      // the charioteer leaping out of his car (offset, model units)
+  float riderSpin = 0;     // ... and somersaulting (radians)
 };
 
 struct Pose {
