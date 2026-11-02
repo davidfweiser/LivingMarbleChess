@@ -62,6 +62,7 @@ struct Options {
   int scenario = 0;               // canned positions for screenshots
   int pieces = 0;                 // 0 Living Marble, 1 medieval, 2 aliens
   std::string join;               // the web page: join a friend's online game (its code)
+  bool lobby = false;             // the web page: the lobby (Play someone online) as soon as the game is ready
   bool touch = false;             // the web page on a touch screen (iPhone, iPad): fingers, and a toolbar
 };
 
@@ -87,8 +88,8 @@ struct TouchInput {
 // Online: against a friend in another browser, through the relay (the web page only)
 enum class Mode { HumanWhite = 0, HumanBlack, TwoPlayer, Watch, Online };
 
-// An online game's state (Mode::Online): with a friend (by link), or matched with another
-// player by the server (rated, with clocks)
+// An online game's state (Mode::Online): with a friend (by link), or against another player
+// from the page's lobby (rated, with clocks)
 struct OnlineGame {
   enum class Net { Connecting, Open, Lost, Closed };
   enum class Kind { Friend, Match };
@@ -103,9 +104,6 @@ struct OnlineGame {
   std::deque<std::string> moves;  // the opponent's moves ("PLY UCI"), played when the board is at rest
   float copied = 0;        // seconds left of "Copied"
   int copyHow = 0;         // 0 not copied, 1 copied, 2 shared (iPhone and iPad: the share sheet)
-  // finding an opponent
-  bool seeking = false;
-  double seekSince = 0;
   // matched games
   std::string names[2];    // by side
   int ratings[2] = {0, 0};
@@ -191,11 +189,16 @@ class App {
   bool canGoHome() const;
   void goHome();
   void backFromHome();
-  bool atHome = false;
+  bool atHome = false;  // the front page or the lobby is over the game, which waits (paused, silent)
   // online games (the web page): a new one (this player is White) or a friend's by its code
   bool onlineAvailable() const;
   void startOnline(const std::string& code);
-  void startMatch();  // find an opponent (a rated game)
+  // the web page's lobby (Play someone online): the players there, and rated games against them.
+  // The game waits behind it as for the front page; enterMatch() is a game the lobby started.
+  void openLobby();
+  void enterMatch();
+  bool pendingMatch = false;  // (a rated game started while the game was loading: entered once it's ready)
+  void pause();               // (the front page or the lobby over the game)
   void leaveOnline();
   void copyOnlineLink();
   void resignOnline();

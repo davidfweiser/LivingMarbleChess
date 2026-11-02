@@ -69,7 +69,7 @@ cmake --build "$SRC/build-web" -j"$(nproc)"
 
 say "Publishing it to $WEBROOT"
 stage="$(mktemp -d /var/www/.living-marble.XXXXXX)"
-for f in index.html living_marble.js living_marble.wasm living_marble.worker.js living_marble.data \
+for f in index.html avatars.js living_marble.js living_marble.wasm living_marble.worker.js living_marble.data \
          LICENSE.txt THIRD_PARTY_NOTICES.txt; do
   cp "$SRC/build-web/$f" "$stage/"
   gzip -9 -k "$stage/$f"  # nginx sends these to browsers that take gzip

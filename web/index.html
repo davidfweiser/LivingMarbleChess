@@ -104,8 +104,144 @@
   #dialog { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
             padding: 16px; background: rgba(0, 0, 0, 0.6); }
   #dialog .card { position: relative; width: 100%; max-width: 420px; max-height: calc(100vh - 32px); overflow: auto; }
-  #dialogClose { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim);
+  #dialogClose, .close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim);
                  font-size: 1.6rem; line-height: 1; cursor: pointer; }
+
+  /* ---- players' pictures (avatars.js), anywhere on the page ---- */
+  .avatar { display: inline-block; flex: none; width: 48px; height: 48px; border-radius: 50%; overflow: hidden;
+            background: var(--field); line-height: 0; }
+  .avatar svg { display: block; width: 100%; height: 100%; }
+  .avatar.small { width: 30px; height: 30px; }
+  .avatar.mid { width: 64px; height: 64px; }
+  .avatar.big { width: 88px; height: 88px; }
+  button.avatar { padding: 0; border: 0; cursor: pointer; position: relative;
+                  box-shadow: 0 0 0 2px var(--line); transition: box-shadow 0.15s; }
+  button.avatar:hover, button.avatar:focus-visible { box-shadow: 0 0 0 2px var(--gold); outline: none; }
+  .welcome-head, .dialog-head { display: flex; gap: 14px; align-items: center; margin-bottom: 4px; }
+  .welcome-head h3, .dialog-head h3 { margin: 0; }
+
+  /* ---- the lobby (Play someone online), over the waiting game ---- */
+  #lobby { position: fixed; inset: 0; z-index: 6; overflow-y: auto; -webkit-overflow-scrolling: touch;
+           overscroll-behavior: contain; touch-action: pan-y; background: rgba(5, 4, 3, 0.9);
+           -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); -webkit-user-select: none; user-select: none; }
+  .lobby-in { max-width: 900px; margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 16px 48px; }
+  .lobby-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .lobby-top h2 { margin: 0; text-align: left; }
+  .lobby-count { color: var(--dim); font-size: 0.9rem; margin: 4px 0 0; }
+  .btn.small { display: inline-block; width: auto; margin: 0; padding: 9px 14px; font-size: 0.92rem; white-space: nowrap; }
+  .me-card { display: flex; align-items: center; gap: 16px; margin-top: 18px; }
+  .me-info { flex: 1; min-width: 0; }
+  .me-name { font: 400 1.4rem/1.25 Georgia, "DejaVu Serif", serif; color: var(--gold); overflow-wrap: anywhere; }
+  .me-stats { color: var(--dim); font-size: 0.92rem; }
+  .me-action { flex: none; width: 230px; text-align: center; }
+  .me-action .btn { margin-top: 0; }
+  .waitbox { border: 1px solid var(--gold2); border-radius: 10px; padding: 9px 10px; background: rgba(242, 200, 115, 0.07); }
+  .waitbox b { color: var(--gold); font-weight: 600; }
+  @media (max-width: 640px) {
+    .me-card { flex-wrap: wrap; }
+    .me-action { width: 100%; }
+    .lobby-top h2 { font-size: 1.35rem; }
+    .lobby-top .btn.small { padding: 7px 10px; font-size: 0.85rem; }
+    .sect small { display: block; margin: 4px 0 0; }
+  }
+  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 6px;
+           vertical-align: 1px; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.75); } }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+  .lobby-hint { color: var(--dim); font-size: 0.88rem; margin: 10px 2px 0; }
+  .sect { font: 400 1.15rem/1.3 Georgia, "DejaVu Serif", serif; color: var(--gold); margin: 26px 0 10px; }
+  .sect small { font: 0.85rem/1 "Segoe UI", system-ui, -apple-system, "DejaVu Sans", sans-serif; color: var(--dim);
+                margin-left: 6px; }
+  .plist { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+  .pcard { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; min-width: 0;
+           background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+  .pcard.waiting { border-color: var(--gold2); background: linear-gradient(rgba(242, 200, 115, 0.07), rgba(242, 200, 115, 0.02)), var(--card); }
+  .pcard.asked-me { border-color: var(--green); }
+  .who { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 0; background: none; border: 0;
+         color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .who:hover .pname, .who:focus-visible .pname { color: var(--gold); text-decoration: underline; }
+  .pinfo { min-width: 0; display: block; }
+  .pname { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pmeta, .wants { display: block; color: var(--dim); font-size: 0.84rem; white-space: nowrap; overflow: hidden;
+                   text-overflow: ellipsis; }
+  .wants { color: var(--green); font-size: 0.82rem; }
+  .rec .w { color: var(--green); } .rec .d { color: var(--dim); } .rec .l { color: var(--red); }
+  .act { flex: none; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--gold2); background: #2a2016;
+         color: var(--gold); font: inherit; font-size: 0.9rem; line-height: 1.2; cursor: pointer; white-space: nowrap; }
+  .act.go { background: linear-gradient(#ddb262, #b5893b); color: #1a1208; border-color: transparent; font-weight: 600; }
+  .act:disabled { opacity: 0.55; cursor: default; }
+  .empty { color: var(--dim); background: var(--card); border: 1px dashed var(--line); border-radius: 12px;
+           padding: 16px; margin: 0; }
+  .glist { display: grid; gap: 8px; }
+  .grow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; background: var(--card);
+          border: 1px solid var(--line); border-radius: 12px; }
+  .gside { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; background: none; border: 0;
+           color: inherit; font: inherit; cursor: pointer; }
+  .gside:hover span { color: var(--gold); }
+  .gside small { color: var(--dim); }
+  .vs { color: var(--dim); font-size: 0.85rem; }
+  .gmoves { margin-left: auto; color: var(--dim); font-size: 0.85rem; }
+
+  /* windows over the lobby: a player's card, the pictures */
+  .modal { position: fixed; inset: 0; z-index: 9; display: flex; align-items: center; justify-content: center;
+           padding: 16px; background: rgba(0, 0, 0, 0.62); }
+  .modal > .card { position: relative; width: 100%; max-width: 540px; max-height: calc(100vh - 32px);
+                   max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; }
+  #picker { z-index: 11; }
+  #picker .card { max-width: 680px; }
+  .prof-head { display: flex; gap: 16px; align-items: center; padding-right: 28px; }
+  .prof-head h3 { margin: 0; overflow-wrap: anywhere; }
+  .prof-line { color: var(--dim); font-size: 0.9rem; }
+  .where { display: inline-block; margin-top: 6px; padding: 2px 9px; border-radius: 99px; font-size: 0.8rem;
+           border: 1px solid var(--line); color: var(--dim); }
+  .where.on { border-color: #4f7a4a; color: var(--green); }
+  .prof-sect { margin-top: 18px; }
+  .prof-sect h4 { margin: 0 0 6px; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim);
+                  font-weight: 600; }
+  .bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--field); margin: 6px 0; }
+  .bar i { display: block; }
+  .bar .w { background: #6fae68; } .bar .d { background: #7d7266; } .bar .l { background: #c96752; }
+  .form { display: flex; gap: 5px; flex-wrap: wrap; }
+  .form span { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+               font-size: 0.72rem; font-weight: 700; color: #120d08; }
+  .form .W { background: #8fcf86; } .form .D { background: #a39583; } .form .L { background: #e58a74; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .fact { background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; }
+  .fact b { display: block; font: 400 1.25rem/1.25 Georgia, "DejaVu Serif", serif; color: var(--gold); }
+  .fact span { display: block; color: var(--dim); font-size: 0.8rem; }
+  .recent { display: grid; gap: 6px; }
+  .rgame { display: flex; align-items: center; gap: 9px; font-size: 0.9rem; }
+  .rgame .res { flex: none; width: 46px; text-align: center; padding: 2px 0; border-radius: 6px; font-size: 0.78rem;
+                font-weight: 700; color: #120d08; }
+  .rgame .res.W { background: #8fcf86; } .rgame .res.D { background: #a39583; } .rgame .res.L { background: #e58a74; }
+  .rgame .rtext { flex: 1; min-width: 0; }
+  .rgame .rtext small { display: block; color: var(--dim); }
+  .rgame .chg { flex: none; font-size: 0.85rem; } .chg.up { color: var(--green); } .chg.down { color: var(--red); }
+  .picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; margin-top: 12px; }
+  .pick-one { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 2px 6px;
+              border-radius: 12px; border: 1px solid transparent; background: none; color: var(--dim); font: inherit;
+              font-size: 0.74rem; line-height: 1.2; cursor: pointer; }
+  .pick-one:hover, .pick-one:focus-visible { background: #221a12; color: var(--text); outline: none; }
+  .pick-one.on { border-color: var(--gold); background: #2a2016; color: var(--gold); }
+  .pick-one .avatar { width: 58px; height: 58px; }
+
+  /* an invitation to play: on top of everything, until it's answered */
+  #incoming { position: fixed; z-index: 12; top: max(14px, env(safe-area-inset-top)); left: 50%; width: min(460px, calc(100vw - 24px));
+              transform: translateX(-50%); padding: 16px; background: var(--card); border: 1px solid var(--gold2);
+              border-radius: 14px; box-shadow: 0 14px 50px rgba(0, 0, 0, 0.7); animation: drop 0.25s ease-out; }
+  @keyframes drop { from { opacity: 0; transform: translate(-50%, -14px); } }
+  .inc-head { display: flex; gap: 14px; align-items: center; }
+  .inc-head b { font: 400 1.25rem/1.25 Georgia, "DejaVu Serif", serif; color: var(--gold); overflow-wrap: anywhere; }
+  .inc-buttons { display: flex; gap: 8px; margin-top: 12px; }
+  .inc-buttons .btn { margin-top: 0; }
+  .timebar { height: 4px; border-radius: 2px; background: var(--field); overflow: hidden; margin-top: 12px; }
+  .timebar i { display: block; height: 100%; background: var(--gold2); transition: width 1s linear; }
+  #outgoing { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; border-radius: 12px;
+              background: rgba(242, 200, 115, 0.07); border: 1px solid var(--gold2); }
+  #outgoing .otext { flex: 1; min-width: 0; }
+  #lobbyToast { position: fixed; z-index: 13; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+                width: max-content; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 10px;
+                background: #2a2016; border: 1px solid var(--gold2); color: var(--text); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6); }
 </style>
 </head>
 <body class="front">
@@ -184,9 +320,15 @@
       </div>
 
       <div data-view="welcome" hidden>
-        <h3>Welcome back, <span id="welcomeName"></span></h3>
-        <p style="margin:0" id="welcomeStats"></p>
+        <div class="welcome-head">
+          <button type="button" class="avatar mid" id="welcomeIcon" title="Choose your picture" aria-label="Choose your picture"></button>
+          <div>
+            <h3>Welcome back, <span id="welcomeName"></span></h3>
+            <p style="margin:0" id="welcomeStats"></p>
+          </div>
+        </div>
         <button type="button" class="btn" id="welcomePlay">Play</button>
+        <button type="button" class="btn quiet" id="welcomeLobby">Play someone online</button>
         <p class="hint">Not you? <button type="button" class="linkish" id="welcomeOut">Log out</button></p>
       </div>
 
@@ -212,7 +354,8 @@
         1950s science fiction with a theremin &mdash; and when a piece moves, its music takes over.</p></div>
     <div><h3>Play your way</h3>
       <p>Against the computer at five strengths, a friend on the same screen, a friend online with a link &mdash; or
-        anyone online in rated games with clocks, a rating and a leaderboard.</p></div>
+        anyone online: pick a picture, meet the other players in the lobby, look at their stats and ask them to play,
+        in rated games with clocks, a rating and a leaderboard.</p></div>
     <div><h3>Easy to play</h3>
       <p>Click a piece, then a glowing square. Drag to turn the board, even to look underneath; scroll to zoom.
         Press T for a hint and F1 for help. On an iPhone or iPad, tap, drag and pinch. Runs in Chrome, Edge,
@@ -247,8 +390,14 @@
 <div id="dialog" hidden>
   <div class="card" role="dialog" aria-modal="true" aria-labelledby="dialogName">
     <button type="button" id="dialogClose" aria-label="Close">&times;</button>
-    <h3 id="dialogName"></h3>
-    <p style="margin:0" id="dialogStats"></p>
+    <div class="dialog-head">
+      <button type="button" class="avatar mid" id="dialogIcon" title="Choose your picture" aria-label="Choose your picture"></button>
+      <div>
+        <h3 id="dialogName"></h3>
+        <p style="margin:0" id="dialogStats"></p>
+        <button type="button" class="linkish" id="dialogPick">Choose your picture</button>
+      </div>
+    </div>
     <form id="pwForm" novalidate>
       <h4 id="pwTitle">Change your password</h4>
       <div id="pwCurrentRow">
@@ -275,6 +424,97 @@
   </div>
 </div>
 
+<!-- The lobby (Play someone online): the players here, those who want to play, and the games
+     going on. The game waits behind it, paused. -->
+<div id="lobby" hidden>
+  <div class="lobby-in">
+    <header class="lobby-top">
+      <div>
+        <h2>Play someone online</h2>
+        <p class="lobby-count" id="lobbyCount">Connecting&hellip;</p>
+      </div>
+      <button type="button" class="btn quiet small" id="lobbyBack">Back to the game</button>
+    </header>
+
+    <section class="card me-card">
+      <button type="button" class="avatar big" id="meIcon" title="Choose your picture" aria-label="Choose your picture"></button>
+      <div class="me-info">
+        <div class="me-name" id="meName"></div>
+        <div class="me-stats rec" id="meStats"></div>
+        <button type="button" class="linkish hint" id="mePick">Choose your picture</button>
+      </div>
+      <div class="me-action">
+        <button type="button" class="btn" id="startBtn">Start a game</button>
+        <div class="waitbox" id="waitBox" hidden>
+          <div><span class="pulse"></span><b>Waiting for an opponent</b> <span id="waitTime"></span></div>
+          <button type="button" class="linkish hint" id="waitCancel">Stop waiting</button>
+        </div>
+      </div>
+    </section>
+    <p class="lobby-hint" id="lobbyHint">Start a game to show everyone you want to play: anyone here can join you, and you're
+      paired with a player near your rating who's waiting too. Or click a player to see their stats and ask them to play.</p>
+
+    <div id="outgoing" hidden>
+      <span class="avatar small" id="outIcon"></span>
+      <span class="otext">Asking <b id="outName"></b> to play&hellip; <span class="hint" id="outTime"></span></span>
+      <button type="button" class="act" id="outCancel">Cancel</button>
+    </div>
+
+    <section id="secWaiting" hidden>
+      <h3 class="sect">Want to play <small>join them, and the game starts at once</small></h3>
+      <div class="plist" id="listWaiting"></div>
+    </section>
+    <section id="secHere">
+      <h3 class="sect">In the lobby</h3>
+      <div class="plist" id="listHere"></div>
+      <p class="empty" id="lobbyEmpty" hidden>Nobody else is here right now. Press <b>Start a game</b>: you'll be at the
+        top of the list for the next player who comes along, and the game starts as soon as someone joins you.</p>
+    </section>
+    <section id="secGames" hidden>
+      <h3 class="sect">Playing now</h3>
+      <div class="glist" id="listGames"></div>
+    </section>
+  </div>
+</div>
+
+<!-- a player's card: their stats from their games -->
+<div id="profile" class="modal" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-label="A player's stats">
+    <button type="button" class="close" data-close="profile" aria-label="Close">&times;</button>
+    <div id="profileBody"></div>
+  </div>
+</div>
+
+<!-- choosing a picture -->
+<div id="picker" class="modal" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
+    <button type="button" class="close" data-close="picker" aria-label="Close">&times;</button>
+    <h3 id="pickTitle">Choose your picture</h3>
+    <p class="hint" style="margin-top:0">Other players see it beside your name in the lobby.</p>
+    <div class="picks" id="pickGrid"></div>
+  </div>
+</div>
+
+<!-- an invitation to play, from another player in the lobby -->
+<div id="incoming" role="alertdialog" aria-labelledby="incName" hidden>
+  <div class="inc-head">
+    <span class="avatar mid" id="incIcon"></span>
+    <div>
+      <b id="incName"></b> <span>wants to play you!</span>
+      <div class="prof-line rec" id="incStats"></div>
+      <button type="button" class="linkish hint" id="incLook">See their stats</button>
+    </div>
+  </div>
+  <div class="timebar"><i id="incBar"></i></div>
+  <div class="inc-buttons">
+    <button type="button" class="btn" id="incYes">Play</button>
+    <button type="button" class="btn quiet" id="incNo">No thanks</button>
+  </div>
+  <p class="hint" id="incMore" hidden></p>
+</div>
+<div id="lobbyToast" role="status" hidden></div>
+
+<script src="avatars.js"></script>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
@@ -329,11 +569,16 @@
 
   // ---- the connection to the game server (web/relay.py, at /ws on this server). The game
   // (src/net.cpp) sends plain commands and reads plain lines from the inbox; this page's
-  // forms ask with request().
+  // forms ask with request(), and its lobby (Play someone online) has messages of its own.
   window.lmNet = (function () {
     var ws = null, open = false, inbox = [], outbox = [], room = null, seeking = false, tries = 0, timer = 0;
-    var waiters = [], me = null;
+    var waiters = [], me = null, inLobby = false, matchRoom = null;
+    var LOBBY = { lobby: 1, challenged: 1, challenge_sent: 1, challenge_gone: 1, profile: 1, lobby_error: 1, seeking: 1 };
     function post(s) { inbox.push(s); }
+    function status(s) {  // (the game shows it; the lobby too)
+      post('status ' + s);
+      if (api.onStatus) api.onStatus(s);
+    }
     function store(key, value) {  // this browser's login (its session key) and its sides in games
       try {
         if (value === null) localStorage.removeItem(key);
@@ -362,8 +607,10 @@
       return ['end', e.result, e.why].concat(r ? [r.w[0], r.w[1], r.b[0], r.b[1]] : []).join(' ');
     }
     function setMe(m) {
-      me = m && m.name ? { name: m.name, rating: m.rating, games: m.games, haspw: !!m.haspw } : null;
+      me = m && m.name ? { name: m.name, rating: m.rating, games: m.games, haspw: !!m.haspw, icon: m.icon || null,
+                           wins: m.wins | 0, draws: m.draws | 0, losses: m.losses | 0 } : null;
       post(me ? ['me', me.name, me.rating, me.games].join(' ') : 'me -');
+      if (api.onMe) api.onMe(me);
     }
     function receive(m) {
       var answered = false;
@@ -389,13 +636,20 @@
         if (m.end) post(endLine(m.end));
         if (m.draw) post('draw');
         if (m.forfeit != null) post('away ' + m.forfeit);
-      } else if (m.t === 'move') { post('move ' + (m.ply | 0) + ' ' + m.uci); if (m.clock) post(clockLine(m.clock)); }
+        if (m.rated) {  // a rated game: from the lobby (which the server has taken this page out of)
+          inLobby = false;
+          if (m.room !== matchRoom) {
+            matchRoom = m.room;
+            if (api.onMatch) api.onMatch(m);  // (the game goes to it, with the lines above in its inbox)
+          }
+        }
+      } else if (LOBBY[m.t]) { if (api.onLobby) api.onLobby(m); }
+      else if (m.t === 'need_login' || (m.t === 'notice' && inLobby)) { seeking = false; if (api.onLobby) api.onLobby(m); }
+      else if (m.t === 'move') { post('move ' + (m.ply | 0) + ' ' + m.uci); if (m.clock) post(clockLine(m.clock)); }
       else if (m.t === 'clock') post(clockLine(m.clock));
       else if (m.t === 'peer') { post('peer ' + (m.here ? 1 : 0)); if (m.forfeit != null) post('away ' + m.forfeit); }
       else if (m.t === 'end') post(endLine(m));
       else if (m.t === 'new' || m.t === 'draw' || m.t === 'declined') post(m.t);
-      else if (m.t === 'seeking') post('seeking ' + (m.waiting | 0));
-      else if (m.t === 'need_login') { seeking = false; post('needlogin'); }
       else if (m.t === 'notice') post('notice ' + m.why);
       else if (m.t === 'error') { room = null; setAddress(null); post('error ' + m.why); }
       else if (m.t === 'account') { store('lm-player', m.session); setMe(m); }  // logged in
@@ -410,10 +664,10 @@
     function connect() {
       if (ws) return;
       clearTimeout(timer); timer = 0;
-      post(tries ? 'status lost' : 'status connecting');
+      status(tries ? 'lost' : 'connecting');
       var s;
       try { s = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'); }
-      catch (e) { post('error Online games aren\'t available here.'); post('status closed'); return; }
+      catch (e) { post('error Online games aren\'t available here.'); inLobby = seeking = false; status('closed'); return; }
       ws = s;
       s.onopen = function () {
         open = true;
@@ -421,10 +675,11 @@
         var key = store('lm-player');
         if (key) raw({ t: 'hello', secret: key });
         if (room) raw({ t: 'join', room: room, token: store('lm-game-' + room) });
+        if (inLobby) raw({ t: 'lobby' });
         if (seeking) raw({ t: 'seek' });
         var pending = outbox; outbox = [];
         pending.forEach(raw);
-        post('status open');
+        status('open');
       };
       s.onmessage = function (e) {
         var m;
@@ -439,30 +694,30 @@
         if (e.code === 4001 || e.code === 4004) {  // logged out: a new password or a recovery code, elsewhere;
           store('lm-player', null);                // or the account deleted by the person who runs the site
           setMe(null);
-          room = null; seeking = false; outbox = [];  // (the address keeps the game: after logging in, back to it)
+          room = null; seeking = inLobby = false; outbox = [];  // (the address keeps the game: after logging in, back to it)
           post(e.code === 4004 ? 'error This account was deleted by the person who runs this site.'
                : 'error You were logged out: your password was changed, or your recovery code used, in another browser. ' +
                  'Reload the page to log in.');
-          post('status closed');
+          status('closed');
           if (api.onLoggedOut) api.onLoggedOut();
           return;
         }
         if (e.code === 4000) { room = null; setAddress(null); post('error This game is now open in another tab or window.'); }
         if (e.code === 4002) {
-          room = null; seeking = false; outbox = [];
+          room = null; seeking = inLobby = false; outbox = [];
           post('error The server is too busy right now. Try again in a while.');
-          post('status closed');
+          status('closed');
           return;
         }
-        if (!room && !seeking && !outbox.length) { post('status closed'); return; }  // (nothing to come back to)
+        if (!room && !seeking && !inLobby && !outbox.length) { status('closed'); return; }  // (nothing to come back to)
         tries++;
         if (!wasOpen && tries > 3) {
-          room = null; seeking = false; outbox = [];
+          room = null; seeking = inLobby = false; outbox = [];
           post('error The server for online games can\'t be reached.');
-          post('status closed');
+          status('closed');
           return;
         }
-        post('status lost');  // try again, waiting longer each time (up to half a minute)
+        status('lost');  // try again, waiting longer each time (up to half a minute)
         timer = setTimeout(connect, Math.min(30000, 1000 * Math.pow(2, Math.min(tries - 1, 5))));
       };
     }
@@ -499,8 +754,24 @@
     var api = {
       onCode: null,       // (code): a recovery code that came too late for its form
       onLoggedOut: null,  // (): logged out by the server
+      onMe: null,         // (me): this browser's player, as the server has them now (null: logged out)
+      onLobby: null,      // (message): the lobby's (its list, invitations, a player's card, refusals)
+      onMatch: null,      // (room message): a rated game has started for this page
+      onStatus: null,     // ('connecting', 'open', 'lost' or 'closed')
       inbox: inbox,
       request: request,
+      send: send,
+      lobby: function (on) {  // into the lobby (the server sends its list, now and when it changes), or out
+        inLobby = on;
+        if (!on) seeking = false;
+        if (open) raw({ t: on ? 'lobby' : 'unlobby' });
+        else if (on) connect();  // (and in, once connected)
+      },
+      seek: function (on) {  // waiting for an opponent (in the lobby), or not
+        seeking = on;
+        if (open) raw({ t: on ? 'seek' : 'unseek' });
+        else if (on) connect();
+      },
       player: function () { return me; },
       loggedIn: function () { return !!store('lm-player'); },
       check: function () {  // who this browser is logged in as (null: nobody)
@@ -517,11 +788,7 @@
         else if (verb === 'join') {
           room = arg.toUpperCase(); seeking = false;
           if (open) raw({ t: 'join', room: room, token: store('lm-game-' + room) }); else connect();
-        } else if (verb === 'seek') {
-          room = null; seeking = true; setAddress(null);
-          if (open) raw({ t: 'seek' }); else connect();
-        } else if (verb === 'unseek') { seeking = false; if (open) raw({ t: 'unseek' }); }
-        else if (verb === 'move') { var a = arg.split(' '); send({ t: 'move', ply: +a[0], uci: a[1] }); }
+        } else if (verb === 'move') { var a = arg.split(' '); send({ t: 'move', ply: +a[0], uci: a[1] }); }
         else if (verb === 'hello') connect();
         else if (verb === 'sync') { if (room && open) raw({ t: 'join', room: room, token: store('lm-game-' + room) }); }
         else if (verb === 'copy') copy();
@@ -539,9 +806,9 @@
   ['keydown', 'keypress', 'keyup'].forEach(function (type) {
     window.addEventListener(type, function (e) {
       var dialogOpen = !$('dialog').hidden;
-      if (document.body.classList.contains('front') || dialogOpen) {
+      if (document.body.classList.contains('front') || dialogOpen || atLobby) {
         e.stopImmediatePropagation();
-        if (type === 'keydown' && e.key === 'Escape' && dialogOpen) closeDialog();
+        if (type === 'keydown' && e.key === 'Escape') closeTopWindow();
       } else if (type === 'keydown' && e.key === 'F1') {
         e.preventDefault();  // (the game's help, not the browser's)
       }
@@ -635,6 +902,10 @@
   $('codeSaved').addEventListener('change', function () { $('codePlay').disabled = !this.checked; });
   $('codePlay').addEventListener('click', function () { startGame(); });
   $('welcomePlay').addEventListener('click', function () { startGame(); });
+  $('welcomeLobby').addEventListener('click', function () {  // the lobby: at once, or once the game is ready
+    if (started) { if (atHome) openLobby(); }
+    else startGame(true);
+  });
   $('welcomeOut').addEventListener('click', function () {
     lmNet.logout().then(function () {
       if (started) location.href = location.pathname;  // (the game waiting behind the front page was theirs)
@@ -643,6 +914,7 @@
   });
 
   function welcome(me) {
+    showMyIcon(me);
     $('welcomeName').textContent = me.name;
     $('welcomeStats').textContent = 'Rating ' + me.rating + ' · ' + me.games + ' rated game' + (me.games === 1 ? '' : 's');
     show('welcome');
@@ -673,7 +945,7 @@
     document.documentElement.classList.toggle('game', on);  // (no scrolling under the game)
     window.scrollTo(0, 0);
   }
-  function startGame() {
+  function startGame(lobby) {
     if (started) {
       if (atHome) backToGame();
       return;
@@ -686,6 +958,7 @@
       return;
     }
     started = true;
+    if (lobby) args.push('--lobby');  // (the game opens it as soon as it's ready)
     showGame(true);
     overlay.hidden = false;
     canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });  // right-drag turns the board
@@ -729,6 +1002,7 @@
   // ---- the Account window, over the game
   function fillDialog(me) {
     if (!me) return;
+    showMyIcon(me);
     $('dialogName').textContent = me.name;
     $('dialogStats').textContent = 'Rating ' + me.rating + ' · ' + me.games + ' rated game' + (me.games === 1 ? '' : 's');
     $('pwTitle').textContent = me.haspw ? 'Change your password' : 'Choose a password';
@@ -795,6 +1069,12 @@
     $('newCodeErr').textContent = 'Your new recovery code (the old one no longer works). Save it somewhere safe.';
   };
   lmNet.onLoggedOut = function () {
+    if (atLobby) {  // (the game waits behind the front page, as after its Home page button)
+      leaveLobbyView();
+      atHome = true;
+      $('welcomePlay').textContent = 'Back to the game';
+      showGame(false);
+    }
     if (!started || atHome) show('login');
     if (!started) return;
     $('dialog').hidden = true;
@@ -833,8 +1113,635 @@
     if (window.Module && Module._lm_back_to_game) Module._lm_back_to_game();
   }
 
+  // ---- players' pictures (avatars.js), or for a player without one, the first letter of their name
+  function avatarSvg(icon, name) {
+    var A = window.lmAvatars;
+    if (icon && A && A.has(icon)) return A.svg(icon);
+    var n = String(name || '?'), hue = 0;
+    for (var i = 0; i < n.length; i++) hue = (hue * 31 + n.charCodeAt(i)) % 360;
+    var letter = n.charAt(0).toUpperCase().replace(/[^A-Z0-9]/, '#');
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%" aria-hidden="true">' +
+      '<circle cx="32" cy="32" r="32" fill="hsl(' + hue + ',30%,30%)"/><text x="32" y="43" text-anchor="middle" ' +
+      'font-family="Georgia,serif" font-size="31" fill="#f4e8d2">' + letter + '</text></svg>';
+  }
+  function setAvatar(e, icon, name) { e.innerHTML = avatarSvg(icon, name); }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+  function clockText(s) { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }
+  function recordText(p) {
+    return p.games ? p.wins + ' won · ' + p.draws + ' drawn · ' + p.losses + ' lost' : 'No rated games yet';
+  }
+  function addRecord(into, p) {  // 12W 3D 5L, in colour
+    if (!p.games) { into.appendChild(document.createTextNode('new player')); return; }
+    [['w', p.wins, 'W'], ['d', p.draws, 'D'], ['l', p.losses, 'L']].forEach(function (x, i) {
+      if (i) into.appendChild(document.createTextNode(' '));
+      into.appendChild(el('span', x[0], x[1] + x[2]));
+    });
+  }
+  function ago(t) {
+    var s = Date.now() / 1000 - t;
+    if (s < 90) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) return plural(Math.round(s / 3600), 'hour') + ' ago';
+    if (s < 2 * 86400) return 'yesterday';
+    if (s < 30 * 86400) return Math.round(s / 86400) + ' days ago';
+    return new Date(t * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function same(a, b) { return String(a || '').toLowerCase() === String(b || '').toLowerCase(); }
+
+  // ---- the lobby (Play someone online), over the game, which waits behind it as for the front
+  // page. The server sends its list now and whenever it changes; the game starts (lmNet.onMatch)
+  // when someone joins this player, or they join someone, or an invitation is accepted.
+  var atLobby = false;
+  var lob = { list: null, at: 0, key: '', waitSince: 0, out: null, inc: [], card: null, cardName: null, ticker: 0,
+              toast: 0, title: document.title, audio: null, hint: '' };
+  var muted = args.indexOf('--mute') >= 0;
+
+  function openLobby() {  // (the game asks for it: window.lmLobby; or the front page's button)
+    if (!started || atLobby) return;
+    atHome = false;
+    atLobby = true;
+    $('dialog').hidden = true;
+    $('accountBtn').hidden = true;
+    showGame(true);
+    lob.list = null;
+    lob.key = '';
+    lob.waitSince = 0;
+    lob.out = null;
+    lob.inc = [];
+    $('lobby').hidden = false;
+    $('lobby').scrollTop = 0;
+    renderMe();
+    renderLobby();
+    renderOutgoing();
+    renderIncoming();
+    lmNet.lobby(true);
+    clearInterval(lob.ticker);
+    lob.ticker = setInterval(tick, 1000);
+    $('startBtn').focus({ preventScroll: true });
+  }
+  window.lmLobby = openLobby;
+
+  function leaveLobbyView() {  // (the server has been told, or knows: a game started)
+    atLobby = false;
+    clearInterval(lob.ticker);
+    lob.inc = [];
+    lob.out = null;
+    lob.waitSince = 0;
+    ['lobby', 'profile', 'picker', 'incoming', 'lobbyToast'].forEach(function (id) { $(id).hidden = true; });
+    document.title = lob.title;
+  }
+  function closeLobby() {  // back to the game as it was, without a new one
+    if (!atLobby) return;
+    leaveLobbyView();
+    lmNet.lobby(false);
+    backToGame();
+  }
+  $('lobbyBack').addEventListener('click', closeLobby);
+
+  lmNet.onMatch = function () {  // a rated game: the game goes to it at once
+    if (!started) return;
+    if (atLobby) leaveLobbyView();
+    atHome = false;
+    $('dialog').hidden = true;
+    showGame(true);
+    var me = lmNet.player();
+    $('accountBtn').textContent = me ? me.name : 'Log in';
+    $('accountBtn').hidden = false;
+    canvas.focus();
+    if (window.Module && Module._lm_online_match) Module._lm_online_match();
+  };
+
+  function toast(text) {
+    var t = $('lobbyToast');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(lob.toast);
+    lob.toast = setTimeout(function () { t.hidden = true; }, 5000);
+  }
+
+  // a soft two-note chime when someone asks (browsers allow sound after the player's first click here)
+  function audioReady() {
+    if (muted) return;
+    try {
+      lob.audio = lob.audio || new (window.AudioContext || window.webkitAudioContext)();
+      if (lob.audio.state === 'suspended') lob.audio.resume();
+    } catch (e) {}
+  }
+  function chime() {
+    var a = lob.audio;
+    if (muted || !a || a.state !== 'running') return;
+    var t = a.currentTime;
+    [[659.25, 0], [987.77, 0.13]].forEach(function (n) {
+      var o = a.createOscillator(), g = a.createGain();
+      o.type = 'sine';
+      o.frequency.value = n[0];
+      g.gain.setValueAtTime(0.0001, t + n[1]);
+      g.gain.exponentialRampToValueAtTime(0.16, t + n[1] + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + n[1] + 0.6);
+      o.connect(g);
+      g.connect(a.destination);
+      o.start(t + n[1]);
+      o.stop(t + n[1] + 0.65);
+    });
+  }
+  $('lobby').addEventListener('pointerdown', audioReady);
+
+  // ---- this player: their card at the top, and waiting for a game
+  function renderMe() {
+    var me = lmNet.player();
+    if (!me) return;
+    setAvatar($('meIcon'), me.icon, me.name);
+    $('meName').textContent = me.name;
+    var stats = $('meStats');
+    stats.textContent = 'Rating ' + me.rating + ' · ';
+    if (me.games) addRecord(stats, me);
+    else stats.appendChild(document.createTextNode('No rated games yet'));
+    $('mePick').textContent = me.icon ? 'Change your picture' : 'Choose your picture';
+    var waiting = !!lob.waitSince;
+    $('startBtn').hidden = waiting;
+    $('waitBox').hidden = !waiting;
+    $('waitTime').textContent = waiting ? clockText((Date.now() - lob.waitSince) / 1000) : '';
+  }
+  $('startBtn').addEventListener('click', function () {
+    audioReady();
+    lob.waitSince = Date.now();
+    lmNet.seek(true);
+    renderMe();
+  });
+  $('waitCancel').addEventListener('click', function () {
+    lmNet.seek(false);
+    lob.waitSince = 0;
+    renderMe();
+    lob.key = '';
+    renderLobby();
+  });
+
+  // ---- the list: the players who want to play, the others here, the games going on
+  function incomingFrom(name) {
+    for (var i = 0; i < lob.inc.length; i++) if (same(lob.inc[i].from.name, name)) return lob.inc[i];
+    return null;
+  }
+  function askToPlay(name) {
+    audioReady();
+    lmNet.send({ t: 'challenge', name: name });
+  }
+  // what the button beside a player does: join them, answer them, or ask them
+  function playAction(p, where) {
+    var inc = incomingFrom(p.name);
+    if (inc) return { label: 'Play', go: true, fn: function () { answer(inc, true); } };
+    if (where === 'waiting') return { label: 'Play now', go: true, fn: function () { askToPlay(p.name); } };
+    if (lob.out && same(lob.out.to.name, p.name)) return { label: 'Asked', disabled: true };
+    if (where === 'lobby') return { label: 'Ask to play', fn: function () { askToPlay(p.name); } };
+    return null;
+  }
+  function actButton(a) {
+    var b = el('button', 'act' + (a.go ? ' go' : ''), a.label);
+    b.type = 'button';
+    b.disabled = !!a.disabled;
+    if (a.fn) b.addEventListener('click', a.fn);
+    return b;
+  }
+  function playerCard(p) {
+    var where = p.waiting != null ? 'waiting' : 'lobby';
+    var card = el('div', 'pcard' + (where === 'waiting' ? ' waiting' : '') + (incomingFrom(p.name) ? ' asked-me' : ''));
+    var who = el('button', 'who');
+    who.type = 'button';
+    who.title = 'See ' + p.name + '\'s stats';
+    var av = el('span', 'avatar');
+    setAvatar(av, p.icon, p.name);
+    var info = el('span', 'pinfo');
+    info.appendChild(el('span', 'pname', p.name));
+    var meta = el('span', 'pmeta rec');
+    meta.appendChild(document.createTextNode(p.rating + ' · '));
+    addRecord(meta, p);
+    info.appendChild(meta);
+    if (where === 'waiting') {
+      var w = el('span', 'wants');
+      w.appendChild(el('span', 'pulse'));
+      w.appendChild(document.createTextNode('Wants to play · '));
+      var t = el('span', 'since');
+      t.setAttribute('data-since', String(lob.at - p.waiting * 1000));
+      t.textContent = clockText(p.waiting);
+      w.appendChild(t);
+      info.appendChild(w);
+    } else if (incomingFrom(p.name)) {
+      info.appendChild(el('span', 'wants', 'Asked you to play'));
+    }
+    who.appendChild(av);
+    who.appendChild(info);
+    who.addEventListener('click', function () { openCard(p, where); });
+    card.appendChild(who);
+    var a = playAction(p, where);
+    if (a) card.appendChild(actButton(a));
+    return card;
+  }
+  function gameSide(p) {
+    var b = el('button', 'gside');
+    b.type = 'button';
+    b.title = 'See ' + p.name + '\'s stats';
+    var av = el('span', 'avatar small');
+    setAvatar(av, p.icon, p.name);
+    b.appendChild(av);
+    var n = el('span', '', p.name + ' ');
+    n.appendChild(el('small', '', String(p.rating)));
+    b.appendChild(n);
+    b.addEventListener('click', function () { openCard(p, 'playing'); });
+    return b;
+  }
+  function renderLobby() {
+    var L = lob.list, me = lmNet.player();
+    if (!L) {
+      $('lobbyCount').textContent = 'Connecting…';
+      $('secWaiting').hidden = $('secGames').hidden = true;
+      $('secHere').hidden = false;
+      $('listHere').innerHTML = '';
+      $('lobbyEmpty').hidden = true;
+      return;
+    }
+    var mine = null, others = [];
+    L.players.forEach(function (p) { if (me && same(p.name, me.name)) mine = p; else others.push(p); });
+    if (mine && me) {  // (this player's rating and record, after a game)
+      ['rating', 'games', 'wins', 'draws', 'losses', 'icon'].forEach(function (k) { me[k] = mine[k]; });
+      renderMe();
+    }
+    $('lobbyCount').textContent = plural(L.online, 'player') + ' online · ' + plural(L.playing, 'game') + ' going on';
+    if (L.clock_ms) {
+      var hint = 'Start a game to show everyone you want to play: anyone here can join you, and you\'re paired with ' +
+        'a player near your rating who\'s waiting too. Or click a player to see their stats and ask them to play. ' +
+        'Games are rated, ' + Math.round(L.clock_ms / 60000) + ' minutes each plus ' + Math.round(L.inc_ms / 1000) +
+        ' seconds a move.';
+      if (hint !== lob.hint) $('lobbyHint').textContent = lob.hint = hint;
+    }
+    // (drawn again only when something shown has changed, so that a click isn't lost to it)
+    var key = JSON.stringify([others.map(function (p) { return [p.name, p.icon, p.rating, p.games, p.wins, p.draws,
+                                                                 p.losses, p.waiting != null]; }),
+                              L.games.map(function (g) { return [g.w.name, g.b.name, g.moves]; }), L.more,
+                              lob.out && lob.out.to.name, lob.inc.map(function (x) { return x.from.name; })]);
+    if (key === lob.key) {  // (just the waiting times)
+      var byName = {};
+      others.forEach(function (p) { byName[p.name] = p; });
+      Array.prototype.forEach.call(document.querySelectorAll('#listWaiting .pcard'), function (c) {
+        var p = byName[c.querySelector('.pname').textContent], t = c.querySelector('.since');
+        if (p && t && p.waiting != null) t.setAttribute('data-since', String(lob.at - p.waiting * 1000));
+      });
+      return;
+    }
+    lob.key = key;
+    var waiting = $('listWaiting'), here = $('listHere'), games = $('listGames');
+    waiting.innerHTML = here.innerHTML = games.innerHTML = '';
+    others.forEach(function (p) { (p.waiting != null ? waiting : here).appendChild(playerCard(p)); });
+    $('secWaiting').hidden = !waiting.children.length;
+    $('secHere').hidden = !here.children.length && waiting.children.length > 0;
+    $('lobbyEmpty').hidden = others.length > 0;
+    if (L.more) here.appendChild(el('p', 'hint', '…and ' + plural(L.more, 'more player')));
+    L.games.forEach(function (g) {
+      var row = el('div', 'grow');
+      row.appendChild(gameSide(g.w));
+      row.appendChild(el('span', 'vs', 'vs'));
+      row.appendChild(gameSide(g.b));
+      row.appendChild(el('span', 'gmoves', 'move ' + Math.max(1, g.moves)));
+      games.appendChild(row);
+    });
+    $('secGames').hidden = !L.games.length;
+  }
+  function tick() {  // once a second: the waiting times and the invitations' clocks
+    var now = Date.now();
+    Array.prototype.forEach.call(document.querySelectorAll('#lobby .since'), function (t) {
+      t.textContent = clockText((now - Number(t.getAttribute('data-since'))) / 1000);
+    });
+    if (lob.waitSince) $('waitTime').textContent = clockText((now - lob.waitSince) / 1000);
+    if (lob.out) {
+      var left = Math.ceil((lob.out.until - now) / 1000);
+      $('outTime').textContent = left > 0 ? left + ' s' : '';
+    }
+    var changed = false;
+    lob.inc = lob.inc.filter(function (x) { var keep = now < x.until + 3000; changed = changed || !keep; return keep; });
+    if (changed) { renderIncoming(); lob.key = ''; renderLobby(); }
+    else if (lob.inc.length) $('incBar').style.width = Math.max(0, 100 * (lob.inc[0].until - now) / lob.inc[0].total) + '%';
+  }
+
+  // ---- invitations: this player's, waiting for an answer; and those to this player
+  function renderOutgoing() {
+    var o = lob.out;
+    $('outgoing').hidden = !o;
+    if (!o) return;
+    setAvatar($('outIcon'), o.to.icon, o.to.name);
+    $('outName').textContent = o.to.name;
+    tick();
+  }
+  $('outCancel').addEventListener('click', function () { lmNet.send({ t: 'unchallenge' }); });
+  function renderIncoming() {
+    var x = lob.inc[0];
+    $('incoming').hidden = !x || !atLobby;
+    if (!x) { document.title = lob.title; return; }
+    setAvatar($('incIcon'), x.from.icon, x.from.name);
+    $('incName').textContent = x.from.name;
+    var stats = $('incStats');
+    stats.textContent = 'Rating ' + x.from.rating + ' · ';
+    if (x.from.games) addRecord(stats, x.from); else stats.appendChild(document.createTextNode('new player'));
+    $('incMore').hidden = lob.inc.length < 2;
+    $('incMore').textContent = lob.inc.length > 1 ? plural(lob.inc.length - 1, 'more player') + ' asked you too.' : '';
+    $('incYes').disabled = $('incNo').disabled = false;
+    $('incBar').style.transition = 'none';
+    $('incBar').style.width = Math.max(0, 100 * (x.until - Date.now()) / x.total) + '%';
+    void $('incBar').offsetWidth;  // (from there, smoothly)
+    $('incBar').style.transition = '';
+    document.title = x.from.name + ' wants to play! - Living Marble';
+  }
+  function answer(x, yes) {
+    lmNet.send({ t: 'answer', id: x.id, yes: yes });
+    if (yes) {  // (the game starts when the server says so)
+      $('incYes').disabled = $('incNo').disabled = true;
+      $('incYes').textContent = 'Starting…';
+      return;
+    }
+    lob.inc = lob.inc.filter(function (y) { return y !== x; });
+    renderIncoming();
+    lob.key = '';
+    renderLobby();
+    if (lob.card && same(lob.card.name, x.from.name)) renderCard();
+  }
+  $('incYes').addEventListener('click', function () { if (lob.inc[0]) answer(lob.inc[0], true); });
+  $('incNo').addEventListener('click', function () { if (lob.inc[0]) answer(lob.inc[0], false); });
+  $('incLook').addEventListener('click', function () { if (lob.inc[0]) openCard(lob.inc[0].from, 'lobby'); });
+
+  var GONE = { declined: ' said no thanks.', expired: ' didn\'t answer.', left: ' left the lobby.',
+               playing: ' started another game.', accepted: ' said yes! Starting the game…' };
+  lmNet.onLobby = function (m) {
+    if (!atLobby) return;
+    if (m.t === 'lobby') {
+      lob.list = m;
+      lob.at = Date.now();
+      renderLobby();
+    } else if (m.t === 'seeking') {
+      if (!lob.waitSince) lob.waitSince = Date.now();
+      renderMe();
+    } else if (m.t === 'challenged') {
+      if (incomingFrom(m.from.name) && incomingFrom(m.from.name).id === m.id) return;
+      lob.inc = lob.inc.filter(function (x) { return !same(x.from.name, m.from.name); });
+      lob.inc.push({ id: m.id, from: m.from, until: Date.now() + m.seconds * 1000, total: m.seconds * 1000 });
+      $('incYes').textContent = 'Play';
+      renderIncoming();
+      chime();
+      lob.key = '';
+      renderLobby();
+      if (lob.card && same(lob.card.name, m.from.name)) renderCard();
+    } else if (m.t === 'challenge_sent') {
+      lob.out = { id: m.id, to: m.to, until: Date.now() + m.seconds * 1000 };
+      renderOutgoing();
+      lob.key = '';
+      renderLobby();
+      if (lob.card) renderCard();
+    } else if (m.t === 'challenge_gone') {
+      if (lob.out && lob.out.id === m.id) {
+        lob.out = null;
+        if (GONE[m.why]) toast(m.name + GONE[m.why]);
+        renderOutgoing();
+      }
+      lob.inc = lob.inc.filter(function (x) { return x.id !== m.id; });
+      renderIncoming();
+      lob.key = '';
+      renderLobby();
+      if (lob.card) renderCard();
+    } else if (m.t === 'profile') {
+      if (!$('profile').hidden && same(m.name, lob.cardName)) { lob.card = m; renderCard(); }
+    } else if (m.t === 'lobby_error' || m.t === 'notice') {
+      if (m.t === 'notice' && lob.waitSince) { lob.waitSince = 0; renderMe(); }  // (it couldn't wait)
+      toast(m.why);
+    } else if (m.t === 'need_login') {
+      lob.waitSince = 0;
+      renderMe();
+      toast('You\'re not logged in any more. Reload the page to log in.');
+    }
+  };
+  lmNet.onStatus = function (s) {
+    if (!atLobby) return;
+    if (s === 'lost' || s === 'closed') {  // (the server forgets this page's invitations and waiting with it)
+      lob.out = null;
+      lob.inc = [];
+      renderOutgoing();
+      renderIncoming();
+      $('lobbyCount').textContent = s === 'lost' ? 'Connection lost - reconnecting…' : 'Not connected to the server';
+      if (s === 'closed') {
+        lob.waitSince = 0;
+        renderMe();
+        toast('The server for online games can\'t be reached. Try again in a while.');
+      }
+    }
+  };
+
+  // ---- a player's card: their stats, from their games
+  var WHERE = { waiting: ['Wants to play', true], lobby: ['In the lobby', true], playing: ['Playing a game', true],
+                online: ['Online', true], away: ['Not online', false] };
+  function openCard(p, where) {
+    audioReady();
+    lob.cardName = p.name;
+    lob.card = { name: p.name, icon: p.icon, rating: p.rating, games: p.games, wins: p.wins, draws: p.draws,
+                 losses: p.losses, where: where, loading: true };
+    renderCard();
+    $('profile').hidden = false;
+    lmNet.send({ t: 'profile', name: p.name });
+  }
+  function fact(box, value, label) {
+    var f = el('div', 'fact');
+    f.appendChild(el('b', '', value));
+    f.appendChild(el('span', '', label));
+    box.appendChild(f);
+  }
+  function howItEnded(g) {  // (from the card's player's side)
+    var won = g.r === 'W';
+    return {
+      checkmate: 'by checkmate', resignation: won ? 'they resigned' : 'resigned', timeout: won ? 'on time' : 'out of time',
+      abandoned: won ? 'the opponent left' : 'left the game', agreement: 'by agreement', stalemate: 'stalemate',
+      fifty: 'fifty-move rule', repetition: 'repetition', material: 'not enough pieces left'
+    }[g.why] || '';
+  }
+  function renderCard() {
+    var m = lob.card, body = $('profileBody'), me = lmNet.player();
+    if (!m) return;
+    var mineCard = me && same(m.name, me.name);
+    body.innerHTML = '';
+    var head = el('div', 'prof-head');
+    var av = el('span', 'avatar big');
+    setAvatar(av, m.icon, m.name);
+    head.appendChild(av);
+    var hd = el('div');
+    hd.appendChild(el('h3', '', m.name));
+    var line = 'Rating ' + m.rating;
+    if (m.rank) line += ' · #' + m.rank + ' on the leaderboard';
+    if (m.peak && m.peak > m.rating) line += ' · best ' + m.peak;
+    hd.appendChild(el('div', 'prof-line', line));
+    var w = WHERE[mineCard ? 'online' : m.where] || WHERE.away;
+    hd.appendChild(el('span', 'where' + (w[1] ? ' on' : ''), mineCard ? 'You' : w[0]));
+    head.appendChild(hd);
+    body.appendChild(head);
+
+    function section(title) {
+      var s = el('div', 'prof-sect');
+      if (title) s.appendChild(el('h4', '', title));
+      body.appendChild(s);
+      return s;
+    }
+    // the record of rated games, with a bar
+    var rec = section('Rated games');
+    if (m.games) {
+      var bar = el('div', 'bar');
+      [['w', m.wins], ['d', m.draws], ['l', m.losses]].forEach(function (x) {
+        if (!x[1]) return;
+        var i = el('i', x[0]);
+        i.style.width = (100 * x[1] / m.games) + '%';
+        bar.appendChild(i);
+      });
+      rec.appendChild(bar);
+      var t = el('div', 'rec');
+      addRecord(t, m);
+      t.appendChild(document.createTextNode(' · ' + plural(m.games, 'game') + ' · ' + Math.round(100 * m.wins / m.games) + '% won'));
+      rec.appendChild(t);
+    } else {
+      rec.appendChild(el('div', 'hint', mineCard ? 'None yet: start a game!' : 'None yet: a new player.'));
+    }
+    if (m.loading) {
+      body.appendChild(el('p', 'hint', 'Looking through ' + m.name + '\'s games…'));
+    } else {
+      if (m.form) {  // the latest results, newest first, and the streak
+        var fs = section('Latest games (newest first)');
+        var form = el('div', 'form');
+        m.form.split('').forEach(function (r) {
+          var s = el('span', r, r);
+          s.title = { W: 'Won', D: 'Drawn', L: 'Lost' }[r];
+          form.appendChild(s);
+        });
+        fs.appendChild(form);
+        if (m.streak && m.streak[1] >= 2) {
+          var k = { W: ['win', 'wins'], D: ['draw', 'draws'], L: ['loss', 'losses'] }[m.streak[0]];
+          fs.appendChild(el('div', 'hint', (m.streak[0] === 'W' ? 'On a roll: ' : '') + plural(m.streak[1], k[0], k[1]) + ' in a row'));
+        }
+      }
+      var facts = el('div', 'facts');
+      if (m.played) fact(facts, String(m.played), (m.played === 1 ? 'game' : 'games') + ' played' +
+                         (m.friendly ? ' (' + m.friendly + ' with friends)' : ''));
+      if (m.mates) fact(facts, String(m.mates), plural(m.mates, 'checkmate').replace(/^\d+ /, '') + ' delivered' +
+                        (m.quickest ? ', the fastest in ' + plural(m.quickest, 'move') : ''));
+      if (m.best_streak >= 2) fact(facts, String(m.best_streak), 'wins in a row at best');
+      if (m.opening) fact(facts, '1. ' + m.opening.move, 'favourite first move (' + m.opening.times + ' of ' + m.opening.of + ' games as White)');
+      if (m.avg_moves) fact(facts, String(m.avg_moves), 'moves in an average game');
+      if (m.since) fact(facts, new Date(m.since * 1000).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }), 'playing here since');
+      if (facts.children.length) section('').appendChild(facts);
+      if (m.vs) {  // this player against them
+        var vs = section('You and ' + m.name), n = m.vs[0] + m.vs[1] + m.vs[2];
+        vs.appendChild(el('div', 'rec', n ? '' : 'You haven\'t played each other yet.'));
+        if (n) {
+          var line = vs.lastChild;
+          line.appendChild(document.createTextNode(plural(n, 'game') + ' together: you won ' + m.vs[0] + ', drew ' + m.vs[1] +
+                                                   ' and lost ' + m.vs[2] + '.'));
+        }
+      }
+      if (m.recent && m.recent.length) {
+        var rs = section('Recent games'), list = el('div', 'recent');
+        m.recent.forEach(function (g) {
+          var row = el('div', 'rgame');
+          row.appendChild(el('span', 'res ' + g.r, { W: 'Won', D: 'Draw', L: 'Lost' }[g.r]));
+          var oav = el('span', 'avatar small');
+          setAvatar(oav, g.opp && g.opp.icon, g.opp ? g.opp.name : '?');
+          row.appendChild(oav);
+          var tx = el('span', 'rtext', 'vs ' + (g.opp ? g.opp.name : 'a deleted player'));
+          var how = howItEnded(g);
+          tx.appendChild(el('small', '', [how, g.moves ? plural(g.moves, 'move') : '', g.rated ? '' : 'with a friend',
+                                          ago(g.ended)].filter(Boolean).join(' · ')));
+          row.appendChild(tx);
+          if (g.change != null) {
+            row.appendChild(el('span', 'chg ' + (g.change > 0 ? 'up' : g.change < 0 ? 'down' : ''),
+                               (g.change > 0 ? '+' : '') + g.change));
+          }
+          list.appendChild(row);
+        });
+        rs.appendChild(list);
+      }
+    }
+    // what can be done: play them, or (this player's own card) choose a picture
+    var act = el('div', 'prof-sect'), a;
+    if (mineCard) {
+      a = { label: me.icon ? 'Change your picture' : 'Choose your picture', fn: function () { openPicker(); } };
+    } else {
+      a = playAction(m, m.where);
+      if (a && a.label === 'Asked') a.label = 'Asked - waiting for their answer';
+      if (a && a.label === 'Ask to play') a.label = 'Ask ' + m.name + ' to play';
+      if (a && a.label === 'Play') a.label = 'Play - they asked you';
+      if (!a) a = { label: m.where === 'playing' ? 'Playing a game right now' : 'Not in the lobby right now', disabled: true };
+    }
+    var b = actButton(a);
+    b.className = 'btn' + (a.go ? '' : ' quiet');
+    if (a.fn && !mineCard) b.addEventListener('click', function () { $('profile').hidden = true; });
+    act.appendChild(b);
+    body.appendChild(act);
+  }
+
+  // ---- choosing a picture
+  function openPicker() {
+    var grid = $('pickGrid'), A = window.lmAvatars, me = lmNet.player();
+    grid.innerHTML = '';
+    if (!A) grid.appendChild(el('p', 'hint', 'The pictures couldn\'t be loaded. Reload the page to try again.'));
+    else A.list.forEach(function (x) {
+      var b = el('button', 'pick-one' + (me && me.icon === x.id ? ' on' : ''));
+      b.type = 'button';
+      b.title = x.name;
+      var av = el('span', 'avatar');
+      av.innerHTML = A.svg(x.id);
+      b.appendChild(av);
+      b.appendChild(el('span', '', x.name));
+      b.addEventListener('click', function () { chooseIcon(x.id); });
+      grid.appendChild(b);
+    });
+    $('picker').hidden = false;
+    var on = grid.querySelector('.on') || grid.querySelector('button');
+    if (on) on.focus({ preventScroll: true });
+  }
+  function chooseIcon(id) {
+    var me = lmNet.player();
+    $('picker').hidden = true;
+    if (!me) return;
+    me.icon = id;  // (at once here; the server tells the player's other pages)
+    lmNet.send({ t: 'icon', icon: id });
+    showMyIcon(me);
+    if (lob.card && same(lob.card.name, me.name)) { lob.card.icon = id; renderCard(); }
+  }
+  function showMyIcon(me) {
+    if (!me) return;
+    setAvatar($('welcomeIcon'), me.icon, me.name);
+    setAvatar($('dialogIcon'), me.icon, me.name);
+    $('dialogPick').textContent = me.icon ? 'Change your picture' : 'Choose your picture';
+    if (atLobby) renderMe();
+  }
+  ['meIcon', 'mePick', 'welcomeIcon', 'dialogIcon', 'dialogPick'].forEach(function (id) {
+    $(id).addEventListener('click', openPicker);
+  });
+  lmNet.onMe = showMyIcon;
+
+  // the windows over the lobby close with their x, a click beside them, or Esc
+  Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function (b) {
+    b.addEventListener('click', function () { $(b.getAttribute('data-close')).hidden = true; });
+  });
+  ['profile', 'picker'].forEach(function (id) {
+    $(id).addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+  });
+  function closeTopWindow() {  // (Esc): true if there was one
+    var ids = ['picker', 'profile', 'dialog'];
+    for (var i = 0; i < ids.length; i++)
+      if (!$(ids[i]).hidden) {
+        if (ids[i] === 'dialog') closeDialog(); else $(ids[i]).hidden = true;
+        return true;
+      }
+    return false;
+  }
+
   // iPhone and iPad: two fingers on the game zoom the board, never the page
-  document.addEventListener('gesturestart', function (e) { if (started && !atHome) e.preventDefault(); });
+  document.addEventListener('gesturestart', function (e) { if (started && !atHome && !atLobby) e.preventDefault(); });
   // iPhone and iPad stop the sound when the browser is put away: the next touch brings it back
   ['touchend', 'click'].forEach(function (type) {
     document.addEventListener(type, function () {

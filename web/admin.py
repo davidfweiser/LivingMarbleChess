@@ -194,8 +194,8 @@ def now_lines(data, width):
     games = st.get("games", [])
     playing = sum(1 for g in games for s in "wb" if g[s].get("here"))
     out.append((f"Online now: {len(st.get('online', []))} players   Playing: {playing} in "
-                f"{st.get('games_going', len(games))} games   Waiting for an opponent: {len(st.get('seeking', []))}   "
-                f"Connections: {st.get('connections', 0)}", GOLD))
+                f"{st.get('games_going', len(games))} games   In the lobby: {len(st.get('lobby', []))}   "
+                f"Waiting for an opponent: {len(st.get('seeking', []))}   Connections: {st.get('connections', 0)}", GOLD))
     out.append(("", 0))
     out.append(("GAMES GOING ON", HEAD))
     if not games:

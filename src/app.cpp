@@ -116,9 +116,15 @@ RenderSettings presetSettings(int p) {
 }  // namespace
 
 #ifdef __EMSCRIPTEN__
-// The front page's "Back to the game" (web/index.html), after the game's Home page button
+// The front page's "Back to the game" (web/index.html), after the game's Home page button; and
+// the lobby's, when it closes without a game
 extern "C" EMSCRIPTEN_KEEPALIVE void lm_back_to_game() {
   if (webApp) webApp->backFromHome();
+}
+// The lobby started a rated game (or the server sent this page one): the server's messages
+// about it follow
+extern "C" EMSCRIPTEN_KEEPALIVE void lm_online_match() {
+  if (webApp) webApp->enterMatch();
 }
 #endif
 
@@ -485,8 +491,8 @@ bool App::tick() {
 void App::newGame(bool tellFriend) {
   if (mode == Mode::Online) {
     if (tellFriend) {
-      if (online.kind == OnlineGame::Kind::Match) {  // a matched game: another opponent, once it is over
-        if (!onlineGameOn() && !online.seeking) startMatch();
+      if (online.kind == OnlineGame::Kind::Match) {  // a rated game: the lobby, for another, once it is over
+        if (!onlineGameOn()) openLobby();
         return;
       }
       if (!online.error.empty() || online.net == OnlineGame::Net::Closed) {  // (no game to start again: a new
@@ -526,7 +532,7 @@ void App::newGame(bool tellFriend) {
 
 bool App::canStartNew() const {
   if (mode != Mode::Online) return true;
-  if (online.kind == OnlineGame::Kind::Match) return !onlineGameOn() && !online.seeking;  // (another opponent, after)
+  if (online.kind == OnlineGame::Kind::Match) return !onlineGameOn();  // (another opponent, after: the lobby)
   return online.net == OnlineGame::Net::Open || online.net == OnlineGame::Net::Closed || !online.error.empty();
 }
 
@@ -534,18 +540,51 @@ bool App::canGoHome() const { return !(mode == Mode::Online && online.kind == On
 
 // The front page over the game, which waits as it is: silent, its frames stopped (the browser
 // keeps the WebAssembly and the sculpted pieces, so coming back is at once). An online game with
-// a friend stays open; looking for an opponent stops (a game would start with nobody there).
+// a friend stays open.
 void App::goHome() {
 #ifdef __EMSCRIPTEN__
   if (atHome || !canGoHome()) return;
   if (!EM_ASM_INT({ return window.lmHome ? 1 : 0; })) return;  // (a page without a front page to show)
-  if (mode == Mode::Online && online.seeking) setMode(Mode::HumanWhite);
+  pause();
+  EM_ASM({ if (window.lmHome) window.lmHome(); });
+#endif
+}
+
+// The lobby (the page's: Play someone online) over the game, which waits as for the front page.
+// A game with a friend stays open behind it until a rated game starts.
+void App::openLobby() {
+#ifdef __EMSCRIPTEN__
+  if (atHome || !net::available() || (mode == Mode::Online && online.kind == OnlineGame::Kind::Match && onlineGameOn()))
+    return;
+  if (!EM_ASM_INT({ return window.lmLobby ? 1 : 0; })) return;
+  pause();
+  EM_ASM({ if (window.lmLobby) window.lmLobby(); });
+#endif
+}
+
+// A rated game the lobby started: the board set out afresh (whatever was on it: a game against
+// the computer, with a friend, or the last opponent's, over), and the server's messages about it,
+// already in the page's inbox, take it from there: this player's side, the players, the clocks.
+void App::enterMatch() {
+  if (loading) {  // (the lobby waits for the game to be ready; just in case: as soon as it is)
+    opt.join.clear();
+    pendingMatch = true;
+    return;
+  }
+  if (mode != Mode::Online) setMode(Mode::Online);
+  online = OnlineGame();
+  online.kind = OnlineGame::Kind::Match;
+  newGame(false);
+  backFromHome();
+}
+
+void App::pause() {
+#ifdef __EMSCRIPTEN__
   atHome = true;
   showMenu = false;
   showHelp = false;
   audio.setVolume(0);
   emscripten_pause_main_loop();
-  EM_ASM({ if (window.lmHome) window.lmHome(); });
 #endif
 }
 
@@ -768,13 +807,6 @@ const char* App::statusText() const {
     if (online.net == OnlineGame::Net::Connecting) return "Connecting to the server...";
     if (online.net == OnlineGame::Net::Lost) return "Connection lost - reconnecting...";
     if (online.net == OnlineGame::Net::Closed) return "Not connected";
-    if (online.seeking) {
-      int t = (int)(glfwGetTime() - online.seekSince);
-      char buf[64];
-      std::snprintf(buf, sizeof(buf), "Looking for an opponent... %d:%02d", t / 60, t % 60);
-      s = buf;
-      return s.c_str();
-    }
     if (!online.endText.empty()) return online.endText.c_str();
     if (r != chess::Result::Ongoing) return chess::resultText(r);
     if (!online.started) return match ? "Setting up the game..." : "Waiting for your friend to join...";
@@ -918,19 +950,6 @@ void App::startOnline(const std::string& code) {
   net::command(code.empty() ? std::string("create") : "join " + code);
 }
 
-// Looks for an opponent: the server pairs this player with someone of a similar rating.
-void App::startMatch() {
-  if (!net::available()) return;
-  if (mode == Mode::Online) leaveOnline();
-  setMode(Mode::Online);
-  online = OnlineGame();
-  online.kind = OnlineGame::Kind::Match;
-  online.seeking = true;
-  online.seekSince = glfwGetTime();
-  newGame(false);
-  net::command("seek");
-}
-
 void App::leaveOnline() {
   net::command("close");
   online = OnlineGame();
@@ -976,7 +995,7 @@ void App::openLeaderboard() {
 }
 
 bool App::onlineGameOn() const {
-  return mode == Mode::Online && online.started && !online.seeking && online.endText.empty() &&
+  return mode == Mode::Online && online.started && online.endText.empty() &&
          game.result() == chess::Result::Ongoing;
 }
 
@@ -1048,12 +1067,6 @@ void App::pollOnline(float dt) {
                    : s == "lost"   ? OnlineGame::Net::Lost
                    : s == "closed" ? OnlineGame::Net::Closed
                                    : OnlineGame::Net::Connecting;
-    } else if (kind == "needlogin") {  // (the login has run out: the front page logs in again)
-      online.error = "You're not logged in. Reload the page to log in.";
-      online.seeking = false;
-    } else if (kind == "seeking") {
-      online.seeking = true;
-      online.net = OnlineGame::Net::Open;  // (the page was connected already: no "status open" comes)
     } else if (kind == "room") {
       std::string code, seat;
       int full = 0, peer = 0, rated = 0;
@@ -1074,7 +1087,6 @@ void App::pollOnline(float dt) {
       online.peer = peer != 0;
       online.rated = rated != 0;
       online.kind = rated ? OnlineGame::Kind::Match : OnlineGame::Kind::Friend;
-      online.seeking = false;
       online.drawOffered = online.myDrawOffer = false;
       online.awaySeconds = -1;
       online.net = OnlineGame::Net::Open;
@@ -1154,7 +1166,6 @@ void App::pollOnline(float dt) {
       bannerTime = 2.5f;
     } else if (kind == "error") {
       std::getline(in >> std::ws, online.error);
-      online.seeking = false;
     } else if (kind == "copied") {
       int how = 0;
       in >> how;
@@ -1813,7 +1824,9 @@ void App::frame(float dt) {
         if (opt.selectSq.size() == 2) select(chess::makeSq(opt.selectSq[0] - 'a', opt.selectSq[1] - '1'));
       } else newGame();
       if (mode == Mode::Watch) world.cam.autoSpin = 0.05f;
-      if (!opt.join.empty()) startOnline(opt.join);  // the page was opened with a friend's link
+      if (pendingMatch) enterMatch();  // (a rated game from the lobby, while the game was loading)
+      else if (!opt.join.empty()) startOnline(opt.join);  // the page was opened with a friend's link
+      else if (opt.lobby) openLobby();  // (the front page's Play someone online)
     } else {
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
       glViewport(0, 0, fbW, fbH);

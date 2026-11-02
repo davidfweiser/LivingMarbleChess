@@ -131,13 +131,10 @@ void App::drawOnline(float S) {
   const double now = glfwGetTime();
   const ImVec4 kRed(1.0f, 0.45f, 0.35f, 1.0f);
   if (!online.error.empty() || online.net == OnlineGame::Net::Closed) {
-    if (ImGui::Button(match ? "Look for an opponent again" : "Start a new online game", ImVec2(-1, 0))) {
-      if (match) startMatch();
+    if (ImGui::Button(match ? "Find an opponent" : "Start a new online game", ImVec2(-1, 0))) {
+      if (match) openLobby();
       else startOnline("");
     }
-  } else if (match && online.seeking) {
-    if (me.known) ImGui::TextDisabled("Playing as %s (%d)", me.name.c_str(), me.rating);
-    if (ImGui::Button("Cancel", ImVec2(-1, 0))) setMode(Mode::HumanWhite);
   } else if (match && online.started) {
     drawClocks(S);
     if (online.awaySeconds >= 0 && online.endText.empty()) {
@@ -177,7 +174,7 @@ void App::drawOnline(float S) {
   if (!online.endText.empty()) {
     ImGui::TextColored(kGold, "%s", online.endText.c_str());
     if (!online.ratingText.empty()) ImGui::TextDisabled("%s", online.ratingText.c_str());
-    if (match && ImGui::Button("Find another opponent", ImVec2(-1, 0))) startMatch();
+    if (match && ImGui::Button("Find another opponent", ImVec2(-1, 0))) openLobby();
   }
   if (match && ImGui::Button("Leaderboard", ImVec2(-1, 0))) openLeaderboard();
   if (noticeTime > 0 && !notice.empty()) {
@@ -372,7 +369,7 @@ void App::drawSettings(float S) {
   ImGui::BeginDisabled(match && onlineGameOn());  // (a rated game: finish it, or resign)
   if (pick("Mode", &mi, modes, onlineAvailable() ? 6 : 4, opt.touch) && mi != was) {
     if (mi == 4) startOnline("");
-    else if (mi == 5) startMatch();
+    else if (mi == 5) openLobby();  // (the players online: the mode changes once a game starts)
     else setMode((Mode)mi);
     if (mode == Mode::Watch) world.cam.autoSpin = 0.05f;
   }

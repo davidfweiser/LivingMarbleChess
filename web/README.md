@@ -66,8 +66,8 @@ Open the game in a private window (or another browser) to play the other side:
 each browser remembers its player and its side. (`--allow-same-ip` lets two
 players from one computer be paired, which the real server doesn't allow.)
 
-The page is `build-web/index.html` with `living_marble.js`, `.wasm`,
-`.worker.js` and `.data` (the fonts) beside it, the front page's pictures in
+The page is `build-web/index.html` with `avatars.js` (the players' pictures),
+`living_marble.js`, `.wasm`, `.worker.js` and `.data` (the fonts) beside it, the front page's pictures in
 `screens/`, and `apple-touch-icon.png` (the icon on an iPhone's or iPad's Home
 Screen).
 
@@ -125,10 +125,30 @@ bar): send it to a friend. You play White, your friend Black, and the game
 starts when they open it. These games are untimed and unrated; *New game*
 starts a new one for both.
 
-**Play someone online.** The server pairs you with another player looking for
-a game, of a similar rating at first and anyone after a while; colours are
-random. These games are rated and timed, 10 minutes each plus 5 seconds a
-move:
+**Play someone online.** This opens the lobby (so does *Play someone online* on
+the front page, once the game has loaded, and *New game* after a rated game).
+The game waits behind it, paused and silent:
+
+- Your card is at the top: your picture, rating and record. Click the picture
+  to choose another, from 32 (a knight, a dragon, a flying saucer, a psychic
+  brain in a jar, a fox, a ghost ...; [`avatars.js`](avatars.js) draws them).
+  Players who haven't chosen one show the first letter of their name.
+- **Start a game** puts you at the top of everyone's list as wanting to play:
+  anyone can join you (*Play now*), and the server also pairs you with another
+  waiting player near your rating (wider the longer you wait), as before.
+- Everyone else in the lobby is listed with their picture, rating and record,
+  then the games going on. Click a player for their card, with statistics from
+  their games: the record of rated games, the latest ten results and streaks,
+  checkmates (and the fastest), their favourite first move as White, the
+  average game's length, how you have done against them, and their latest games.
+- **Ask to play** sends a player an invitation: they see who is asking, with
+  their record, and have 30 seconds to say *Play* or *No thanks* (a chime sounds,
+  and the tab's title says who is asking). After a "no thanks", the same player
+  can't ask again for a minute. Two players asking each other start the game.
+- *Back to the game* closes the lobby, and stops waiting and any invitation.
+
+The games are rated and timed, 10 minutes each plus 5 seconds a move, with
+random colours:
 
 - Losing on time, resigning, or staying away for 90 seconds loses the game;
   a draw can be offered and accepted. A game that ends before both players have
@@ -136,11 +156,13 @@ move:
 - Ratings are Elo, starting at 1200 (a new player's moves faster for the first
   30 games). *Leaderboard* shows the best 20, from 5 rated games on.
 - Against cheating: the server checks every move with the game's own rules
-  ([`chess_rules.cpp`](chess_rules.cpp)) and decides how games end, the players
-  can't choose each other, two players from the same internet address (for
-  IPv6, the same /64 network) are never paired, and a rated game's side can be
-  taken up again only by its player, logged in. It can't tell whether someone
-  uses a chess engine.
+  ([`chess_rules.cpp`](chess_rules.cpp)) and decides how games end, two players
+  from the same internet address (for IPv6, the same /64 network) can't play
+  each other (neither paired, nor by joining or inviting), and a rated game's
+  side can be taken up again only by its player, logged in. It can't tell
+  whether someone uses a chess engine. Since the lobby lets players choose each
+  other, two friends on different connections could arrange games to move
+  their ratings.
 
 In both, reloading the page or a dropped connection comes back to the same game
 and side; *Undo* and *Hint* are off.
@@ -153,7 +175,8 @@ and side; *Undo* and *Hint* are off.
 - Its log: `journalctl -u living-marble-relay`.
 - **The admin app**, [`admin.py`](admin.py): `sudo living-marble-admin` on the
   server (over SSH) shows, live, who is online, the games going on (players,
-  ratings, clocks), who is waiting for an opponent; every player (rating, rated
+  ratings, clocks), how many are in the lobby and who is waiting for an
+  opponent; every player (rating, rated
   games won, drawn and lost, all games, last seen; `/` searches, Enter shows a
   player's games); the latest games; and totals with charts of games and new
   players a day. Keys 1-4 switch screens, q quits; `--once` prints the summary
@@ -165,7 +188,9 @@ and side; *Undo* and *Hint* are off.
   database; their games stay, shown without them, so their opponents keep
   theirs. The name is free again. (With the game server stopped, the database
   is changed directly.)
-- The players and their games: `/var/lib/living-marble/players.db` (SQLite).
+- The players (with the pictures they chose) and their games:
+  `/var/lib/living-marble/players.db` (SQLite). Version 3 of it adds the
+  pictures; the game server brings an older one up to date as it starts.
   Back it up now and then, e.g. `sqlite3 /var/lib/living-marble/players.db
   ".backup players-backup.db"` (`apt install sqlite3`).
 - Games in progress live in its memory: restarting it ends them, so
@@ -197,6 +222,13 @@ connections and the open files allowed to each program). Beyond about 10,000 at
 once, the game server would have to be split over several processes or
 machines, which it doesn't do yet. The page itself is about 1.3 MB to download
 per new visitor (browsers keep it after that).
+
+That test was made before the lobby. Everyone in the lobby is sent its list (80
+players and 30 games at most, a few kilobytes) when it changes, at most once a
+second, and every 10 seconds anyway; with thousands in the lobby at once, that
+would be the server's biggest job, and worth measuring before counting on the
+figures above. A player's card reads their latest 2,000 games from the database,
+and is kept for 30 seconds or until their next game.
 
 ## On iPhone and iPad
 

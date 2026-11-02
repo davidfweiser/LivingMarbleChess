@@ -166,6 +166,7 @@ if(EMSCRIPTEN)
     "SHELL:--preload-file ${dejavu_SOURCE_DIR}/ttf/DejaVuSerif.ttf@/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf")
   set(LM_DEJAVU_LICENSE "${dejavu_SOURCE_DIR}/LICENSE")
   configure_file(web/index.html index.html @ONLY)
+  configure_file(web/avatars.js avatars.js COPYONLY)  # (the players' pictures, for the lobby)
   configure_file(LICENSE LICENSE.txt COPYONLY)
   configure_file(THIRD_PARTY_NOTICES.txt THIRD_PARTY_NOTICES.txt COPYONLY)
   # the front page's pictures

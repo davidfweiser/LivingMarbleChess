@@ -4,8 +4,11 @@
 Browsers connect with a WebSocket at /ws (behind nginx). The server
 - passes the moves between the two players of a game, checks each one with the game's own
   chess rules (web/chess_rules.cpp, loaded as a library) and decides how games end;
-- pairs players who want an opponent (Play someone online) by rating;
-- keeps players' names and ratings (SQLite) and the leaderboard.
+- keeps the lobby (Play someone online): the players there with their pictures and records,
+  who is waiting for a game, invitations to play from one player to another, and each
+  player's card with statistics from their games;
+- pairs players who wait for an opponent by rating;
+- keeps players' names, pictures and ratings (SQLite) and the leaderboard.
 
 Two kinds of game:
 - with a friend: one player creates it and sends the link (?join=CODE). Untimed, unrated.
@@ -67,6 +70,18 @@ AWAY_SECONDS = 90                # away this long from a matched game: lost
 START_RATING = 1200
 TOP_MIN_GAMES = 5                # on the leaderboard after this many rated games
 TOP_SIZE = 20
+LOBBY_SIZE = 80                  # the lobby lists this many players at most,
+LOBBY_GAMES = 30                 # and this many of the games going on
+CHALLENGE_SECONDS = 30           # an invitation to play waits this long for an answer
+CHALLENGES_PER_IP = 30           # invitations from one address in 10 minutes
+ASK_AGAIN_SECONDS = 60           # after a "no thanks", the same player can't ask again for this long
+PROFILES_PER_IP = 60             # players' cards looked at from one address in a minute
+PROFILE_GAMES = 2000             # a card's statistics come from this many of the player's latest games
+PROFILE_SECONDS = 30             # (and are kept this long, or until the player's next game)
+# The pictures players choose for themselves (web/avatars.js draws them, with the same names)
+ICONS = frozenset("""knight king queen rook pawn dragon wizard shield castle unicorn ufo alien rocket planet
+                     psychic robot fox owl cat octopus frog panda penguin lion ghost pirate ninja flame lightning
+                     crystal mushroom cactus""".split())
 NAME = re.compile(r"^[A-Za-z0-9_-]{3,16}$")
 UCI = re.compile(r"^[a-h][1-8][a-h][1-8][nbrq]?$")
 # the rules library's verdicts (see chess_rules.cpp)
@@ -154,14 +169,18 @@ def normal_code(code):  # (however the player typed it)
 
 class Player:
     def __init__(self, row):
-        self.id, self.name, self.rating, self.games, self.wins, self.draws, self.losses, self.haspw = row
+        self.id, self.name, self.rating, self.games, self.wins, self.draws, self.losses, self.icon, self.haspw = row
         self.haspw = bool(self.haspw)
 
     def public(self):
-        return {"name": self.name, "rating": self.rating}
+        return {"name": self.name, "rating": self.rating, "icon": self.icon}
+
+    def brief(self):  # (in the lobby: the picture, the rating and the record of rated games)
+        return {"name": self.name, "icon": self.icon, "rating": self.rating, "games": self.games,
+                "wins": self.wins, "draws": self.draws, "losses": self.losses}
 
     def me(self):
-        return {"name": self.name, "rating": self.rating, "games": self.games, "haspw": self.haspw}
+        return dict(self.brief(), haspw=self.haspw)
 
 
 class Players:
@@ -172,6 +191,7 @@ class Players:
         self.db.execute("PRAGMA synchronous=NORMAL")  # (safe with WAL; far fewer waits for the disk)
         self._schema()
         self.cache = {}  # id -> Player: one object per player, whatever pages they have open
+        self.cards = {}  # id -> (when, card): players' statistics, as profile() worked them out
 
     def _schema(self):
         db = self.db
@@ -214,16 +234,20 @@ class Players:
                 CREATE INDEX IF NOT EXISTS games_by_end ON games (ended);
                 CREATE INDEX IF NOT EXISTS games_by_white ON games (white);  -- (each player's games,
                 CREATE INDEX IF NOT EXISTS games_by_black ON games (black);  --  for the admin app)
-                PRAGMA user_version = 2;
             """)
+            # version 3: the picture each player chooses (web/avatars.js), none at first
+            if "icon" not in [r[1] for r in db.execute("PRAGMA table_info(players)")]:
+                db.execute("ALTER TABLE players ADD COLUMN icon TEXT")
+            db.execute("PRAGMA user_version = 3")
 
-    COLUMNS = "id, name, rating, games, wins, draws, losses, password IS NOT NULL"
+    # a Player's columns (by_session() puts its own in place of the last)
+    COLUMNS = "id, name, rating, games, wins, draws, losses, icon, password IS NOT NULL"
 
     def _player(self, row):
         p = self.cache.get(row[0])
         if p is None:
             p = self.cache[row[0]] = Player(row)
-        p.haspw = bool(row[7])
+        p.haspw = bool(row[8])
         return p
 
     def _by_name(self, name):
@@ -270,7 +294,7 @@ class Players:
     def stored_password(self, name):
         """(player id, password hash or None) for a name, or None."""
         row = self._by_name(name)
-        return (row[0], row[8]) if row else None
+        return (row[0], row[9]) if row else None
 
     def login(self, player_id):
         """A new session for a player whose password checked out."""
@@ -296,9 +320,9 @@ class Players:
 
     def check_recovery(self, name, code):
         row = self._by_name(name)
-        if row is None or not row[9]:
+        if row is None or not row[10]:
             return None
-        return row[0] if secrets.compare_digest(row[9], sha(normal_code(code))) else None
+        return row[0] if secrets.compare_digest(row[10], sha(normal_code(code))) else None
 
     def recover(self, player_id, password_hash):
         """A forgotten password replaced: every browser logged out, a new session and a new recovery code."""
@@ -327,7 +351,105 @@ class Players:
             gone = self.db.execute("DELETE FROM players WHERE id = ?", (player_id,)).rowcount
         # (a new player may be given the same id: nothing of this one may stay behind)
         self.cache.pop(player_id, None)
+        self.cards.clear()  # (their opponents' cards name them in their latest games)
         return gone > 0
+
+    def set_icon(self, player, icon):
+        with self.db:
+            self.db.execute("UPDATE players SET icon = ? WHERE id = ?", (icon, player.id))
+        player.icon = icon
+        self.cards.clear()  # (cards show their opponents' pictures too)
+
+    def profile(self, player_id):
+        """A player's card in the lobby: their rating and record, and what their latest games say
+        about them (form, streaks, checkmates, a favourite first move ...). None if there's no such player."""
+        now = time.monotonic()
+        kept = self.cards.get(player_id)
+        if kept and now - kept[0] < PROFILE_SECONDS:
+            return kept[1]
+        row = self.db.execute("SELECT name, icon, rating, games, wins, draws, losses, created FROM players "
+                              "WHERE id = ?", (player_id,)).fetchone()
+        if row is None:
+            return None
+        name, icon, rating, rated, wins, draws, losses, created = row
+        finished = "result IN ('1-0', '0-1', '1/2-1/2')"  # (not aborted)
+        played, played_rated = self.db.execute(
+            f"SELECT COUNT(*), TOTAL(rated) FROM games WHERE (white = ? OR black = ?) AND {finished}",
+            (player_id, player_id)).fetchone()
+        games = self.db.execute(
+            "SELECT white, black, result, why, SUBSTR(moves, 1, 4), "
+            "CASE WHEN moves = '' THEN 0 ELSE LENGTH(moves) - LENGTH(REPLACE(moves, ' ', '')) + 1 END, "
+            f"rated, ended, white_before, white_after, black_before, black_after FROM games "
+            f"WHERE (white = ? OR black = ?) AND {finished} ORDER BY ended DESC, id DESC LIMIT ?",
+            (player_id, player_id, PROFILE_GAMES)).fetchall()
+        results, recent, lengths, openings = [], [], [], {}
+        mates, quickest, peak = 0, None, rating
+        for w, b, result, why, first, plies, is_rated, ended, wb, wa, bb, ba in games:
+            white = w == player_id
+            score = {"1-0": 1.0, "0-1": 0.0}.get(result, 0.5)
+            if not white:
+                score = 1 - score
+            r = "W" if score == 1 else "L" if score == 0 else "D"
+            results.append(r)
+            moves = (plies + 1) // 2
+            if moves:
+                lengths.append(moves)
+            if r == "W" and why == "checkmate":
+                mates += 1
+                quickest = moves if quickest is None else min(quickest, moves)
+            if white and len(first) == 4:
+                openings[first] = openings.get(first, 0) + 1
+            if is_rated:
+                peak = max(peak, (wa if white else ba) or 0)
+            if len(recent) < 5:
+                change = ((wa - wb) if white else (ba - bb)) if is_rated else None
+                recent.append({"opp": b if white else w, "r": r, "why": why, "moves": moves, "rated": bool(is_rated),
+                               "change": change, "ended": ended, "white": white})
+        streak = 0  # the latest results alike: 3 wins in a row ...
+        while streak < len(results) and results[streak] == results[0]:
+            streak += 1
+        best = run = 0  # the most wins in a row
+        for r in reversed(results):
+            run = run + 1 if r == "W" else 0
+            best = max(best, run)
+        favourite = None  # the first move they play most with White (from 3 games on)
+        if openings:
+            uci, times = max(openings.items(), key=lambda kv: kv[1])
+            if times >= 3:
+                as_white = sum(openings.values())
+                san = ("N" if uci[1] == "1" else "") + uci[2:]  # (a first move is a pawn's or a knight's)
+                favourite = {"move": san, "times": times, "of": as_white}
+        opponents = {o["opp"] for o in recent if o["opp"] is not None}
+        named = {}
+        if opponents:
+            marks = ", ".join("?" * len(opponents))
+            for pid, pname, picon, prating in self.db.execute(
+                    f"SELECT id, name, icon, rating FROM players WHERE id IN ({marks})", tuple(opponents)):
+                named[pid] = {"name": pname, "icon": picon, "rating": prating}
+        for o in recent:
+            o["opp"] = named.get(o["opp"])  # (None: a deleted player)
+        card = {"name": name, "icon": icon, "rating": rating, "peak": peak, "games": rated, "wins": wins,
+                "draws": draws, "losses": losses, "rank": self.rank_of(rating, rated), "since": created,
+                "played": played, "friendly": played - int(played_rated), "form": "".join(results[:10]),
+                "streak": [results[0], streak] if results else None, "best_streak": best, "mates": mates,
+                "quickest": quickest, "opening": favourite,
+                "avg_moves": round(sum(lengths) / len(lengths)) if lengths else None, "recent": recent}
+        if len(self.cards) > 2000:
+            self.cards.clear()
+        self.cards[player_id] = (now, card)
+        return card
+
+    def head_to_head(self, player_id, other_id):
+        """[won, drawn, lost]: player_id's games against other_id (aborted ones aside)."""
+        out = [0, 0, 0]
+        for white, result in self.db.execute(
+                "SELECT white, result FROM games WHERE ((white = ? AND black = ?) OR (white = ? AND black = ?)) "
+                "AND result IN ('1-0', '0-1', '1/2-1/2')", (player_id, other_id, other_id, player_id)):
+            if result == "1/2-1/2":
+                out[1] += 1
+            else:
+                out[0 if (result == "1-0") == (white == player_id) else 2] += 1
+        return out
 
     def forget_old_sessions(self):
         with self.db:
@@ -339,10 +461,13 @@ class Players:
         return [list(r) for r in rows]
 
     def rank(self, p):
-        if p.games < TOP_MIN_GAMES:
+        return self.rank_of(p.rating, p.games)
+
+    def rank_of(self, rating, games):  # (0: not on the leaderboard yet)
+        if games < TOP_MIN_GAMES:
             return 0
         above = self.db.execute("SELECT COUNT(*) FROM players WHERE games >= ? AND rating > ?",
-                                (TOP_MIN_GAMES, p.rating)).fetchone()[0]
+                                (TOP_MIN_GAMES, rating)).fetchone()[0]
         return above + 1
 
     def record(self, room, result, why, changes):
@@ -367,6 +492,8 @@ class Players:
                  changes["w"][0] if changes else w.rating, changes["w"][1] if changes else w.rating,
                  changes["b"][0] if changes else b.rating, changes["b"][1] if changes else b.rating,
                  int(time.time()), 1 if room.rated else 0, int(room.created)))
+        for p in (w, b):
+            self.cards.pop(p.id, None)  # (their cards, with this game)
 
 
 players = None
@@ -429,10 +556,15 @@ class Conn:
         self.session = None  # the key it logged in with
         self.room = self.seat = None
         self.seeking = None  # since when
+        self.challenge = None  # the invitation to play this page has sent, waiting for an answer
 
 
 rooms = {}
 queue = {}           # Conn -> since: the players waiting for an opponent
+lobby = {}           # Conn -> since: the pages with the lobby open (Play someone online)
+lobby_changed = False  # (its list is sent again to everyone there)
+challenges = {}      # id -> Challenge: invitations to play, waiting for an answer
+in_game = {}         # player id -> Room: the players in a rated game going on
 recent = {}          # (kind, ip) -> times: new games and names from each address
 conns_by_ip = {}
 connections = 0
@@ -475,9 +607,13 @@ def same_token(a, b):
 
 
 async def send(ws, msg):
+    await send_text(ws, json.dumps(msg))
+
+
+async def send_text(ws, text):
     if ws is not None:
         try:
-            await ws.send(json.dumps(msg))
+            await ws.send(text)
         except websockets.ConnectionClosed:
             pass
 
@@ -520,6 +656,11 @@ async def end_game(room, result, why):
     room.stop_timers()
     room.game.close()  # (no more moves: the position isn't needed)
     room.draw_offer = None
+    if room.rated:
+        for p in room.players.values():
+            if p is not None and in_game.get(p.id) is room:
+                del in_game[p.id]
+        lobby_change()  # (they're free again, with their new ratings)
     if players and room.players["w"] and room.players["b"]:
         if room.rated and result != "*":
             w, b = room.players["w"], room.players["b"]
@@ -591,14 +732,28 @@ async def attach(c, room, seat):
 
 
 async def start_match(a, b):
+    """A rated game between two pages: from the queue, a player joining someone who waits, or an
+    invitation accepted. Both leave the lobby, and any other invitations to or from them end."""
+    waited = {c: queue.get(c) for c in (a, b)}
     for c in (a, b):
-        queue.pop(c, None)
-        c.seeking = None
+        await detach(c)  # (out of the queue, and out of a game with a friend)
+        if lobby.pop(c, None) is not None:
+            lobby_change()
+    for p in (a.player, b.player):
+        for ch in [ch for ch in challenges.values() if p is not None and p.id in (ch.asker.id, ch.dst.id)]:
+            await drop_challenge(ch, "playing")
+    if not all(c in all_conns and c.player for c in (a, b)):  # (one left meanwhile: the other waits on)
+        for c in (a, b):
+            if c in all_conns and c.player and waited[c] is not None:
+                queue[c] = c.seeking = waited[c]
+        return
     if random.random() < 0.5:
         a, b = b, a
     room = Room(new_code(), rated=True)
     rooms[room.code] = room
     room.players = {"w": a.player, "b": b.player}
+    in_game[a.player.id] = in_game[b.player.id] = room
+    lobby_change()
     log.info("game %s: %s (%d) - %s (%d)", room.code, a.player.name, a.player.rating, b.player.name, b.player.rating)
     for c, seat in ((a, "w"), (b, "b")):
         room.conns[seat] = c
@@ -624,6 +779,8 @@ async def matchmaker():
                 b = waiting[j]
                 if b.player.id == a.player.id or (b.ip == a.ip and not allow_same_ip):
                     continue
+                if a.player.id in in_game or b.player.id in in_game:  # (playing on another page)
+                    continue
                 if a not in queue or b not in queue:  # (left while others were being paired)
                     continue
                 if abs(a.player.rating - b.player.rating) <= max(reach(a), reach(b)):
@@ -631,6 +788,225 @@ async def matchmaker():
                     await start_match(a, b)
                     break
             i += 1
+
+
+# ---------------------------------------------------------------------------
+# The lobby (Play someone online): the players there, with their pictures and records, those
+# waiting for a game (anyone can join them; the matchmaker pairs them too), and the games going
+# on. A player asks another to play (an invitation, answered yes or no within 30 seconds), or
+# joins someone who is waiting. Everyone there gets the list again whenever it changes (at most
+# once a second).
+
+class Challenge:
+    """An invitation to play: from a page in the lobby (src, its player the asker) to a player
+    there (dst), who answers from any of their pages in the lobby."""
+
+    def __init__(self, src, dst):
+        self.id = secrets.token_urlsafe(9)
+        self.src, self.asker, self.dst = src, src.player, dst
+        self.timer = None
+
+    def offer(self):  # what the player asked sees
+        return {"t": "challenged", "id": self.id, "from": self.asker.brief(), "seconds": CHALLENGE_SECONDS}
+
+
+def lobby_change():
+    global lobby_changed
+    lobby_changed = True
+
+
+def pages_of(player, where):
+    return [c for c in where if c.player is not None and c.player.id == player.id]
+
+
+def lobby_list():
+    """The lobby as everyone there sees it: waiting players first (the longest waiting first),
+    then the others by rating; and the rated games going on."""
+    now = time.monotonic()
+    playing = []
+    for r in rooms.values():
+        if r.rated and r.result is None and r.players["w"] and r.players["b"] and len(playing) < LOBBY_GAMES:
+            playing.append({"w": r.players["w"].brief(), "b": r.players["b"].brief(), "moves": (len(r.moves) + 1) // 2})
+    here = {}
+    for c in list(lobby) + list(queue):
+        p = c.player
+        if p is None or p.id in in_game:
+            continue
+        e = here.get(p.id)
+        if e is None:
+            e = here[p.id] = dict(p.brief(), waiting=None)
+        if c in queue:
+            e["waiting"] = max(e["waiting"] or 0, int(now - queue[c]))
+    listed = sorted(here.values(), key=lambda e: (e["waiting"] is None, -(e["waiting"] or 0), -e["rating"], e["name"]))
+    online = len({c.player.id for c in all_conns if c.player})
+    return {"t": "lobby", "players": listed[:LOBBY_SIZE], "more": max(0, len(listed) - LOBBY_SIZE), "games": playing,
+            "playing": len(in_game) // 2, "online": online, "clock_ms": CLOCK_MS, "inc_ms": INCREMENT_MS}
+
+
+async def lobby_loop():
+    """The list again to everyone in the lobby when it has changed, and every 10 seconds anyway
+    (the waiting times, the games' moves)."""
+    global lobby_changed
+    quiet = 0
+    while True:
+        await asyncio.sleep(1)
+        quiet += 1
+        if not lobby or not (lobby_changed or quiet >= 10):
+            continue
+        lobby_changed, quiet = False, 0
+        text = json.dumps(lobby_list())
+        for c in list(lobby):
+            await send_text(c.ws, text)
+
+
+async def enter_lobby(c):
+    if not players or not rules:
+        return await send(c.ws, {"t": "lobby_error", "why": "Games against other players aren't available here."})
+    if c.player is None:
+        return await send(c.ws, {"t": "need_login"})
+    if c not in lobby:
+        lobby[c] = time.monotonic()
+        lobby_change()
+    await send(c.ws, lobby_list())
+    for ch in list(challenges.values()):  # (invitations that came while this page was away)
+        if ch.dst.id == c.player.id:
+            await send(c.ws, ch.offer())
+
+
+async def leave_lobby(c, p=None):
+    """The page closed the lobby (or went away, or its player p logged out there): it stops
+    waiting for a game, and its invitation ends, as do those to its player if they have no other
+    page in the lobby."""
+    p = p or c.player
+    if c in queue:
+        del queue[c]
+        c.seeking = None
+        lobby_change()
+    if lobby.pop(c, None) is not None:
+        lobby_change()
+    await drop_challenge(c.challenge, "left")
+    for ch in [ch for ch in challenges.values() if ch.src is c]:
+        await drop_challenge(ch, "left")
+    if p is not None and not pages_of(p, lobby):
+        for ch in [ch for ch in challenges.values() if ch.dst.id == p.id]:
+            await drop_challenge(ch, "left")
+
+
+async def drop_challenge(ch, why):
+    """An invitation ends: declined, expired, taken back, accepted, or one of them left or is playing."""
+    if ch is None or challenges.get(ch.id) is not ch:
+        return
+    del challenges[ch.id]
+    if ch.timer:
+        ch.timer.cancel()
+    if ch.src.challenge is ch:
+        ch.src.challenge = None
+    msg = {"t": "challenge_gone", "id": ch.id, "why": why, "name": ch.dst.name, "from": ch.asker.name}
+    await send(ch.src.ws, msg)
+    for o in pages_of(ch.dst, lobby):
+        await send(o.ws, msg)
+
+
+async def challenge(c, name):
+    """c asks the player called name to play. If they are waiting for a game, it starts at once."""
+    async def no(why):
+        await send(c.ws, {"t": "lobby_error", "why": why})
+
+    if not players or not rules:
+        return await no("Games against other players aren't available here.")
+    me = c.player
+    if me is None:
+        return await send(c.ws, {"t": "need_login"})
+    if me.id in in_game:
+        return await no("Finish your game first.")
+    name = name.lower()
+    theirs = [o for o in list(queue) + list(lobby) if o.player is not None and o.player.name.lower() == name]
+    if not theirs:
+        playing = next((p for r in in_game.values() for p in r.players.values() if p and p.name.lower() == name), None)
+        if playing:
+            return await no(f"{playing.name} is playing a game right now.")
+        return await no("That player isn't in the lobby any more.")
+    them = theirs[0].player
+    if them.id == me.id:
+        return await no("That's you!")
+    if them.id in in_game:
+        return await no(f"{them.name} is playing a game right now.")
+    reachable = [o for o in theirs if o.ip != c.ip or allow_same_ip]
+    if not reachable:
+        return await no(f"You and {them.name} are on the same internet connection, so you can't play each other "
+                        "in a rated game. Play a friend online instead.")
+    waiting = [o for o in reachable if o in queue]
+    if waiting:  # (they're waiting for anyone: the game starts now)
+        return await start_match(c, waiting[0])
+    asked = next((ch for ch in challenges.values() if ch.asker.id == them.id and ch.dst.id == me.id), None)
+    if asked and asked.src in lobby and (asked.src.ip != c.ip or allow_same_ip):
+        # (they asked this player already: that's a yes from both)
+        await drop_challenge(asked, "accepted")
+        return await start_match(asked.src, c)
+    if c.challenge and c.challenge.dst.id == them.id:  # (asked already: still waiting for their answer)
+        return await send(c.ws, {"t": "challenge_sent", "id": c.challenge.id, "to": them.brief(),
+                                 "seconds": max(1, round(c.challenge.timer.when() - asyncio.get_running_loop().time()))})
+    if failures("declined", (me.id, them.id), ASK_AGAIN_SECONDS):
+        return await no(f"{them.name} said no thanks a moment ago. You can ask again in a minute.")
+    if limited("challenge", c.ip, CHALLENGES_PER_IP, 600):
+        return await no("That's a lot of invitations. Wait a few minutes, then ask again.")
+    await drop_challenge(c.challenge, "cancelled")  # (one at a time: asking someone else takes back the last)
+    ch = c.challenge = Challenge(c, them)
+    challenges[ch.id] = ch
+    ch.timer = asyncio.get_running_loop().call_later(
+        CHALLENGE_SECONDS, lambda: asyncio.ensure_future(drop_challenge(ch, "expired")))
+    await send(c.ws, {"t": "challenge_sent", "id": ch.id, "to": them.brief(), "seconds": CHALLENGE_SECONDS})
+    for o in pages_of(them, lobby):
+        await send(o.ws, ch.offer())
+
+
+async def profile(c, name):
+    """A player's card, for the page that asked: their statistics, where they are now, and how
+    the asker has done against them."""
+    async def no(why):
+        await send(c.ws, {"t": "lobby_error", "why": why})
+
+    if not players:
+        return await no("This server keeps no players.")
+    if c.player is None:
+        return await send(c.ws, {"t": "need_login"})
+    if limited("profile", c.ip, PROFILES_PER_IP, 60):
+        return await no("That's a lot of players looked at. Wait a moment.")
+    row = players._by_name(name)
+    if row is None:
+        return await no(f"There's no player called {name}.")
+    pid = row[0]
+    card = players.profile(pid)
+    if card is None:
+        return await no(f"There's no player called {name}.")
+    pages = [o for o in all_conns if o.player is not None and o.player.id == pid]
+    where = ("playing" if pid in in_game else "waiting" if any(o in queue for o in pages)
+             else "lobby" if any(o in lobby for o in pages) else "online" if pages else "away")
+    out = dict(card, t="profile", where=where)
+    if pid != c.player.id:
+        out["vs"] = players.head_to_head(c.player.id, pid)  # (the asker's wins, draws and losses against them)
+    await send(c.ws, out)
+
+
+async def answer(c, cid, yes):
+    """The player asked says yes (the game starts) or no thanks."""
+    ch = challenges.get(cid)
+    if ch is None or c.player is None or ch.dst.id != c.player.id:
+        return await send(c.ws, {"t": "challenge_gone", "id": cid, "why": "gone"})
+    if not yes:
+        failures("declined", (ch.asker.id, ch.dst.id), ASK_AGAIN_SECONDS).append(time.monotonic())
+        return await drop_challenge(ch, "declined")
+    src = ch.src
+    if src not in lobby or src.player is None or src.player.id != ch.asker.id:
+        return await drop_challenge(ch, "left")
+    if ch.asker.id in in_game or ch.dst.id in in_game:
+        return await drop_challenge(ch, "playing")
+    if src.ip == c.ip and not allow_same_ip:
+        await send(c.ws, {"t": "lobby_error", "why": f"You and {ch.asker.name} are on the same internet connection, "
+                                                     "so you can't play each other in a rated game."})
+        return await drop_challenge(ch, "left")
+    await drop_challenge(ch, "accepted")
+    await start_match(src, c)
 
 
 # ---------------------------------------------------------------------------
@@ -667,6 +1043,7 @@ def log_out_elsewhere(player, here, keep_session=None):
             continue
         if keep_session is not None and o.session == keep_session:
             continue  # (the same browser, in another tab)
+        asyncio.ensure_future(leave_lobby(o, o.player))
         o.player = o.session = None
         queue.pop(o, None)
         o.seeking = None
@@ -771,6 +1148,7 @@ async def account(c, kind, msg):
     elif kind == "logout":
         if c.session:
             players.logout(c.session)
+        await leave_lobby(c)
         queue.pop(c, None)
         c.seeking = None
         c.player = c.session = None
@@ -783,9 +1161,14 @@ async def handle(c, msg):
     kind = msg.get("t")
     room, seat = c.room, c.seat
 
+    if kind in ("signup", "login", "recover") and (c in lobby or c in queue or c.challenge):
+        await leave_lobby(c)  # (the page may be someone else's from here)
+
     if kind == "hello":  # the browser's session key, if it is logged in
         key = str(msg.get("secret", ""))[:64]
         p = players.by_session(key) if players and key else None
+        if c.player is not None and (p is None or p.id != c.player.id):
+            await leave_lobby(c)  # (someone else's page from here)
         c.player, c.session = p, (key if p else None)
         await send(c.ws, dict({"t": "me"}, **(p.me() if p else {})))
 
@@ -797,19 +1180,52 @@ async def handle(c, msg):
             return await send(c.ws, {"t": "notice", "why": "Games against other players aren't available here."})
         if c.player is None:
             return await send(c.ws, {"t": "need_login"})
-        if room and room.result is None:
+        if c.player.id in in_game or (room and room.rated and room.result is None):
             return await send(c.ws, {"t": "notice", "why": "Finish this game first."})
-        await detach(c)
+        # (a game with a friend stays open on this page until the rated game starts: start_match)
         for other_c in [o for o in queue if o.player is c.player]:  # (the same player in another page)
             queue.pop(other_c, None)
             other_c.seeking = None
         c.seeking = time.monotonic()
         queue[c] = c.seeking
+        lobby_change()
         await send(c.ws, {"t": "seeking", "waiting": len(queue)})
 
     elif kind == "unseek":
-        queue.pop(c, None)
+        if queue.pop(c, None) is not None:
+            lobby_change()
         c.seeking = None
+
+    elif kind == "lobby":
+        await enter_lobby(c)
+
+    elif kind == "unlobby":
+        await leave_lobby(c)
+
+    elif kind == "challenge":  # ask a player in the lobby to play (or join them, if they are waiting)
+        await challenge(c, str(msg.get("name", "")).strip()[:32])
+
+    elif kind == "unchallenge":
+        await drop_challenge(c.challenge, "cancelled")
+
+    elif kind == "answer":
+        await answer(c, str(msg.get("id", ""))[:32], msg.get("yes") is True)
+
+    elif kind == "profile":  # a player's card: their record and statistics
+        await profile(c, str(msg.get("name", "")).strip()[:32])
+
+    elif kind == "icon":  # the player's picture (None: none)
+        icon = msg.get("icon")
+        if c.player is None:
+            return await send(c.ws, {"t": "need_login"})
+        if icon is not None and (not isinstance(icon, str) or icon not in ICONS):
+            return await send(c.ws, {"t": "lobby_error", "why": "There's no such picture."})
+        if limited("icon", c.ip, 60, 600):
+            return await send(c.ws, {"t": "lobby_error", "why": "That's a lot of new pictures. Try again in a while."})
+        players.set_icon(c.player, icon)
+        lobby_change()
+        for o in pages_of(c.player, all_conns):  # (every page of theirs shows it)
+            await send(o.ws, dict({"t": "me"}, **c.player.me()))
 
     elif kind == "leave":
         await detach(c)
@@ -955,6 +1371,7 @@ async def player(ws, path=None):
         if not conns_by_ip[ip]:
             del conns_by_ip[ip]
         all_conns.discard(c)
+        await leave_lobby(c)
         await detach(c)
 
 
@@ -996,10 +1413,13 @@ async def delete_player(name):
                     r.players[seat] = None  # (a game with a friend: not recorded with them)
     for o in list(all_conns):
         if o.player is not None and o.player.id == pid:
+            await leave_lobby(o)
             o.player = o.session = None
             queue.pop(o, None)
             o.seeking = None
             asyncio.ensure_future(o.ws.close(4004, "account deleted"))
+    for ch in [ch for ch in challenges.values() if pid in (ch.asker.id, ch.dst.id)]:
+        await drop_challenge(ch, "left")
     players.delete(pid)
     log.info("player %s deleted (admin app)", real)
     return {"ok": True, "why": f"{real} is deleted."}
@@ -1108,6 +1528,7 @@ async def write_status(path):
             "online": sorted({c.player.name for c in all_conns if c.player})[:5000],
             "seeking": [{"name": c.player.name, "rating": c.player.rating, "waiting": int(time.monotonic() - since)}
                         for c, since in list(queue.items()) if c.player],
+            "lobby": sorted({c.player.name for c in lobby if c.player})[:5000],
             "games_going": len(going),
             "games": [{"code": r.code, "rated": r.rated, "w": who(r, "w"), "b": who(r, "b"), "moves": len(r.moves),
                        "since": int(r.created), "clock": r.clock_now()} for r in going[:500]],
@@ -1236,6 +1657,7 @@ async def main():
         asyncio.ensure_future(admin_requests(requests_folder(args.db)))
     asyncio.ensure_future(sweep())
     asyncio.ensure_future(matchmaker())
+    asyncio.ensure_future(lobby_loop())
     async with websockets.serve(player, args.host, args.port, max_size=MAX_MESSAGE, max_queue=16,
                                 process_request=static_files(args.static) if args.static else None):
         log.info("Living Marble server on %s:%d%s", args.host, args.port,

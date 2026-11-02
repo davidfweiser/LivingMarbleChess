@@ -8,8 +8,7 @@ namespace net {
 // Whether online games are possible (the web page).
 bool available();
 
-// To the server:  "create" (a game with a friend: this player is White), "join CODE",
-// "seek" / "unseek" (an opponent from the server, rated), "top" (the
+// To the server:  "create" (a game with a friend: this player is White), "join CODE", "top" (the
 // leaderboard), "move PLY UCI", "resign", "draw" (offer, or accept the opponent's), "decline",
 // "new" (games with a friend), "sync" (send the game as it stands), "copy" (the invite link to
 // the clipboard), "hello" (connect), "close" (leave the game).
@@ -21,9 +20,10 @@ void command(const std::string& cmd);
 //   "players WNAME WRATING BNAME BRATING"        "clock WMS BMS RUN" (RUN w, b or -)
 //   "move PLY UCI"  "peer 0|1"  "away SECONDS" (the opponent loses unless they come back)
 //   "draw" (offered)  "declined"  "end RESULT WHY [WBEFORE WAFTER BBEFORE BAFTER]"  "new"
-//   "seeking N"  "needlogin"  "me NAME RATING GAMES" or "me -" (the front page logs in)
+//   "me NAME RATING GAMES" or "me -" (the front page logs in)
 //   "top MINGAMES MYRANK MYRATING MYGAMES [NAME RATING GAMES ...]"
 //   "link URL"  "notice TEXT"  "error TEXT"  "copied 0|1"
+// (Rated games are found in the page's lobby, which calls lm_online_match when one starts.)
 bool next(std::string& msg);
 
 }  // namespace net
