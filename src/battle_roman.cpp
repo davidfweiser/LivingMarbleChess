@@ -805,6 +805,58 @@ class RQuietMove : public Staged {
   }
 };
 
+// The cinematic camera for a fight: like battleShot, but it looks at the two
+// fighters from the side (so that a blow, a parry or an offered cup is not hidden
+// behind the attacker's back) and comes a little closer.
+void fightShot(World& w, const vec3& A, const vec3& V, float heightBias, float extra, int attacker, int victim) {
+  if (!w.cinematic) return;
+  vec3 mid = A * 0.4f + V * 0.6f;
+  vec3 dir = flatDir(A, V);
+  float L = glm::length(flat(V - A));
+  vec3 side(-dir.z, 0, dir.x);
+  vec3 orbitCam = w.cam.orbitPose().pos;
+  vec3 toViewer = glm::normalize(flat(orbitCam - mid) + vec3(1e-4f));
+  vec3 target = mid + vec3(0, heightBias, 0);
+  float dist = 2.9f + L * 0.4f + extra;
+  float baseH = 0.85f + L * 0.12f + extra * 0.3f;
+  vec3 look[3] = {A + vec3(0, 0.6f, 0), V + vec3(0, 0.5f, 0), target};
+  float bestScore = 1e9f;
+  vec3 best = target + side * dist;
+  for (int sgn = -1; sgn <= 1; sgn += 2)
+    for (int k = -4; k <= 4; ++k) {
+      float ang = glm::radians(15.0f * k);
+      vec3 sd = side * (float)sgn;
+      vec3 offDir(std::cos(ang) * sd.x - std::sin(ang) * sd.z, 0, std::sin(ang) * sd.x + std::cos(ang) * sd.z);
+      for (int e = 0; e < 3; ++e) {
+        vec3 cam = target + offDir * dist * (1.0f - 0.08f * e) + vec3(0, baseH + 0.7f * e, 0);
+        float occ = 0;
+        for (const Actor& a : w.actors) {
+          if (!a.alive || !a.visible || a.id == attacker || a.id == victim) continue;
+          vec3 b0 = a.pos, b1 = a.pos + vec3(0, a.height(), 0);
+          float r = a.radius() * 1.05f;
+          if (glm::length(flat(cam - a.pos)) < r + 0.35f && cam.y < b1.y + 0.3f) occ += 6.0f;
+          for (const vec3& p : look)
+            if (segSegDist(cam, p, b0, b1) < r) {
+              float near = glm::length(flat(a.pos - cam)) / std::max(0.1f, glm::length(flat(p - cam)));
+              occ += near < 0.5f ? 2.5f : 1.0f;
+            }
+        }
+        float score = occ * 4.0f + (1.0f - glm::dot(offDir, toViewer)) * 1.0f + std::fabs(glm::dot(offDir, dir)) * 2.6f + e * 0.6f;
+        if (score < bestScore) {
+          bestScore = score;
+          best = cam;
+        }
+      }
+    }
+  CamPose p;
+  p.pos = best;
+  p.target = target;
+  p.fov = 34.0f;
+  p.focus = glm::length(best - target);
+  p.aperture = 7.0f;
+  w.cam.setShot(p, 0.75f);
+}
+
 // ---------------------------------------------------------------------------
 // Shared prelude and epilogue for the Romans' battles
 // ---------------------------------------------------------------------------
@@ -817,6 +869,20 @@ class RBattle : public BattleBase {
   Fall fall;
   Tumble tumble;
 
+  // the face-off, with the fight camera
+  bool faceOffR(World& w, float duration = 0.45f) {
+    Actor& a = w.actors[plan.mover];
+    Actor& v = w.actors[plan.victim];
+    if (enter()) {
+      setup(w);
+      a.yawTarget = faceAngle(V - A);
+      v.yawTarget = faceAngle(A - V);
+      fightShot(w, A, V, shotHeight, shotExtra, plan.mover, plan.victim);
+    }
+    v.tremble = glm::clamp(pt / duration, 0.0f, 1.0f) * 0.6f;
+    v.idleWeight = 0;
+    return pt >= duration;
+  }
   bool moveInR(World& w, float dt, float speedScale = 1.0f) {
     Actor& a = w.actors[plan.mover];
     if (enter()) {
@@ -885,11 +951,6 @@ class RBattle : public BattleBase {
     }
   }
 };
-
-// The cinematic camera for a battle between points A and V
-void shot(World& w, const vec3& A, const vec3& V, float height, float extra, int attacker, int victim) {
-  battleShot(w, A, V, height, extra, attacker, victim);
-}
 
 }  // namespace
 
@@ -978,7 +1039,7 @@ class PawnPilum : public RBattle {
     switch (phase) {
       case 0:
         shotExtra = 0.7f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // draw back, take aim
         float u = easeInOut(pt / 0.6f);
@@ -1083,7 +1144,7 @@ class PawnShield : public RBattle {
     Actor& v = w.actors[plan.victim];
     switch (phase) {
       case 0:
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // draw the gladius, shield up
         float u = seg(pt, 0.0f, 0.6f);
@@ -1102,7 +1163,7 @@ class PawnShield : public RBattle {
       }
       case 2:  // close in
         if (enter()) {
-          walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.35f + 0.08f), Walker::FOOT, 0.9f);
+          walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.35f + 0.08f), Walker::FOOT, std::max(0.9f, L / 2.0f));
           w.sound(SFX_SHOUT, 0.55f, a.pos, w.fx.rnd(1.0f, 1.15f));
         }
         guard(a.ctl, 1.0f, true);
@@ -1214,11 +1275,11 @@ class PawnVault : public RBattle {
       case 0:
         shotExtra = 1.0f;
         shotHeight = 0.75f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1:  // the run-up, the pilum lowered
         if (enter()) {
-          walker = Walker(plan.mover, V - dir * std::min(L - 0.05f, 0.78f), Walker::FOOT, 1.7f);
+          walker = Walker(plan.mover, V - dir * std::min(L - 0.05f, 0.78f), Walker::FOOT, std::max(1.7f, L / 2.0f));
           w.sound(SFX_SHOUT, 0.7f, a.pos, w.fx.rnd(0.95f, 1.1f));
         }
         a.ctl.itemPitch = approach(a.ctl.itemPitch, 0.9f, dt * 2.0f);
@@ -1343,7 +1404,7 @@ class ChariotRunDown : public RBattle {
       case 0:
         shotExtra = 1.3f;
         shotHeight = 0.45f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // the whip cracks, the horses rear
         if (enter()) {
@@ -1432,7 +1493,7 @@ class ChariotScythes : public RBattle {
       case 0:
         shotExtra = 1.3f;
         shotHeight = 0.4f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // the whip, and off
         if (enter()) {
@@ -1523,11 +1584,11 @@ class ChariotLeap : public RBattle {
       case 0:
         shotExtra = 1.0f;
         shotHeight = 0.6f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1:  // gallop up and pull up short
         if (enter()) {
-          walker = Walker(plan.mover, V - dir * std::min(L, 1.02f), Walker::CHARIOT, 1.8f);
+          walker = Walker(plan.mover, V - dir * std::min(L, 1.02f), Walker::CHARIOT, std::max(1.8f, L / 1.4f));
           walker.run = 0.8f;
           w.sound(SFX_WHIP, 0.7f, a.pos);
         }
@@ -1663,10 +1724,10 @@ class CenturionDuel : public RBattle {
     bool fights = !isTower(v);
     switch (phase) {
       case 0:
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1:  // close in, on guard
-        if (enter()) walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.5f + 0.06f), Walker::FOOT, 0.9f);
+        if (enter()) walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.5f + 0.06f), Walker::FOOT, std::max(0.9f, L / 2.0f));
         guard(a.ctl, seg(pt, 0.0f, 0.4f), false);
         a.ctl.armL = vec3(0.6f, 0.0f, 0.2f) * seg(pt, 0.0f, 0.4f);
         victimGuard(v, seg(pt, 0.0f, 0.5f));
@@ -1788,11 +1849,11 @@ class CenturionLeap : public RBattle {
       case 0:
         shotExtra = 0.9f;
         shotHeight = 0.8f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1:  // the run
         if (enter()) {
-          walker = Walker(plan.mover, V - dir * std::min(L - 0.05f, 1.15f), Walker::FOOT, 1.8f);
+          walker = Walker(plan.mover, V - dir * std::min(L - 0.05f, 1.15f), Walker::FOOT, std::max(1.8f, L / 2.0f));
           w.sound(SFX_SHOUT, 0.7f, a.pos, 0.95f);
         }
         guard(a.ctl, 1.0f, false);
@@ -1896,7 +1957,7 @@ class CenturionKnife : public RBattle {
     switch (phase) {
       case 0:
         shotExtra = 0.6f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // a flip of the knife into the air, and caught
         float u = seg(pt, 0.0f, 0.7f);
@@ -2074,10 +2135,10 @@ class TowerRam : public RBattle {
         shotExtra = 1.0f;
         shotHeight = 0.5f;
         if (first) w.sound(SFX_CORNU, 0.6f, a.pos);
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1:  // roll up within reach
-        if (enter()) walker = Walker(plan.mover, V - dir * std::min(L, v.radius() + 0.47f), Walker::TOWER, 0.8f);
+        if (enter()) walker = Walker(plan.mover, V - dir * std::min(L, v.radius() + 0.47f), Walker::TOWER, std::max(0.8f, L / 2.6f));
         victimGuard(v, seg(pt, 0.0f, 0.8f));
         brace(w, 0.8f);
         if (walker.update(w, dt)) next();
@@ -2158,10 +2219,10 @@ class TowerSally : public RBattle {
         shotExtra = 1.1f;
         shotHeight = 0.5f;
         if (first) w.sound(SFX_CORNU, 0.6f, a.pos, 1.05f);
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1:
-        if (enter()) walker = Walker(plan.mover, V - dir * std::min(L, 1.3f), Walker::TOWER, 0.8f);
+        if (enter()) walker = Walker(plan.mover, V - dir * std::min(L, 1.3f), Walker::TOWER, std::max(0.8f, L / 2.6f));
         victimGuard(v, seg(pt, 0.0f, 0.8f));
         brace(w, 0.6f);
         if (walker.update(w, dt)) next();
@@ -2293,7 +2354,7 @@ class TowerScorpion : public RBattle {
       case 0:
         shotExtra = 1.4f;
         shotHeight = 0.8f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // aim
         if (enter()) {
@@ -2379,10 +2440,10 @@ class EmpressDagger : public RBattle {
     Actor& v = w.actors[plan.victim];
     switch (phase) {
       case 0:
-        if (faceOff(w, 0.3f)) next();
+        if (faceOffR(w, 0.3f)) next();
         break;
       case 1:  // she walks up, smiling
-        if (enter()) walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.15f), Walker::FOOT, 0.7f);
+        if (enter()) walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.15f), Walker::FOOT, std::max(0.8f, L / 1.8f));
         v.tremble = 0;
         v.idleWeight = 0;
         if (walker.update(w, dt)) next();
@@ -2482,10 +2543,10 @@ class EmpressCup : public RBattle {
     }
     switch (phase) {
       case 0:
-        if (faceOff(w, 0.3f)) next();
+        if (faceOffR(w, 0.3f)) next();
         break;
       case 1:
-        if (enter()) walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.25f), Walker::FOOT, 0.7f);
+        if (enter()) walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.25f), Walker::FOOT, std::max(0.8f, L / 1.8f));
         v.tremble = 0;
         v.idleWeight = 0;
         if (walker.update(w, dt)) next();
@@ -2585,10 +2646,10 @@ class EmpressSpear : public RBattle {
     switch (phase) {
       case 0:
         shotExtra = 0.7f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // the spear twirls; she advances
-        if (enter()) walker = Walker(plan.mover, V - dir * std::min(L, 0.62f), Walker::FOOT, 0.9f);
+        if (enter()) walker = Walker(plan.mover, V - dir * std::min(L, 0.62f), Walker::FOOT, std::max(0.9f, L / 2.0f));
         whirl = approach(whirl, 17.0f, dt * 18.0f);
         float prev = spin;
         spin += whirl * dt;
@@ -2707,7 +2768,7 @@ class EmperorThumbsDown : public RBattle {
         shotExtra = 1.3f;
         shotHeight = 0.7f;
         if (first) w.sound(SFX_CORNU, 0.7f, a.pos);
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // his arm out, thumb down; the crowd roars
         if (enter()) w.sound(SFX_CROWD, 0.9f, a.pos);
@@ -2805,7 +2866,7 @@ class EmperorDuel : public RBattle {
     bool fights = !isTower(v);
     switch (phase) {
       case 0:
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // the cross draw from his left hip
         float u = seg(pt, 0.0f, 0.7f);
@@ -2822,7 +2883,7 @@ class EmperorDuel : public RBattle {
         break;
       }
       case 2:
-        if (enter()) walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.5f + 0.06f), Walker::FOOT, 0.85f);
+        if (enter()) walker = Walker(plan.mover, V - dir * (touchDist(a, v) * 1.5f + 0.06f), Walker::FOOT, std::max(0.85f, L / 2.0f));
         guard(a.ctl, 1.0f, false);
         if (walker.update(w, dt)) next();
         break;
@@ -2934,7 +2995,7 @@ class EmperorLion : public RBattle {
       case 0:
         shotExtra = 1.6f;
         shotHeight = 0.5f;
-        if (faceOff(w)) next();
+        if (faceOffR(w)) next();
         break;
       case 1: {  // he points; a roar from beyond the board
         float u = easeInOut(seg(pt, 0.0f, 0.5f));

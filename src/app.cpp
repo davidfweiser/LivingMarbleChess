@@ -459,6 +459,12 @@ int App::run() {
     for (size_t i = 0; i < game.san().size(); ++i) std::printf(" %s", game.san()[i].c_str());
     std::printf("\nresult: %s (%d plies, %d actors, %zu chunks)\n", chess::resultText(game.result()), game.plyCount(),
                 (int)world.actors.size(), world.chunks.size());
+    // still busy, or a piece left off its square: a battle that went wrong
+    int off = 0;
+    for (const Actor& a : world.actors)
+      if (a.alive && a.square >= 0 && glm::length(glm::vec2(a.pos.x, a.pos.z) - glm::vec2(squareCenter(a.square).x, squareCenter(a.square).z)) > 0.05f)
+        ++off;
+    std::printf("state: %zu animations running, %d pieces off their squares\n", anims.size(), off);
   }
   return 0;
 }
