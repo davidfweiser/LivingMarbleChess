@@ -339,13 +339,17 @@
       post(me ? ['me', me.name, me.rating, me.games].join(' ') : 'me -');
     }
     function receive(m) {
+      var answered = false;
       for (var i = 0; i < waiters.length; i++)  // an answer to one of the page's questions
         if (waiters[i].kinds.indexOf(m.t) >= 0) {
           var w = waiters.splice(i, 1)[0];
           clearTimeout(w.timer);
           w.resolve(m);
+          answered = true;
           break;
         }
+      // a recovery code that came after its form stopped waiting (it's shown only once)
+      if (!answered && m.recovery && api.onCode) api.onCode(m.recovery);
       if (m.t === 'room') {
         room = m.room;
         seeking = false;
@@ -404,7 +408,17 @@
         if (ws !== s) return;
         var wasOpen = open;
         ws = null; open = false;
-        waiters.splice(0).forEach(function (w) { clearTimeout(w.timer); w.reject(new Error('lost')); });
+        waiters.splice(0).forEach(function (w) { clearTimeout(w.timer); unqueue(w.msg); w.reject(new Error('lost')); });
+        if (e.code === 4001) {  // logged out: the password was changed, or a recovery code used, elsewhere
+          store('lm-player', null);
+          setMe(null);
+          room = null; seeking = false; outbox = [];  // (the address keeps the game: after logging in, back to it)
+          post('error You were logged out: your password was changed, or your recovery code used, in another browser. ' +
+               'Reload the page to log in.');
+          post('status closed');
+          if (api.onLoggedOut) api.onLoggedOut();
+          return;
+        }
         if (e.code === 4000) { room = null; setAddress(null); post('error This game is now open in another tab or window.'); }
         if (e.code === 4002) {
           room = null; seeking = false; outbox = [];
@@ -424,12 +438,17 @@
         timer = setTimeout(connect, Math.min(30000, 1000 * Math.pow(2, Math.min(tries - 1, 5))));
       };
     }
+    function unqueue(m) {  // a question that failed isn't sent later, behind the player's back
+      var i = outbox.indexOf(m);
+      if (i >= 0) outbox.splice(i, 1);
+    }
     function request(m, kinds) {  // sends m; the answer is the first message of one of these kinds
       return new Promise(function (resolve, reject) {
-        var w = { kinds: kinds, resolve: resolve, reject: reject };
+        var w = { kinds: kinds, resolve: resolve, reject: reject, msg: m };
         w.timer = setTimeout(function () {
           var i = waiters.indexOf(w);
           if (i >= 0) waiters.splice(i, 1);
+          unqueue(m);
           reject(new Error('timeout'));
         }, 15000);
         waiters.push(w);
@@ -442,7 +461,9 @@
         navigator.clipboard.writeText(l).then(function () { post('copied 1'); }, function () { post('copied 0'); });
       else post('copied 0');
     }
-    return {
+    var api = {
+      onCode: null,       // (code): a recovery code that came too late for its form
+      onLoggedOut: null,  // (): logged out by the server
       inbox: inbox,
       request: request,
       player: function () { return me; },
@@ -475,6 +496,7 @@
         } else if (verb === 'top' || verb === 'new' || verb === 'resign' || verb === 'draw' || verb === 'decline') send({ t: verb });
       }
     };
+    return api;
   })();
 
   // ---- keys typed into this page's forms don't reach the game (its shortcuts listen on the
@@ -675,7 +697,10 @@
     lmNet.check().then(fillDialog, function () {});  // (the rating as it is now)
   }
   function closeDialog() { $('dialog').hidden = true; canvas.focus(); }
-  $('accountBtn').addEventListener('click', openDialog);
+  $('accountBtn').addEventListener('click', function () {
+    if (lmNet.player()) openDialog();
+    else location.reload();  // (logged out: the front page, then back to the game in the address)
+  });
   $('dialogClose').addEventListener('click', closeDialog);
   $('dialog').addEventListener('click', function (e) { if (e.target === this) closeDialog(); });
 
@@ -713,6 +738,20 @@
       err.textContent = 'Your new recovery code (the old one no longer works). Save it somewhere safe.';
     }, function () { busy(form, false); serverTrouble(err); });
   });
+
+  lmNet.onCode = function (code) {
+    if (!started) { showCode(code); return; }
+    if ($('dialog').hidden) openDialog();
+    $('newCodeShown').textContent = code;
+    $('newCodeShown').hidden = false;
+    $('newCodeErr').className = 'good';
+    $('newCodeErr').textContent = 'Your new recovery code (the old one no longer works). Save it somewhere safe.';
+  };
+  lmNet.onLoggedOut = function () {
+    if (!started) { show('login'); return; }
+    $('dialog').hidden = true;
+    $('accountBtn').textContent = 'Log in';
+  };
 
   $('logoutBtn').addEventListener('click', function () {
     lmNet.logout().then(function () { location.href = location.pathname; });  // (back to the front page)

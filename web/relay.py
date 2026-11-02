@@ -20,13 +20,14 @@ a game has a token of its own, so a reload or a lost connection comes back to th
     python3 relay.py --rules liblmrules.so --db players.db
     python3 relay.py --rules ... --db ... --static build-web --allow-same-ip   (local tests)
 
-Needs the websockets package (Ubuntu: apt install python3-websockets).
+Needs the websockets package, version 10 or later (Ubuntu: apt install python3-websockets).
 """
 import argparse
 import asyncio
 import ctypes
 import hashlib
 import http
+import ipaddress
 import json
 import logging
 import mimetypes
@@ -39,8 +40,12 @@ import time
 
 import websockets
 
+# From websockets 14 on, serve() is a new implementation, with another interface for the
+# request's headers and for answering plain HTTP requests (Ubuntu 24.04 has 10.4, the original)
+NEW_WEBSOCKETS = websockets.serve.__module__.startswith("websockets.asyncio")
+
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/L
-CODE_LENGTH = 6
+CODE_LENGTH = 8                  # (31^8 codes: far too many to guess one, at a few guesses a minute)
 MAX_CONNECTIONS = 20000
 MAX_CONNECTIONS_PER_IP = 40
 MAX_ROOMS = 20000
@@ -48,8 +53,12 @@ ROOM_IDLE_SECONDS = 24 * 3600    # an unfinished game nobody has touched for thi
 ENDED_ROOM_SECONDS = 600         # a finished one, 10 minutes after both players left
 CREATES_PER_IP_PER_HOUR = 30
 NAMES_PER_IP_PER_DAY = 20         # new accounts (a school or an office may share one address)
-LOGIN_FAILS_PER_IP = 30           # wrong passwords or recovery codes in 10 minutes, from one address ...
-LOGIN_FAILS_PER_NAME = 10         # ... and for one name (passwords and codes counted apart)
+LOGIN_FAILS_PER_IP = 30           # wrong passwords or recovery codes in 10 minutes: from one address,
+LOGIN_FAILS_PER_NAME = 10         # for one name from one address,
+LOGIN_FAILS_PER_NAME_ALL = 100    # and for one name from everywhere (passwords and codes counted apart)
+JOIN_FAILS_PER_IP = 20            # links to games that aren't there, in 10 minutes, from one address
+MESSAGES_PER_SECOND = 10          # what one page may send: this many a second on average,
+MESSAGES_BURST = 40               # and this many at once
 MAX_PLIES = 1200
 MAX_MESSAGE = 2048
 CLOCK_MS = 10 * 60 * 1000        # matched games: 10 minutes each ...
@@ -203,6 +212,8 @@ class Players:
                   white_before INTEGER, white_after INTEGER, black_before INTEGER, black_after INTEGER,
                   ended INTEGER NOT NULL, rated INTEGER NOT NULL DEFAULT 1, started INTEGER);
                 CREATE INDEX IF NOT EXISTS games_by_end ON games (ended);
+                CREATE INDEX IF NOT EXISTS games_by_white ON games (white);  -- (each player's games,
+                CREATE INDEX IF NOT EXISTS games_by_black ON games (black);  --  for the admin app)
                 PRAGMA user_version = 2;
             """)
 
@@ -416,6 +427,20 @@ connections = 0
 all_conns = set()
 
 
+def address_key(addr):
+    """Where a connection comes from, as the limits count it: an IPv4 address as it is, an IPv6
+    one by its /64 network (each home or machine has a whole /64, any address in it its own)."""
+    try:
+        a = ipaddress.ip_address(addr.split("%")[0])
+    except ValueError:
+        return addr
+    if a.version == 6:
+        if a.ipv4_mapped:
+            return str(a.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{a}/64", strict=False))
+    return str(a)
+
+
 def limited(kind, ip, most, seconds):
     now = time.monotonic()
     times = [t for t in recent.get((kind, ip), []) if now - t < seconds]
@@ -606,6 +631,36 @@ def failures(kind, key, seconds):
     return times
 
 
+# Wrong passwords and recovery codes are counted from each address, for each name from each
+# address, and for each name from everywhere. The last limit is far higher than the others, so
+# that nobody can keep a player out of their account by guessing wrong at their name.
+
+def too_many_fails(kind, name, ip):
+    return (len(failures("fail", ip, 600)) >= LOGIN_FAILS_PER_IP or
+            len(failures(kind, (name, ip), 600)) >= LOGIN_FAILS_PER_NAME or
+            len(failures(kind + "-all", name, 600)) >= LOGIN_FAILS_PER_NAME_ALL)
+
+
+def count_fail(kind, name, ip):
+    now = time.monotonic()
+    for key in (("fail", ip), (kind, (name, ip)), (kind + "-all", name)):
+        failures(*key, 600).append(now)
+
+
+def log_out_elsewhere(player, here, keep_session=None):
+    """After a new password, or a recovery code used: the player's other pages are logged out
+    (their sessions are gone already) - all but 'here', and those logged in with keep_session."""
+    for o in list(all_conns):
+        if o is here or o.player is None or o.player.id != player.id:
+            continue
+        if keep_session is not None and o.session == keep_session:
+            continue  # (the same browser, in another tab)
+        o.player = o.session = None
+        queue.pop(o, None)
+        o.seeking = None
+        asyncio.ensure_future(o.ws.close(4001, "logged out"))
+
+
 async def account(c, kind, msg):
     async def no(why):
         await send(c.ws, {"t": "auth_error", "for": kind, "why": why})
@@ -618,11 +673,9 @@ async def account(c, kind, msg):
     def password_ok(pw):
         return PASSWORD_MIN <= len(pw) <= PASSWORD_MAX
 
-    # wrong passwords and recovery codes: a limit from each address, and for each name
-    if kind in ("login", "recover"):
-        if (len(failures("fail", c.ip, 600)) >= LOGIN_FAILS_PER_IP or
-                len(failures(kind, name.lower(), 600)) >= LOGIN_FAILS_PER_NAME):
-            return await no("Too many wrong tries. Wait 10 minutes and try again.")
+    # wrong passwords and recovery codes: limits from each address, and for each name
+    if kind in ("login", "recover") and too_many_fails(kind, name.lower(), c.ip):
+        return await no("Too many wrong tries. Wait 10 minutes and try again.")
 
     if kind == "signup":
         if not NAME.match(name):
@@ -645,8 +698,7 @@ async def account(c, kind, msg):
         stored = players.stored_password(name)
         ok = stored is not None and stored[1] is not None and await asyncio.to_thread(check_password, password, stored[1])
         if not ok:
-            failures("fail", c.ip, 600).append(time.monotonic())
-            failures("login", name.lower(), 600).append(time.monotonic())
+            count_fail("login", name.lower(), c.ip)
             if stored is not None and stored[1] is None:
                 return await no("This account has no password yet: open the game in the browser you played on, "
                                 "and choose one under Account.")
@@ -660,12 +712,13 @@ async def account(c, kind, msg):
             return await no(f"A password is {PASSWORD_MIN} to {PASSWORD_MAX} characters.")
         player_id = players.check_recovery(name, str(msg.get("code", ""))[:64])
         if player_id is None:
-            failures("fail", c.ip, 600).append(time.monotonic())
-            failures("recover", name.lower(), 600).append(time.monotonic())
+            count_fail("recover", name.lower(), c.ip)
             return await no("That name and recovery code don't match.")
         p, key, code = players.recover(player_id, await asyncio.to_thread(hash_password, password))
-        recent.pop(("login", name.lower()), None)  # (it's theirs: wrong guesses at the name no longer count)
-        recent.pop(("recover", name.lower()), None)
+        for k in ("login", "recover"):  # (it's theirs: wrong guesses at the name no longer count)
+            recent.pop((k, (name.lower(), c.ip)), None)
+            recent.pop((k + "-all", name.lower()), None)
+        log_out_elsewhere(p, c)
         c.player, c.session = p, key
         log.info("player %s recovered their account", p.name)
         await send(c.ws, dict({"t": "account", "session": key, "recovery": code}, **p.me()))
@@ -679,21 +732,29 @@ async def account(c, kind, msg):
             return await no(f"A password is {PASSWORD_MIN} to {PASSWORD_MAX} characters.")
         if len(failures("fail", c.ip, 600)) >= LOGIN_FAILS_PER_IP:
             return await no("Too many wrong tries. Wait 10 minutes and try again.")
-        current = players.password_of(c.player)
+        p = c.player
+        current = players.password_of(p)
         if current is not None and not await asyncio.to_thread(check_password, password, current):
             failures("fail", c.ip, 600).append(time.monotonic())
             return await no("Your current password isn't right.")
-        players.set_password(c.player, await asyncio.to_thread(hash_password, new), c.session)
+        new_hash = await asyncio.to_thread(hash_password, new)
+        if c.player is not p:  # (logged out meanwhile, from another page)
+            return await no("Log in first.")
+        players.set_password(p, new_hash, c.session)
+        log_out_elsewhere(p, c, c.session)
         await send(c.ws, {"t": "done", "what": "passwd"})
 
     elif kind == "newcode":  # a new recovery code (the password first)
-        current = players.password_of(c.player)
+        p = c.player
+        current = players.password_of(p)
         if current is None:
             return await no("Choose a password first.")
         if not await asyncio.to_thread(check_password, password, current):
             failures("fail", c.ip, 600).append(time.monotonic())
             return await no("That password isn't right.")
-        await send(c.ws, {"t": "code", "recovery": players.new_code(c.player.id)})
+        if c.player is not p:
+            return await no("Log in first.")
+        await send(c.ws, {"t": "code", "recovery": players.new_code(p.id)})
 
     elif kind == "logout":
         if c.session:
@@ -762,8 +823,12 @@ async def handle(c, msg):
     elif kind == "join":
         code = str(msg.get("room", ""))[:16].upper()
         token = str(msg.get("token", ""))[:64]
+        if len(failures("join", c.ip, 600)) >= JOIN_FAILS_PER_IP:  # (guessing at games' links)
+            return await send(c.ws, {"t": "error", "why": "Too many links to games that aren't there. "
+                                                          "Wait 10 minutes and try again."})
         r = rooms.get(code)
         if r is None:
+            failures("join", c.ip, 600).append(time.monotonic())
             return await send(c.ws, {"t": "error", "why": "There is no game at this link (unfinished games end "
                                                           "after a day without moves)."})
         s = next((s for s in "wb" if same_token(r.tokens[s], token)), None)
@@ -772,6 +837,9 @@ async def handle(c, msg):
                 return await send(c.ws, {"t": "error", "why": "This game already has two players."})
             s = "b"
             r.tokens["b"] = secrets.token_urlsafe(18)
+        elif r.rated and r.players[s] and (c.player is None or c.player.id != r.players[s].id):
+            # a rated game's side is its player's: a page logged out (a new password) can't come back
+            return await send(c.ws, {"t": "error", "why": f"Log in as {r.players[s].name} to come back to this game."})
         await attach(c, r, s)
 
     elif room is None:
@@ -834,9 +902,14 @@ async def handle(c, msg):
             await to_seat(room, other(seat), {"t": "new"})
 
 
+def request_headers(ws):
+    request = getattr(ws, "request", None)  # (websockets 14 and later)
+    return request.headers if request is not None else ws.request_headers
+
+
 async def player(ws, path=None):
     global connections
-    ip = ws.request_headers.get("X-Real-IP") or (ws.remote_address or ("?",))[0]
+    ip = address_key(request_headers(ws).get("X-Real-IP") or (ws.remote_address or ("?",))[0])
     if connections >= MAX_CONNECTIONS or conns_by_ip.get(ip, 0) >= MAX_CONNECTIONS_PER_IP:
         await ws.close(4002, "busy")
         return
@@ -844,8 +917,17 @@ async def player(ws, path=None):
     conns_by_ip[ip] = conns_by_ip.get(ip, 0) + 1
     c = Conn(ws, ip)
     all_conns.add(c)
+    allowance, last = MESSAGES_BURST, time.monotonic()  # (how many messages the page may send now)
     try:
         async for raw in ws:
+            now = time.monotonic()
+            allowance = min(MESSAGES_BURST, allowance + (now - last) * MESSAGES_PER_SECOND)
+            last = now
+            if allowance < 1:  # (no more of its messages are read; the close needn't be waited for)
+                asyncio.ensure_future(ws.close(4003, "too many messages"))
+                await asyncio.sleep(0)  # (the close starts here, before the handler ends)
+                break
+            allowance -= 1
             try:
                 msg = json.loads(raw)
                 if not isinstance(msg, dict):
@@ -930,7 +1012,8 @@ def static_files(root):
     root = os.path.realpath(root)
     types = {".wasm": "application/wasm", ".js": "text/javascript", ".data": "application/octet-stream"}
 
-    async def process_request(path, headers):
+    def respond(path):
+        """(status, headers, body) for a file, or None for the WebSocket."""
         p = path.split("?", 1)[0]
         if p == "/ws":
             return None
@@ -946,6 +1029,21 @@ def static_files(root):
         return http.HTTPStatus.OK, [("Content-Type", ctype), ("Cross-Origin-Opener-Policy", "same-origin"),
                                     ("Cross-Origin-Embedder-Policy", "require-corp"),
                                     ("Cache-Control", "no-cache")], body
+
+    if NEW_WEBSOCKETS:
+        from websockets.datastructures import Headers
+        from websockets.http11 import Response
+
+        def process_request(connection, request):
+            r = respond(request.path)
+            if r is None:
+                return None
+            status, headers, body = r
+            headers += [("Content-Length", str(len(body))), ("Connection", "close")]
+            return Response(status.value, status.phrase, Headers(headers), body)
+    else:
+        async def process_request(path, headers):
+            return respond(path)
 
     return process_request
 

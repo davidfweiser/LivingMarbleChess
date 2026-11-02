@@ -51,8 +51,9 @@ python3 web/serve.py build-web     # then open http://localhost:8080/
 ```
 
 `serve.py` serves only the page. To try online games on your own computer, the
-game server can serve the page as well (it needs `python3-websockets`, and the
-chess rules built as a library):
+game server can serve the page as well (it needs `python3-websockets`, or
+`pip install websockets`, any version from 10 on, and the chess rules built as a
+library):
 
 ```sh
 mkdir -p build-rules
@@ -95,12 +96,19 @@ logs in or creates an account before playing: a name (3 to 16 letters, digits,
   new code it prints.
 - In the game, the **Account** button (bottom right) changes the password, makes
   a new recovery code, or logs out. Changing the password, or using a recovery
-  code, logs the account out everywhere else.
+  code, logs the account out everywhere else, pages open there included (a
+  rated game there waits 90 seconds for its player to log in again).
 - A browser stays logged in (for 180 days without a visit); an invite link
   (`?join=...`) asks for a login first, then goes to the game.
 - Passwords are kept as scrypt hashes; recovery codes and login keys as SHA-256
-  hashes. After 10 wrong passwords for a name, or 30 from one address, in 10
-  minutes, it waits.
+  hashes. Wrong passwords (and recovery codes, counted apart) are limited in any
+  10 minutes: 30 from one address, 10 for one name from one address, and 100 for
+  one name from everywhere, so that nobody can keep a player out of their
+  account by guessing wrong at their name. (Everywhere here, an IPv6 address
+  counts by its /64 network, which belongs to one home or machine.)
+- Links to friends' games can't be guessed: their codes are 8 characters, and
+  after 20 links to games that aren't there in 10 minutes, an address waits. A
+  page that sends more than 10 messages a second (40 at once) is cut off.
 
 ## Online games
 
@@ -123,8 +131,10 @@ move:
   30 games). *Leaderboard* shows the best 20, from 5 rated games on.
 - Against cheating: the server checks every move with the game's own rules
   ([`chess_rules.cpp`](chess_rules.cpp)) and decides how games end, the players
-  can't choose each other, and two players from the same internet address are
-  never paired. It can't tell whether someone uses a chess engine.
+  can't choose each other, two players from the same internet address (for
+  IPv6, the same /64 network) are never paired, and a rated game's side can be
+  taken up again only by its player, logged in. It can't tell whether someone
+  uses a chess engine.
 
 In both, reloading the page or a dropped connection comes back to the same game
 and side; *Undo* and *Hint* are off.
