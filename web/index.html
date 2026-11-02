@@ -302,6 +302,9 @@
     var phone = Math.min(screen.width, screen.height) < 600;
     if (phone && args.indexOf('--quality') < 0) args.push('--quality', '1');
     if (phone && args.indexOf('--graphics') < 0) args.push('--graphics', '1');
+    // the game's sound plays in silent mode too, as in the app (most phones live there; Safari
+    // otherwise keeps a page quiet then). iOS 17 and later; it pauses other apps' music.
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
   }
   var join = q.get('join');  // a friend's online game
   if (join && /^[A-Za-z0-9]{4,16}$/.test(join)) args.push('--join', join.toUpperCase());
@@ -433,12 +436,13 @@
         var wasOpen = open;
         ws = null; open = false;
         waiters.splice(0).forEach(function (w) { clearTimeout(w.timer); unqueue(w.msg); w.reject(new Error('lost')); });
-        if (e.code === 4001) {  // logged out: the password was changed, or a recovery code used, elsewhere
-          store('lm-player', null);
+        if (e.code === 4001 || e.code === 4004) {  // logged out: a new password or a recovery code, elsewhere;
+          store('lm-player', null);                // or the account deleted by the person who runs the site
           setMe(null);
           room = null; seeking = false; outbox = [];  // (the address keeps the game: after logging in, back to it)
-          post('error You were logged out: your password was changed, or your recovery code used, in another browser. ' +
-               'Reload the page to log in.');
+          post(e.code === 4004 ? 'error This account was deleted by the person who runs this site.'
+               : 'error You were logged out: your password was changed, or your recovery code used, in another browser. ' +
+                 'Reload the page to log in.');
           post('status closed');
           if (api.onLoggedOut) api.onLoggedOut();
           return;

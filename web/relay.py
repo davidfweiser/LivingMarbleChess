@@ -317,6 +317,18 @@ class Players:
             self.db.execute("UPDATE players SET recovery = ? WHERE id = ?", (sha(normal_code(code)), player_id))
         return code
 
+    def delete(self, player_id):
+        """A player deleted (the admin app): their sessions with them. Their games stay, without
+        them, so that their opponents keep theirs."""
+        with self.db:
+            self.db.execute("UPDATE games SET white = NULL WHERE white = ?", (player_id,))
+            self.db.execute("UPDATE games SET black = NULL WHERE black = ?", (player_id,))
+            self.db.execute("DELETE FROM sessions WHERE player = ?", (player_id,))
+            gone = self.db.execute("DELETE FROM players WHERE id = ?", (player_id,)).rowcount
+        # (a new player may be given the same id: nothing of this one may stay behind)
+        self.cache.pop(player_id, None)
+        return gone > 0
+
     def forget_old_sessions(self):
         with self.db:
             self.db.execute("DELETE FROM sessions WHERE used < ?", (int(time.time()) - SESSION_DAYS * 86400,))
@@ -965,6 +977,119 @@ async def sweep():
             del recent[key]
 
 
+async def delete_player(name):
+    """The admin app deletes a player: their game in progress ends (aborted, unrated), their pages
+    are logged out, and they leave the database."""
+    row = players._by_name(name) if players else None
+    if row is None:
+        return {"ok": False, "why": f"There is no player called {name}."}
+    pid, real = row[0], row[1]
+    p = players.cache.get(pid)
+    if p is not None:
+        for r in list(rooms.values()):
+            for seat in "wb":
+                if r.players[seat] is not p:
+                    continue
+                if r.rated and r.result is None:
+                    await end_game(r, "*", "aborted")  # (recorded first: the deletion takes them out of it)
+                if not r.rated:
+                    r.players[seat] = None  # (a game with a friend: not recorded with them)
+    for o in list(all_conns):
+        if o.player is not None and o.player.id == pid:
+            o.player = o.session = None
+            queue.pop(o, None)
+            o.seeking = None
+            asyncio.ensure_future(o.ws.close(4004, "account deleted"))
+    players.delete(pid)
+    log.info("player %s deleted (admin app)", real)
+    return {"ok": True, "why": f"{real} is deleted."}
+
+
+def requests_folder(db_path):
+    return os.path.join(os.path.dirname(os.path.abspath(db_path)), "admin-requests")
+
+
+async def admin_requests(folder):
+    """Requests from the admin app (web/admin.py, run as root): a file each in the folder,
+    NAME.request, answered in NAME.answer. Only root and this server can write there."""
+    os.makedirs(folder, exist_ok=True)
+    while True:
+        await asyncio.sleep(1)
+        try:
+            names = sorted(f for f in os.listdir(folder) if f.endswith(".request"))
+        except OSError:
+            continue
+        for f in names:
+            path = os.path.join(folder, f)
+            try:
+                with open(path) as fh:
+                    req = json.load(fh)
+            except (OSError, ValueError):
+                req = {}
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+            if req.get("t") == "delete":
+                answer = await delete_player(str(req.get("name", "")).strip())
+            else:
+                answer = {"ok": False, "why": "The game server doesn't know that request."}
+            out = path[:-len(".request")] + ".answer"
+            try:
+                with open(out + ".tmp", "w") as fh:
+                    json.dump(answer, fh)
+                os.replace(out + ".tmp", out)
+            except OSError as e:
+                log.warning("admin request: %s", e)
+
+
+async def delete_from_command_line(db_path, status_path, name):
+    """--delete-player: the running game server does it (it knows who is online and playing);
+    without one, the database is changed here. True if the player was deleted."""
+    def server_running():
+        try:
+            with open(status_path) as f:
+                return time.time() - json.load(f).get("time", 0) < 10
+        except (OSError, ValueError):
+            return False
+
+    folder = requests_folder(db_path)
+    if server_running() and os.path.isdir(folder):
+        key = secrets.token_hex(8)
+        req, ans = os.path.join(folder, key + ".request"), os.path.join(folder, key + ".answer")
+        with open(req + ".tmp", "w") as f:
+            json.dump({"t": "delete", "name": name}, f)
+        os.chmod(req + ".tmp", 0o644)  # (the server, another user, reads it)
+        os.replace(req + ".tmp", req)
+        for _ in range(200):  # (20 seconds)
+            await asyncio.sleep(0.1)
+            if os.path.exists(ans):
+                with open(ans) as f:
+                    answer = json.load(f)
+                os.remove(ans)
+                print(answer["why"])
+                return answer["ok"]
+        try:
+            os.remove(req)
+        except OSError:
+            pass
+        if server_running():
+            print("The game server didn't answer. Is it busy? Try again in a moment.")
+            return False
+    global players
+    players = Players(db_path)
+    row = players._by_name(name)
+    if row is None:
+        print(f"There is no player called {name}.")
+        ok = False
+    else:
+        ok = players.delete(row[0])
+        print(f"{row[1]} is deleted.")
+    players.db.close()
+    keep_owner(db_path)
+    return ok
+
+
 async def write_status(path):
     """For the admin app (web/admin.py): who is here, who is waiting and the games going on,
     written to a file every 2 seconds."""
@@ -1061,6 +1186,8 @@ async def main():
     ap.add_argument("--status", help="the status file for the admin app (default: status.json beside the database)")
     ap.add_argument("--reset-code", metavar="NAME",
                     help="give a player a new recovery code (when they've lost theirs), print it and stop")
+    ap.add_argument("--delete-player", metavar="NAME",
+                    help="delete a player (logged out, their games kept without them), print what happened and stop")
     ap.add_argument("--static", metavar="FOLDER", help="also serve the web page from FOLDER (local tests)")
     ap.add_argument("--allow-same-ip", action="store_true",
                     help="pair players from the same address (local tests)")
@@ -1098,10 +1225,15 @@ async def main():
         players.db.close()
         keep_owner(args.db)
         return
+    status = args.status or os.path.join(os.path.dirname(os.path.abspath(args.db)), "status.json")
+    if args.delete_player:
+        if not await delete_from_command_line(args.db, status, args.delete_player.strip()):
+            raise SystemExit(1)
+        return
     if args.db != "none":
         players = Players(args.db)
-        status = args.status or os.path.join(os.path.dirname(os.path.abspath(args.db)), "status.json")
         asyncio.ensure_future(write_status(status))
+        asyncio.ensure_future(admin_requests(requests_folder(args.db)))
     asyncio.ensure_future(sweep())
     asyncio.ensure_future(matchmaker())
     async with websockets.serve(player, args.host, args.port, max_size=MAX_MESSAGE, max_queue=16,

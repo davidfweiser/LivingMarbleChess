@@ -126,7 +126,8 @@ else
   systemctl enable --now living-marble-relay >/dev/null 2>&1 || true
 fi
 
-# The admin app: sudo living-marble-admin (and --reset-code NAME for a lost recovery code)
+# The admin app: sudo living-marble-admin (and --reset-code NAME for a lost recovery code,
+# --delete-player NAME to delete a player)
 install -m 644 "$SRC/web/admin.py" /opt/living-marble/admin.py
 cat > /usr/local/bin/living-marble-admin <<'ADMIN'
 #!/bin/sh
@@ -134,10 +135,11 @@ cat > /usr/local/bin/living-marble-admin <<'ADMIN'
 #   living-marble-admin                   the screens (q quits)
 #   living-marble-admin --once            the summary as plain text
 #   living-marble-admin --reset-code NAME a new recovery code for a player who lost theirs
+#   living-marble-admin --delete-player NAME  delete a player (d on the Players screen does too)
 if [ "$(id -u)" != 0 ]; then exec sudo "$0" "$@"; fi
 DB=/var/lib/living-marble/players.db
-if [ "$1" = "--reset-code" ]; then
-  exec /usr/bin/python3 /opt/living-marble/relay.py --db "$DB" --reset-code "$2"
+if [ "$1" = "--reset-code" ] || [ "$1" = "--delete-player" ]; then
+  exec /usr/bin/python3 /opt/living-marble/relay.py --db "$DB" "$1" "$2"
 fi
 exec /usr/bin/python3 /opt/living-marble/admin.py --db "$DB" "$@"
 ADMIN

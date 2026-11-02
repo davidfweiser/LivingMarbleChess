@@ -154,6 +154,13 @@ and side; *Undo* and *Hint* are off.
   player's games); the latest games; and totals with charts of games and new
   players a day. Keys 1-4 switch screens, q quits; `--once` prints the summary
   as text.
+- **Deleting a player**: `d` on the Players screen, then their name typed again
+  (or `sudo living-marble-admin --delete-player NAME`). The game server does
+  it: their pages are logged out ("This account was deleted"), a game they are
+  playing ends aborted and unrated, and their account and logins leave the
+  database; their games stay, shown without them, so their opponents keep
+  theirs. The name is free again. (With the game server stopped, the database
+  is changed directly.)
 - The players and their games: `/var/lib/living-marble/players.db` (SQLite).
   Back it up now and then, e.g. `sqlite3 /var/lib/living-marble/players.db
   ".backup players-backup.db"` (`apt install sqlite3`).
@@ -222,6 +229,9 @@ games), not yet on a real iPhone or iPad.
 
 - Sound starts with the first click, tap or key (browsers keep pages quiet until
   then); on iPhone and iPad a tap brings it back after the browser was put away.
+- On iPhone and iPad the sound plays in silent mode too, as in the app (iOS 17
+  and later; Safari otherwise keeps a page quiet in silent mode). Unlike the app,
+  it pauses music playing in other apps. On older iOS, turn silent mode off.
 - *Full screen* uses the browser's (F11 works too); F12 screenshots and Ctrl+Q
   are left to the browser.
 - The sculpting uses up to 8 threads.

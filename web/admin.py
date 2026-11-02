@@ -9,7 +9,10 @@ and the status file it writes every 2 seconds:
 
 Keys: 1-4 or Tab for the screens (Now, Players, Games, Stats), arrows and Page Up/Down to
 scroll, / to search for a player, Enter for a player's games (Esc or Backspace: back),
-s to sort, q to quit.
+d to delete a player (their name typed again first), s to sort, q to quit.
+
+Deleting goes through the game server (relay.py --delete-player), which logs the player out
+everywhere and ends their game; without a server running it changes the database itself.
 """
 import argparse
 import curses
@@ -17,10 +20,12 @@ import datetime
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 
 DEFAULT_DB = "/var/lib/living-marble/players.db"
+RELAY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "relay.py")  # (beside this file)
 SCREENS = ["Now", "Players", "Games", "Stats"]
 REASONS = {"checkmate": "checkmate", "resignation": "resigned", "timeout": "on time", "abandoned": "left",
            "agreement": "agreed", "stalemate": "stalemate", "fifty": "50 moves", "repetition": "repetition",
@@ -240,9 +245,10 @@ def game_lines(rows):
     now = time.time()
     for ended, rated, w, wb, wa, b, bb, ba, result, why, moves, started in rows:
         def side(name, before, after):
+            name = name or "(deleted)"  # (a player deleted from the admin app)
             if not rated or after is None or before is None or result == "*":
-                return f"{name or '?'}"
-            return f"{name or '?'} {after - before:+d}"
+                return name
+            return f"{name} {after - before:+d}"
         out.append((f"  {ago(ended, now):<12} {'rated' if rated else 'friend':<6} {side(w, wb, wa):<24.24} "
                     f"{side(b, bb, ba):<24.24} {result_words(result, why):<16.16} {(moves_in(moves) + 1) // 2:>5}", 0))
     return out
@@ -303,6 +309,7 @@ class App:
         self.cursor = 0
         self.lines = []
         self.loaded = 0
+        self.message, self.message_until = "", 0  # (in the footer for a while: what a deletion did)
 
     def load(self, w):
         d = self.data
@@ -347,7 +354,7 @@ class App:
             x += len(label) + 1
         info = ""
         if self.screen == 1 and not self.picked:
-            info = f"sorted by {SORTS[self.sort][0]} (s)   " + (f"search: {self.search} (/)" if self.search else "/ search   Enter: games")
+            info = f"sorted by {SORTS[self.sort][0]} (s)   " + (f"search: {self.search} (/)" if self.search else "/ search   Enter: games") + "   d: delete"
         scr.addnstr(1, min(x + 2, w - 1), info, max(0, w - x - 3), curses.color_pair(DIM))
         body = h - 3
         first = self.scroll[self.screen]
@@ -367,11 +374,14 @@ class App:
         foot = " q quit  1-4/Tab screens  arrows/PgUp/PgDn scroll  r refresh "
         if len(rows) > body - heads:
             foot += f"  {first + 1}-{min(len(rows), first + body - heads)} of {len(rows)}"
+        if self.message and time.time() < self.message_until:
+            foot = " " + self.message + " "
         scr.addnstr(h - 1, 0, foot.ljust(w), w - 1, curses.color_pair(TITLE))
         scr.refresh()
 
     def ask(self, scr, prompt):
         h, w = scr.getmaxyx()
+        prompt = prompt[:max(1, w - 22)]  # (room left for the typing, in a narrow window)
         curses.echo()
         curses.curs_set(1)
         scr.timeout(-1)  # (wait for the typing: the screen's refresh timer would cut it short)
@@ -384,6 +394,22 @@ class App:
             curses.curs_set(0)
             scr.timeout(500)
         return text
+
+    def delete(self, scr, name):
+        """Deletes a player, once their name is typed again: the game server does it."""
+        typed = self.ask(scr, f" Delete {name} for good? Type the name to delete (Enter: keep): ")
+        if typed.lower() != name.lower():
+            self.message = f"{name} is kept." if typed == "" else f"{typed} isn't {name}: nothing deleted."
+        else:
+            try:
+                done = subprocess.run([sys.executable, RELAY, "--db", self.data.db_path, "--delete-player", name],
+                                      capture_output=True, text=True, timeout=40)
+                said = (done.stdout.strip() or done.stderr.strip() or "?").splitlines()
+                self.message = said[-1]
+            except (OSError, subprocess.TimeoutExpired) as e:
+                self.message = f"Couldn't delete {name}: {e}"
+            self.data.db = None  # (opened again: the database changed)
+        self.message_until = time.time() + 8
 
     def run(self, scr):
         curses.curs_set(0)
@@ -440,6 +466,11 @@ class App:
                 self.search = self.ask(scr, " Search for a player (Enter for everyone): ")
                 self.cursor = self.scroll[1] = 0
                 self.picked = None
+            elif k in (ord("d"), ord("D"), curses.KEY_DC) and self.screen == 1 and not self.picked:
+                rows = getattr(self, "rows", [])
+                if rows:
+                    self.delete(scr, rows[min(self.cursor, len(rows) - 1)][0])
+                    self.cursor = min(self.cursor, max(0, len(rows) - 2))
             elif k in (10, 13, curses.KEY_ENTER) and self.screen == 1 and not self.picked:
                 rows = getattr(self, "rows", [])
                 if rows:
