@@ -307,7 +307,9 @@ void App::drawUI() {
     if (ImGui::Button("Hint (T)", ImVec2(-1, 0))) requestHint();
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-      ImGui::SetTooltip("Selects the best move for you: click the glowing square to play it");
+      ImGui::SetTooltip("%s", mode == Mode::TwoPlayer || mode == Mode::Online
+                                  ? "No hints against another person"
+                                  : "Selects the best move for you: click the glowing square to play it");
     ImGui::Spacing();
     drawSettings(S);
     ImGui::End();
