@@ -9,7 +9,8 @@ and the status file it writes every 2 seconds:
 
 Keys: 1-4 or Tab for the screens (Now, Players, Games, Stats), arrows and Page Up/Down to
 scroll, / to search for a player, Enter for a player's games (Esc or Backspace: back),
-d to delete a player (their name typed again first), s to sort, q to quit.
+d to delete a player (their name typed again first), s to sort, q to quit. Esc leaves a
+question at the bottom (the search, or the deletion) without changing anything.
 
 Deleting goes through the game server (relay.py --delete-player), which logs the player out
 everywhere and ends their game; without a server running it changes the database itself.
@@ -285,6 +286,19 @@ def stats_lines(s, width):
 
 # ---------------------------------------------------------------------------
 
+def put(scr, y, x, text, room, attr=0):
+    """Writes text at (y, x), at most room characters, and never fails: a control character
+    shows as two (^[) and would push the line on, and a full bottom line ends in the screen's
+    last corner, which curses calls an error."""
+    if room <= 0:
+        return
+    text = "".join(c if c.isprintable() else " " for c in text)
+    try:
+        scr.addnstr(y, x, text, room, attr)
+    except curses.error:
+        pass
+
+
 def once(data):
     """The summary as plain text."""
     if not data.connect():
@@ -338,31 +352,32 @@ class App:
         h, w = scr.getmaxyx()
         scr.erase()
         if h < 8 or w < 40:
-            scr.addnstr(0, 0, "Make the window bigger", w - 1)
+            put(scr, 0, 0, "Make the window bigger", w - 1)
             scr.refresh()
             return
         title = " Living Marble - admin "
-        scr.addnstr(0, 0, title.ljust(w), w - 1, curses.color_pair(TITLE) | curses.A_BOLD)
+        put(scr, 0, 0, title.ljust(w), w - 1, curses.color_pair(TITLE) | curses.A_BOLD)
         st, _ = self.data.status()
         up = f"game server up {span(time.time() - st['started'])}   " if st and st.get("started") else ""
         stamp = up + time.strftime("%Y-%m-%d %H:%M:%S ")
-        scr.addnstr(0, max(len(title) + 1, w - len(stamp) - 1), stamp, len(stamp), curses.color_pair(TITLE))
+        sx = max(len(title) + 1, w - len(stamp) - 1)
+        put(scr, 0, sx, stamp, w - sx - 1, curses.color_pair(TITLE))
         x = 1
         for i, name in enumerate(SCREENS):
             label = f" {i + 1} {name} "
-            scr.addnstr(1, x, label, w - x - 1, curses.color_pair(SEL if i == self.screen else DIM) | (curses.A_BOLD if i == self.screen else 0))
+            put(scr, 1, x, label, w - x - 1, curses.color_pair(SEL if i == self.screen else DIM) | (curses.A_BOLD if i == self.screen else 0))
             x += len(label) + 1
         info = ""
         if self.screen == 1 and not self.picked:
             info = f"sorted by {SORTS[self.sort][0]} (s)   " + (f"search: {self.search} (/)" if self.search else "/ search   Enter: games") + "   d: delete"
-        scr.addnstr(1, min(x + 2, w - 1), info, max(0, w - x - 3), curses.color_pair(DIM))
+        put(scr, 1, min(x + 2, w - 1), info, w - x - 3, curses.color_pair(DIM))
         body = h - 3
         first = self.scroll[self.screen]
         lines = self.lines
         heads = 1 if self.screen in (1, 2) and lines else 0  # (the column titles stay put)
         if heads:
             text, style = lines[0]
-            scr.addnstr(2, 0, text, w - 1, curses.color_pair(style))
+            put(scr, 2, 0, text, w - 1, curses.color_pair(style))
         rows = lines[heads:]
         first = max(0, min(first, max(0, len(rows) - (body - heads))))
         self.scroll[self.screen] = first
@@ -370,36 +385,50 @@ class App:
             attr = curses.color_pair(style)
             if self.screen == 1 and not self.picked and first + i == self.cursor:
                 attr = curses.color_pair(SEL) | curses.A_BOLD
-            scr.addnstr(2 + heads + i, 0, text, w - 1, attr)
+            put(scr, 2 + heads + i, 0, text, w - 1, attr)
         foot = " q quit  1-4/Tab screens  arrows/PgUp/PgDn scroll  r refresh "
         if len(rows) > body - heads:
             foot += f"  {first + 1}-{min(len(rows), first + body - heads)} of {len(rows)}"
         if self.message and time.time() < self.message_until:
             foot = " " + self.message + " "
-        scr.addnstr(h - 1, 0, foot.ljust(w), w - 1, curses.color_pair(TITLE))
+        put(scr, h - 1, 0, foot.ljust(w), w - 1, curses.color_pair(TITLE))
         scr.refresh()
 
-    def ask(self, scr, prompt):
-        h, w = scr.getmaxyx()
-        prompt = prompt[:max(1, w - 22)]  # (room left for the typing, in a narrow window)
-        curses.echo()
+    def ask(self, scr, prompt, most=20):
+        """A line typed on the bottom line: Enter ends it, Esc leaves it (None)."""
         curses.curs_set(1)
         scr.timeout(-1)  # (wait for the typing: the screen's refresh timer would cut it short)
-        scr.addnstr(h - 1, 0, prompt.ljust(w), w - 1, curses.color_pair(TITLE))
-        scr.refresh()
+        text = ""
         try:
-            text = scr.getstr(h - 1, len(prompt), 20).decode(errors="ignore").strip()
+            while True:
+                h, w = scr.getmaxyx()
+                shown = prompt[:max(1, w - most - 2)]  # (room left for the typing, in a narrow window)
+                put(scr, h - 1, 0, (shown + text).ljust(w), w - 1, curses.color_pair(TITLE))
+                scr.move(h - 1, min(len(shown) + len(text), w - 1))
+                scr.refresh()
+                try:
+                    k = scr.get_wch()
+                except curses.error:
+                    continue
+                if k in ("\n", "\r", curses.KEY_ENTER):
+                    return text.strip()
+                if k == "\x1b":  # Esc
+                    return None
+                if k in ("\x7f", "\b", curses.KEY_BACKSPACE, curses.KEY_LEFT):
+                    text = text[:-1]
+                elif k == "\x15":  # Ctrl-U: all of it
+                    text = ""
+                elif isinstance(k, str) and k.isprintable() and len(text) < most:
+                    text += k
         finally:
-            curses.noecho()
             curses.curs_set(0)
             scr.timeout(500)
-        return text
 
     def delete(self, scr, name):
         """Deletes a player, once their name is typed again: the game server does it."""
-        typed = self.ask(scr, f" Delete {name} for good? Type the name to delete (Enter: keep): ")
-        if typed.lower() != name.lower():
-            self.message = f"{name} is kept." if typed == "" else f"{typed} isn't {name}: nothing deleted."
+        typed = self.ask(scr, f" Delete {name} for good? Type the name to delete (Enter or Esc: keep): ")
+        if not typed or typed.lower() != name.lower():
+            self.message = f"{name} is kept." if not typed else f"{typed} isn't {name}: nothing deleted."
         else:
             try:
                 done = subprocess.run([sys.executable, RELAY, "--db", self.data.db_path, "--delete-player", name],
@@ -463,9 +492,11 @@ class App:
                 self.sort = (self.sort + 1) % len(SORTS)
                 self.cursor = self.scroll[1] = 0
             elif k == ord("/") and self.screen == 1:
-                self.search = self.ask(scr, " Search for a player (Enter for everyone): ")
-                self.cursor = self.scroll[1] = 0
-                self.picked = None
+                typed = self.ask(scr, " Search for a player (Enter for everyone, Esc: as it was): ")
+                if typed is not None:
+                    self.search = typed
+                    self.cursor = self.scroll[1] = 0
+                    self.picked = None
             elif k in (ord("d"), ord("D"), curses.KEY_DC) and self.screen == 1 and not self.picked:
                 rows = getattr(self, "rows", [])
                 if rows:
