@@ -49,9 +49,11 @@ void humanPose(int asset, const Controls& c, Pose& out) {
   b.R[RH_LFORE] = swing(aL.z);
   b.R[RH_RFORE] = swing(aR.z);
   // --- what the hands hold: the right hand's item, or the blade drawn instead of it
-  quat ip = aa(c.itemPitch, X) * aa(c.itemYaw, Y);
+  // (limp: what the hands still hold turns to lie along the arm, flat on the board once the body is down)
+  quat ip = aa(c.itemPitch * (1.0f - dead) - 1.2f * dead, X) * aa(c.itemYaw * (1.0f - dead), Y);
   b.R[RH_ITEMR] = ip;
   b.R[RH_BLADE] = ip;
+  b.R[RH_ITEML] = aa(-1.3f * dead, X);
   bool drawn = c.draw > 0.5f;
   b.sc[RH_ITEMR] = c.itemR > 0.5f && !drawn ? 1.0f : 0.0f;
   b.sc[RH_BLADE] = c.itemR > 0.5f && drawn ? 1.0f : 0.0f;

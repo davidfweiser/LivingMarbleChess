@@ -768,10 +768,11 @@ class RQuietMove : public Staged {
         {
           bool d1;
           if (plan.rook >= 0) {
-            // castling: the emperor strides round in an arc behind the rolling tower
+            // castling: the emperor strides round in an arc behind the rolling tower (on the board's
+            // edge side of his rank, clear of the tower and of his own men)
             float u = glm::clamp(pt / 1.9f, 0.0f, 1.0f), e = easeInOut(u);
-            vec3 toCenter = vec3(0, 0, a.color == 0 ? -1.0f : 1.0f);
-            vec3 W = (A + B) * 0.5f + toCenter * 0.8f;
+            vec3 toEdge = vec3(0, 0, a.color == 0 ? 1.0f : -1.0f);
+            vec3 W = (A + B) * 0.5f + toEdge * 1.1f;
             vec3 p = (1 - e) * (1 - e) * A + 2 * (1 - e) * e * W + e * e * B;
             vec3 prev = a.pos;
             a.pos = vec3(p.x, 0, p.z);
@@ -930,12 +931,18 @@ class RBattle : public BattleBase {
     if (isHuman(v)) {
       tumble.launch(w, v, vel, spin);
     } else {
-      vec3 side(-dir.z, 0, dir.x);
-      fall.start(w, v, glm::dot(flat(vel), side) > 0 ? -1.0f : 1.0f, flat(vel) * 0.35f, 0.15f);
+      // (a chariot overturns away from the blow: its own left is +x)
+      vec3 left(std::cos(v.yaw), 0, -std::sin(v.yaw));
+      fall.start(w, v, glm::dot(flat(vel), left) >= 0 ? 1.0f : -1.0f, flat(vel) * 0.35f, 0.15f);
     }
   }
   void kill(World& w, float dir, const vec3& push, float stagger = 0.35f) {
     Actor& v = w.actors[plan.victim];
+    if (isChariot(v)) {  // a chariot overturns to the side the blow drives it
+      vec3 left(std::cos(v.yaw), 0, -std::sin(v.yaw));
+      float d = glm::dot(flat(push), left);
+      dir = std::fabs(d) > 1e-3f ? (d > 0 ? 1.0f : -1.0f) : (w.fx.rnd() < 0.5f ? -1.0f : 1.0f);
+    }
     fall.start(w, v, dir, push, stagger);
   }
   // a cheer and the victor's gesture: sword (or spear) raised
@@ -3201,7 +3208,7 @@ class RCheckmate : public Staged {
             p.target = k.pos + vec3(0, 0.6f, 0) + k.forward() * 0.3f;
             vec3 player = glm::normalize(flat(w.cam.orbitPose().pos - k.pos) + vec3(1e-4f));
             vec3 back = glm::normalize(k.forward() * 1.0f + player * 0.45f + vec3(1e-4f));
-            p.pos = p.target + back * 3.0f + vec3(0, 0.9f, 0);
+            p.pos = p.target + back * 3.1f + vec3(0, 1.7f, 0);  // high enough to see over his own men
             p.fov = 32;
             p.focus = glm::length(p.pos - p.target);
             p.aperture = 7.0f;

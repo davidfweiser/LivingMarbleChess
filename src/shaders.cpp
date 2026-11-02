@@ -640,14 +640,14 @@ void romanSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout 
     vec3 base;
     if (id == 3) base = black ? vec3(0.05, 0.045, 0.045) : vec3(0.80, 0.76, 0.66);
     else if (id == 4) base = black ? vec3(0.03, 0.045, 0.12) : vec3(0.55, 0.045, 0.04);
-    else if (id == 17) base = black ? vec3(0.13, 0.02, 0.1) : vec3(0.34, 0.04, 0.23);
+    else if (id == 17) base = black ? vec3(0.1, 0.015, 0.09) : vec3(0.21, 0.025, 0.17);
     else base = black ? vec3(0.07, 0.065, 0.07) : vec3(0.88, 0.86, 0.80);
     float weave = 0.92 + 0.08 * sin(o.x * 2300.0 + o.z * 900.0) * sin(o.y * 2300.0);
     float fold = texture(uNoise, vec3(o.x * 6.0, o.y * 1.5, o.z * 6.0) + uTexOffset * 0.05).r;
     albedo = base * (0.8 + 0.3 * n1) * weave * (0.85 + 0.3 * fold);
     rough = id == 17 ? 0.6 : 0.85;
     wrap = 0.35;
-    emissive += base * pow(1.0 - NoV, 3.0) * (id == 17 ? 0.6 : 0.22);  // the sheen of cloth
+    emissive += base * pow(1.0 - NoV, 3.0) * (id == 17 ? 0.35 : 0.22);  // the sheen of cloth
     specOcc = 0.5;
   } else if (id == 5) {  // horsehair crest
     float strand = texture(uNoise, vec3(o.x * 80.0, o.y * 30.0, o.z * 9.0)).r;
