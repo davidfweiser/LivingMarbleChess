@@ -76,6 +76,7 @@ for f in index.html living_marble.js living_marble.wasm living_marble.worker.js 
 done
 mkdir -p "$stage/screens"  # (the front page's pictures)
 cp "$SRC/build-web/screens/"*.jpg "$stage/screens/"
+cp "$SRC/build-web/apple-touch-icon.png" "$stage/"  # (iPhone and iPad: Add to Home Screen)
 find "$stage" -type d -exec chmod 755 {} +
 find "$stage" -type f -exec chmod 644 {} +
 if [ -d "$WEBROOT" ]; then mv "$WEBROOT" "$WEBROOT.old"; fi

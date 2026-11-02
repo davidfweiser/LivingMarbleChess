@@ -978,6 +978,7 @@ uniform vec3 uFwd;
 uniform vec3 uRight;
 uniform vec3 uUp;
 uniform int uIncludeKey;
+uniform int uIncludeLights;
 uniform vec3 uKeyDir;
 out vec4 oColor;
 
@@ -1014,13 +1015,16 @@ void main() {
   vec3 d = normalize(uFwd + ndc.x * uRight + ndc.y * uUp);
   vec3 up = vec3(0.0, 1.0, 0.0);
   vec3 c = room(d);
-  // cool fill from the front-right, warm rim strip behind-right, soft overhead
-  c += vec3(0.78, 0.87, 1.0) * 2.0 * panel(d, normalize(vec3(0.85, 0.45, 0.55)), up, vec2(0.55, 0.32), 0.25);
-  c += vec3(1.0, 0.94, 0.86) * 4.5 * panel(d, normalize(vec3(0.55, 0.40, -0.85)), up, vec2(0.8, 0.045), 0.04);
-  c += vec3(1.0, 0.96, 0.90) * 1.4 * panel(d, normalize(vec3(0.05, 1.0, 0.12)), vec3(0.0, 0.0, 1.0), vec2(0.4, 0.4), 0.2);
-  c += vec3(1.0, 0.62, 0.32) * 6.0 * smoothstep(0.9975, 0.9995, dot(d, normalize(vec3(-1.0, 0.16, -0.55))));
-  c += vec3(1.0, 0.62, 0.32) * 6.0 * smoothstep(0.9975, 0.9995, dot(d, normalize(vec3(0.95, 0.20, -0.65))));
-  c += vec3(0.33, 0.43, 0.70) * 1.0 * panel(d, normalize(vec3(-1.0, 0.35, -0.30)), up, vec2(0.22, 0.34), 0.04);
+  // the studio lights reflect in the pieces, but stay out of the backdrop (which blurs them into blobs)
+  if (uIncludeLights == 1) {
+    // cool fill from the front-right, warm rim strip behind-right, soft overhead
+    c += vec3(0.78, 0.87, 1.0) * 2.0 * panel(d, normalize(vec3(0.85, 0.45, 0.55)), up, vec2(0.55, 0.32), 0.25);
+    c += vec3(1.0, 0.94, 0.86) * 4.5 * panel(d, normalize(vec3(0.55, 0.40, -0.85)), up, vec2(0.8, 0.045), 0.04);
+    c += vec3(1.0, 0.96, 0.90) * 1.4 * panel(d, normalize(vec3(0.05, 1.0, 0.12)), vec3(0.0, 0.0, 1.0), vec2(0.4, 0.4), 0.2);
+    c += vec3(1.0, 0.62, 0.32) * 6.0 * smoothstep(0.9975, 0.9995, dot(d, normalize(vec3(-1.0, 0.16, -0.55))));
+    c += vec3(1.0, 0.62, 0.32) * 6.0 * smoothstep(0.9975, 0.9995, dot(d, normalize(vec3(0.95, 0.20, -0.65))));
+    c += vec3(0.33, 0.43, 0.70) * 1.0 * panel(d, normalize(vec3(-1.0, 0.35, -0.30)), up, vec2(0.22, 0.34), 0.04);
+  }
   if (uIncludeKey == 1) c += vec3(1.0, 0.94, 0.86) * 34.0 * panel(d, uKeyDir, up, vec2(0.13, 0.10), 0.03);
   oColor = vec4(c, 1.0);
 }

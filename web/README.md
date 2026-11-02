@@ -67,7 +67,9 @@ each browser remembers its player and its side. (`--allow-same-ip` lets two
 players from one computer be paired, which the real server doesn't allow.)
 
 The page is `build-web/index.html` with `living_marble.js`, `.wasm`,
-`.worker.js` and `.data` (the fonts) beside it.
+`.worker.js` and `.data` (the fonts) beside it, the front page's pictures in
+`screens/`, and `apple-touch-icon.png` (the icon on an iPhone's or iPad's Home
+Screen).
 
 ## Options in the address
 
@@ -185,9 +187,41 @@ once, the game server would have to be split over several processes or
 machines, which it doesn't do yet. The page itself is about 1.3 MB to download
 per new visitor (browsers keep it after that).
 
+## On iPhone and iPad
+
+The page plays in Safari on iPhone and iPad (and in any browser on a touch
+screen), with the touch controls of the iPhone and iPad app:
+
+- Tap a piece, then a glowing square. One finger turns the board (even to look
+  underneath); two fingers pinch to zoom, twist to turn it and slide up or down
+  to tilt it.
+- The status (and in rated games the players and their clocks) is at the top, a
+  toolbar at the bottom (down the right edge of a phone on its side): *New*
+  (tapped twice, so a stray tap doesn't end a game), *Undo*, *Hint*, *Flip*,
+  *Moves* and *Menu*. In an online game *Draw* and *Resign* take Undo's and
+  Hint's places. On an iPad the move list stays beside the board.
+- *Menu* has everything else: the mode (online games too), the opponent, the
+  pieces, the sound, the graphics, the account, *Reset view*, help, and *Hide*
+  for a clear view of the board. Drag it up or down to scroll it.
+- *Share link* sends a friend's game with the share sheet.
+- A phone sculpts one level less (`quality=1`) and draws *Medium* graphics, to
+  load quicker and spare its memory and battery; an iPad starts like a computer.
+  The address can ask for others, as on a computer.
+- An iPhone's Safari has no full screen for pages: Safari's Share button, then
+  *Add to Home Screen*, gives the game the whole screen, with its own icon.
+- Portrait screens see the board from closer in and higher up, and narrow ones
+  keep the width of a 16:10 screen, so the whole board fits across (as in the
+  app; on a computer too, in a narrow window).
+
+It needs a recent iOS (WebGL 2 with `EXT_color_buffer_float`, and threads); the
+front page says so if something is missing. This was tried in a browser
+pretending to be a phone and a tablet (touches, gestures, the layouts, online
+games), not yet on a real iPhone or iPad.
+
 ## What is different in the browser
 
-- Sound starts with the first click or key (browsers keep pages quiet until then).
+- Sound starts with the first click, tap or key (browsers keep pages quiet until
+  then); on iPhone and iPad a tap brings it back after the browser was put away.
 - *Full screen* uses the browser's (F11 works too); F12 screenshots and Ctrl+Q
   are left to the browser.
 - The sculpting uses up to 8 threads.

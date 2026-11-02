@@ -439,7 +439,8 @@ starts much quicker.
 
 The same C++ code, compiled with Emscripten, behind a front page with accounts,
 where you can also play online: a friend by a link, or anyone looking for a
-game, rated, with clocks and a leaderboard. See [`web/README.md`](web/README.md)
+game, rated, with clocks and a leaderboard. It plays in Safari on iPhone and
+iPad too, with touch controls like the app's. See [`web/README.md`](web/README.md)
 for building it, and [`web/linode-setup.sh`](web/linode-setup.sh) for putting it
 on a server with one command, game server and admin app included.
 

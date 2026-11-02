@@ -18,6 +18,7 @@
 
 struct GLFWwindow;
 struct ImFont;
+struct ImVec2;
 
 #ifndef LM_VERSION  // set from project(VERSION) in CMakeLists.txt
 #define LM_VERSION "dev"
@@ -61,6 +62,26 @@ struct Options {
   int scenario = 0;               // canned positions for screenshots
   int pieces = 0;                 // 0 Living Marble, 1 medieval, 2 aliens
   std::string join;               // the web page: join a friend's online game (its code)
+  bool touch = false;             // the web page on a touch screen (iPhone, iPad): fingers, and a toolbar
+};
+
+// Fingers on the web page's canvas. On the board one finger taps a square or turns the board,
+// two pinch to zoom, twist to turn and slide to tilt (as in the iPhone and iPad app); on the
+// interface one finger presses its buttons and scrolls its windows.
+struct TouchInput {
+  enum class G { Idle, Pending, Orbit, Pinch, UI, UIScroll };
+  G g = G::Idle;
+  int n = 0;                           // the fingers followed (two at most)
+  long id[2] = {0, 0};
+  float x[2] = {0, 0}, y[2] = {0, 0};  // where they are, in canvas pixels
+  float pressX = 0, pressY = 0;        // where the first came down
+  float lastX = 0, lastY = 0;          // one finger, at the last move
+  float span = 0, angle = 0, cy = 0;   // two fingers, at the last move
+  void* scrollWindow = nullptr;        // the interface window a finger scrolls (an ImGuiWindow)
+  float sentX = 0, sentY = 0;          // where the interface last heard the finger is
+  bool tap = false;                    // a tap on the board, for handleInput ...
+  float tapX = 0, tapY = 0;            // ... and where
+  bool used = false;                   // the last pointer was a finger (nothing hovers)
 };
 
 // Online: against a friend in another browser, through the relay (the web page only)
@@ -81,7 +102,7 @@ struct OnlineGame {
   std::string error;       // why the server said no
   std::deque<std::string> moves;  // the opponent's moves ("PLY UCI"), played when the board is at rest
   float copied = 0;        // seconds left of "Copied"
-  bool copyOk = false;
+  int copyHow = 0;         // 0 not copied, 1 copied, 2 shared (iPhone and iPad: the share sheet)
   // finding an opponent
   bool seeking = false;
   double seekSince = 0;
@@ -201,6 +222,13 @@ class App {
   void requestHint();
   bool hintPending = false;
   const char* statusText() const;
+  // the touch interface (the web page on iPhone and iPad)
+  bool showMenu = false, showMoves = false;
+  bool fullscreenAvailable = true;  // (an iPhone's browser has no full screen for pages)
+  float bannerTop = 0;              // banners stay below this (the touch interface's status)
+#ifdef __EMSCRIPTEN__
+  void onTouch(int type, const struct EmscriptenTouchEvent* e);
+#endif
 
  private:
   bool initWindow();
@@ -220,6 +248,12 @@ class App {
   int pickSquare(double mx, double my, bool piecesFirst) const;
   void buildScene(SceneView& sv, int fbW, int fbH);
   void drawUI();
+  void drawTouchUI();
+  void drawTouchShowButton();
+  void drawSettings(float S);
+  void drawMoves(const ImVec2& pos, const ImVec2& pivot, float width, float maxHeight, float S);
+  void drawHelp(float S);
+  void drawClocks(float S);
   void drawOnline(float S);
   void drawLeaderboard(float S);
   void drawBanner();
@@ -267,6 +301,17 @@ class App {
   float aiDelay = 0;
   bool checkAnnounced = false;
   bool rightDrag = false;
+  TouchInput touch;
+  double newAsked = -1;  // the touch toolbar's "New?": a second tap starts a new game
+  // the camera at rest: tall (portrait) views look down more steeply from closer in, so the
+  // board fills their width (as on the iPhone and iPad)
+  int tallView = -1;  // the view is portrait-shaped (1) or not (0); -1 before the first frame
+  float homePitch() const { return tallView == 1 ? 1.1f : 0.80f; }
+  float homeDist() const { return tallView == 1 ? 9.8f : 12.6f; }
+  void* uiWindowAt(float x, float y) const;  // the interface window there (an ImGuiWindow), or none
+  void touchOrbit(float x, float y);
+  void touchPinch();
+  void releaseNow();
   bool leftHeld = false, leftDrag = false;
   double lastMX = 0, lastMY = 0, pressMX = 0, pressMY = 0;
   glm::mat4 view{1}, proj{1};

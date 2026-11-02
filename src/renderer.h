@@ -172,6 +172,7 @@ class Renderer {
   GLuint noiseTex = 0, boardAlbedo = 0, boardDetail = 0, boardStateTex = 0;
   float boardHalf = 4.62f;
   GLuint envCube = 0, envNoKeyCube = 0, irrCube = 0, prefCube = 0, brdfLut = 0;
+  GLuint backdropCube = 0;  // the room without the studio lights, seen behind the board
   int envRes = 256, prefRes = 128, prefMips = 6;
 
   GLuint shadowFbo = 0, shadowTex = 0, sampCmp = 0, sampRaw = 0;

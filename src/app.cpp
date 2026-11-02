@@ -13,6 +13,7 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "imgui_internal.h"  // (the touch interface: which window a finger is on, and scrolling it)
 #include "net.h"
 #include "power.h"
 
@@ -49,6 +50,12 @@ EM_BOOL webWheelCb(int, const EmscriptenWheelEvent* ev, void* user) {
   App* app = static_cast<App*>(user);
   if (!ImGui::GetIO().WantCaptureMouse) app->world.cam.orbit(0, 0, -wy * 0.08f);
   return EM_TRUE;  // the page itself doesn't scroll or zoom
+}
+
+// Fingers on the canvas (App::onTouch)
+EM_BOOL webTouchCb(int type, const EmscriptenTouchEvent* ev, void* user) {
+  static_cast<App*>(user)->onTouch(type, ev);
+  return EM_TRUE;  // the page doesn't scroll or zoom, and the browser makes no mouse clicks of them
 }
 
 // Keeps the canvas's drawing buffer at the size it is shown at, in device pixels (sharp on
@@ -184,6 +191,22 @@ bool App::initWindow() {
   glfwSetWindowUserPointer(win, this);
 #ifdef __EMSCRIPTEN__
   emscripten_set_wheel_callback("#canvas", this, false, webWheelCb);
+  emscripten_set_touchstart_callback("#canvas", this, true, webTouchCb);
+  emscripten_set_touchmove_callback("#canvas", this, true, webTouchCb);
+  emscripten_set_touchend_callback("#canvas", this, true, webTouchCb);
+  emscripten_set_touchcancel_callback("#canvas", this, true, webTouchCb);
+  // Emscripten's GLFW takes a finger for a click of the mouse where the mouse last was (and
+  // doesn't follow it): the game reads the fingers itself
+  // (no commas outside brackets in EM_ASM's code: the preprocessor would split it there)
+  EM_ASM({
+    var c = Module['canvas'];
+    if (typeof GLFW === 'undefined' || !c) return;
+    if (GLFW.onMousemove) c.removeEventListener('touchmove', GLFW.onMousemove, true);
+    if (GLFW.onMouseButtonDown) c.removeEventListener('touchstart', GLFW.onMouseButtonDown, true);
+    if (GLFW.onMouseButtonUp) c.removeEventListener('touchcancel', GLFW.onMouseButtonUp, true);
+    if (GLFW.onMouseButtonUp) c.removeEventListener('touchend', GLFW.onMouseButtonUp, true);
+  });
+  fullscreenAvailable = EM_ASM_INT({ return (document.fullscreenEnabled || document.webkitFullscreenEnabled) ? 1 : 0; }) != 0;
 #else
   glfwSetScrollCallback(win, scrollCb);
 #endif
@@ -277,6 +300,14 @@ void App::initUI() {
   c[ImGuiCol_TitleBgActive] = ImVec4(0.16f, 0.12f, 0.08f, 1.0f);
   c[ImGuiCol_TableRowBgAlt] = ImVec4(1, 1, 1, 0.03f);
   c[ImGuiCol_ScrollbarGrab] = ImVec4(0.4f, 0.3f, 0.2f, 0.8f);
+  if (opt.touch) {  // fingers: larger targets, a little room around them, slim scroll bars
+    st.FramePadding = ImVec2(12, 10);
+    st.ItemSpacing = ImVec2(10, 10);
+    st.TouchExtraPadding = ImVec2(3, 3);
+    st.GrabMinSize = 22.0f;
+    st.ScrollbarSize = 6.0f;
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
+  }
   if (uiScale > 1.0f) st.ScaleAllSizes(uiScale);
 
   ImGui_ImplGlfw_InitForOpenGL(win, true);
@@ -414,7 +445,7 @@ bool App::tick() {
   // a lowered frame rate the swap interval can't keep to: skip the browser's frame (the canvas keeps the last one)
   if (frameDue > 0 && glfwGetTime() < frameDue) return true;
   fitCanvas(win);
-  fullscreen = EM_ASM_INT({ return document.fullscreenElement ? 1 : 0; }) != 0;  // (Esc leaves it too)
+  fullscreen = EM_ASM_INT({ return (document.fullscreenElement || document.webkitFullscreenElement) ? 1 : 0; }) != 0;  // (Esc leaves it too)
 #else
   // minimised: nothing to draw, and the game waits (the music plays on)
   if (!fixedStep && glfwGetWindowAttrib(win, GLFW_ICONIFIED)) {
@@ -519,8 +550,8 @@ void App::resetView() {
                     : mode == Mode::TwoPlayer ? game.board().side
                     : mode == Mode::Online    ? online.side
                                               : 0);
-  world.cam.pitch = 0.80f;
-  world.cam.dist = 12.6f;
+  world.cam.pitch = homePitch();
+  world.cam.dist = homeDist();
 }
 
 void App::setMode(Mode m) {
@@ -562,8 +593,17 @@ void App::setFullscreen(bool on) {
   if (on == fullscreen || !win) return;
 #ifdef __EMSCRIPTEN__
   // the browser's full screen, for the whole page (the canvas follows it in tick())
-  if (on) EM_ASM({ var e = document.documentElement; if (e.requestFullscreen) e.requestFullscreen().catch(function() {}); });
-  else EM_ASM({ if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function() {}); });
+  // (an iPad's Safari has the webkit names)
+  if (on) EM_ASM({
+    var e = document.documentElement;
+    if (e.requestFullscreen) e.requestFullscreen().catch(function() {});
+    else if (e.webkitRequestFullscreen) e.webkitRequestFullscreen();
+  });
+  else EM_ASM({
+    var d = document;
+    if (d.fullscreenElement && d.exitFullscreen) d.exitFullscreen().catch(function() {});
+    else if (d.webkitFullscreenElement && d.webkitExitFullscreen) d.webkitExitFullscreen();
+  });
   return;
 #endif
   if (on) {
@@ -613,7 +653,8 @@ void App::pace(float dt, double frameStart) {
   glfwGetCursorPos(win, &mx, &my);
   bool arrows = ImGui::IsKeyDown(ImGuiKey_LeftArrow) || ImGui::IsKeyDown(ImGuiKey_RightArrow) ||
                 ImGui::IsKeyDown(ImGuiKey_UpArrow) || ImGui::IsKeyDown(ImGuiKey_DownArrow);
-  bool input = mx != pacedMX || my != pacedMY || selected != pacedSelected || arrows || ImGui::IsAnyMouseDown();
+  bool input = mx != pacedMX || my != pacedMY || selected != pacedSelected || arrows || ImGui::IsAnyMouseDown() ||
+               touch.n > 0;
   pacedMX = mx;
   pacedMY = my;
   pacedSelected = selected;
@@ -1063,9 +1104,9 @@ void App::pollOnline(float dt) {
       std::getline(in >> std::ws, online.error);
       online.seeking = false;
     } else if (kind == "copied") {
-      int ok = 0;
-      in >> ok;
-      online.copyOk = ok != 0;
+      int how = 0;
+      in >> how;
+      online.copyHow = how;
       online.copied = 2.5f;
     }
   }
@@ -1175,10 +1216,232 @@ int App::pickSquare(double mx, double my, bool piecesFirst) const {
   return best;
 }
 
+// ---------------------------------------------------------------------------
+// Fingers (the web page on iPhone, iPad and other touch screens), as in the iPhone and iPad app:
+//   one finger    tap: select a piece, then tap a glowing square to move it
+//                 drag: turn the board (from above, the side or underneath)
+//   two fingers   pinch: zoom   twist: turn the board   slide up or down: tilt
+// On the interface a finger is the mouse: it presses buttons and drags sliders, and dragged
+// up or down it scrolls the window under it.
+
+// The interface window at a point (in canvas pixels), or none: the one in front, as last drawn.
+void* App::uiWindowAt(float x, float y) const {
+  ImGuiContext* g = ImGui::GetCurrentContext();
+  if (!g || opt.noUI) return nullptr;
+  for (int i = g->Windows.Size - 1; i >= 0; --i) {
+    ImGuiWindow* w = g->Windows[i];
+    if (!w->Active || w->Hidden || (w->Flags & ImGuiWindowFlags_NoMouseInputs)) continue;
+    ImRect bb = w->Rect();
+    bb.Expand(g->Style.TouchExtraPadding);
+    if (bb.Contains(ImVec2(x, y))) return w;
+  }
+  return nullptr;
+}
+
+// One finger turns the board: across the short side of the screen is half a turn.
+void App::touchOrbit(float x, float y) {
+  int ww, wh;
+  glfwGetWindowSize(win, &ww, &wh);
+  float k = kPI / (float)std::max(200, std::min(ww, wh));
+  world.cam.orbit(-(x - touch.lastX) * k, (y - touch.lastY) * k * 0.67f, 0);
+  touch.lastX = x;
+  touch.lastY = y;
+}
+
+// Two fingers: spreading them zooms in, twisting turns the board with them, sliding both down
+// raises the camera.
+void App::touchPinch() {
+  TouchInput& t = touch;
+  float dx = t.x[1] - t.x[0], dy = t.y[1] - t.y[0];
+  float span = std::hypot(dx, dy), angle = std::atan2(dy, dx), cy = (t.y[0] + t.y[1]) * 0.5f;
+  if (t.span > 1 && span > 1) {
+    int ww, wh;
+    glfwGetWindowSize(win, &ww, &wh);
+    float k = kPI / (float)std::max(200, std::min(ww, wh));
+    // (screen y points down: a clockwise twist grows the angle, and turns the board clockwise)
+    world.cam.orbit(wrapAngle(angle - t.angle), (cy - t.cy) * k * 0.67f, -std::log(span / t.span));
+  }
+  t.span = span;
+  t.angle = angle;
+  t.cy = cy;
+}
+
+// A finger lifted from the interface: the frames that see it run now, in the browser's touch
+// event, so that a button which copies a link or goes full screen may (browsers allow those
+// only in answer to the player's touch).
+void App::releaseNow() {
+  ImGuiContext* g = ImGui::GetCurrentContext();
+  auto pending = [g]() {
+    for (const ImGuiInputEvent& e : g->InputEventsQueue)
+      if (e.Type == ImGuiInputEventType_MouseButton) return true;
+    return false;
+  };
+  for (int i = 0; i < 3 && pending(); ++i) {
+    frameDue = 0;
+    tick();
+  }
+}
+
+#ifdef __EMSCRIPTEN__
+void App::onTouch(int type, const EmscriptenTouchEvent* e) {
+  if (!ImGui::GetCurrentContext() || !win) return;
+  using G = TouchInput::G;
+  TouchInput& t = touch;
+  ImGuiIO& io = ImGui::GetIO();
+  t.used = true;
+  // the event's points are in CSS pixels; the canvas, the interface and the camera in canvas pixels
+  double cw = 0, ch = 0;
+  emscripten_get_element_css_size("#canvas", &cw, &ch);
+  int ww, wh;
+  glfwGetWindowSize(win, &ww, &wh);
+  const float r = cw > 0 ? (float)(ww / cw) : 1.0f;
+  const float slop = 10.0f * r;  // how far a finger may wander before a tap becomes a drag
+  auto followed = [&](long id) {
+    for (int i = 0; i < t.n; ++i)
+      if (t.id[i] == id) return i;
+    return -1;
+  };
+  for (int k = 0; k < e->numTouches; ++k) {  // where the followed fingers are now
+    const EmscriptenTouchPoint& p = e->touches[k];
+    int i = followed(p.identifier);
+    if (i >= 0) {
+      t.x[i] = p.targetX * r;
+      t.y[i] = p.targetY * r;
+    }
+  }
+
+  if (type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+    for (int k = 0; k < e->numTouches; ++k) {
+      const EmscriptenTouchPoint& p = e->touches[k];
+      if (!p.isChanged || t.n >= 2 || followed(p.identifier) >= 0) continue;
+      if (t.g == G::UI || t.g == G::UIScroll) continue;  // (the interface: one finger at a time)
+      t.id[t.n] = p.identifier;
+      t.x[t.n] = p.targetX * r;
+      t.y[t.n] = p.targetY * r;
+      t.n++;
+    }
+    if (t.n == 1 && t.g == G::Idle) {
+      t.pressX = t.lastX = t.x[0];
+      t.pressY = t.lastY = t.y[0];
+      ImGuiContext* g = ImGui::GetCurrentContext();
+      if (g->OpenPopupStack.Size > 0 || uiWindowAt(t.x[0], t.y[0])) {  // (an open list or question takes every touch)
+        t.g = G::UI;
+        ImGui_ImplGlfw_CursorEnterCallback(win, GLFW_TRUE);  // (the backend then leaves the mouse where the finger is)
+        io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+        io.AddMousePosEvent(t.sentX = t.x[0], t.sentY = t.y[0]);
+        io.AddMouseButtonEvent(0, true);
+      } else {
+        t.g = G::Pending;
+      }
+    } else if (t.n == 2 && (t.g == G::Pending || t.g == G::Orbit)) {
+      // a second finger turns a tap or a turn into pinch, twist and tilt
+      t.g = G::Pinch;
+      t.span = 0;
+      touchPinch();
+    }
+    return;
+  }
+
+  if (type == EMSCRIPTEN_EVENT_TOUCHMOVE) {
+    if (t.n == 0) return;
+    switch (t.g) {
+      case G::Pending:
+        if (std::hypot(t.x[0] - t.pressX, t.y[0] - t.pressY) > slop) {
+          t.g = G::Orbit;
+          touchOrbit(t.x[0], t.y[0]);
+        }
+        break;
+      case G::Orbit:
+        touchOrbit(t.x[0], t.y[0]);
+        break;
+      case G::Pinch:
+        if (t.n == 2) touchPinch();
+        break;
+      case G::UI: {
+        // up or down, on a window that scrolls: the finger scrolls it (and presses nothing);
+        // sideways it stays the mouse (a slider)
+        float dx = t.x[0] - t.pressX, dy = t.y[0] - t.pressY;
+        ImGuiWindow* w = static_cast<ImGuiWindow*>(uiWindowAt(t.pressX, t.pressY));
+        while (w && w->ScrollMax.y <= 0 && (w->Flags & ImGuiWindowFlags_ChildWindow)) w = w->ParentWindow;
+        if (w && w->ScrollMax.y > 0 && std::fabs(dy) > slop && std::fabs(dy) > std::fabs(dx)) {
+          t.g = G::UIScroll;
+          t.scrollWindow = w;
+          t.lastY = t.y[0];
+          io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);  // (released away from everything: no click)
+          io.AddMouseButtonEvent(0, false);
+        } else if (t.x[0] != t.sentX || t.y[0] != t.sentY) {
+          io.AddMousePosEvent(t.sentX = t.x[0], t.sentY = t.y[0]);
+        }
+        break;
+      }
+      case G::UIScroll: {
+        ImGuiWindow* w = static_cast<ImGuiWindow*>(t.scrollWindow);
+        float from = w->ScrollTarget.y < FLT_MAX ? w->ScrollTarget.y : w->Scroll.y;  // (moves since the last frame add up)
+        ImGui::SetScrollY(w, std::clamp(from - (t.y[0] - t.lastY), 0.0f, w->ScrollMax.y));
+        t.lastY = t.y[0];
+        break;
+      }
+      case G::Idle:
+        break;
+    }
+    return;
+  }
+
+  // a finger lifted (or the browser took the touch away)
+  const bool cancelled = type == EMSCRIPTEN_EVENT_TOUCHCANCEL;
+  bool lifted[2] = {false, false};
+  for (int k = 0; k < e->numTouches; ++k) {
+    const EmscriptenTouchPoint& p = e->touches[k];
+    int i = followed(p.identifier);
+    if (p.isChanged && i >= 0) lifted[i] = true;
+  }
+  if (!lifted[0] && !lifted[1]) return;  // (a finger we didn't follow)
+  switch (t.g) {
+    case G::Pending:  // a tap: where the finger came down is where the player aimed
+      if (!cancelled) {
+        t.tap = true;
+        t.tapX = t.pressX;
+        t.tapY = t.pressY;
+      }
+      break;
+    case G::UI:
+      // (no needless move first: each one holds the release back a frame)
+      if (cancelled) io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+      else if (t.x[0] != t.sentX || t.y[0] != t.sentY) io.AddMousePosEvent(t.x[0], t.y[0]);
+      io.AddMouseButtonEvent(0, false);
+      if (!cancelled) releaseNow();
+      io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);  // (a finger lifted hovers over nothing)
+      break;
+    default:
+      break;
+  }
+  int kept = 0;
+  for (int i = 0; i < t.n; ++i) {
+    if (lifted[i]) continue;
+    t.id[kept] = t.id[i];
+    t.x[kept] = t.x[i];
+    t.y[kept] = t.y[i];
+    kept++;
+  }
+  t.n = kept;
+  if (t.n == 0) {
+    t.g = G::Idle;
+  } else if (t.g == G::Pinch) {  // one finger left after a pinch goes on turning the board
+    t.g = G::Orbit;
+    t.lastX = t.x[0];
+    t.lastY = t.y[0];
+  }
+}
+#endif
+
 void App::handleInput() {
   ImGuiIO& io = ImGui::GetIO();
   double mx, my;
   glfwGetCursorPos(win, &mx, &my);
+  if (touch.used && touch.n == 0 && (mx != lastMX || my != lastMY)) {  // a mouse or trackpad again (an iPad's)
+    touch.used = false;
+    io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
+  }
   bool rdown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS ||
                glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS;
   const float dYaw = (float)(-(mx - lastMX) * 0.006), dPitch = (float)((my - lastMY) * 0.004);
@@ -1190,7 +1453,10 @@ void App::handleInput() {
   }
   // left-drag also turns the board; a left click that doesn't move selects / moves
   bool leftClick = false;
-  if (ImGui::IsMouseClicked(0) && !io.WantCaptureMouse) {
+  const bool finger = io.MouseSource == ImGuiMouseSource_TouchScreen;  // (fingers on the board: onTouch)
+  if (finger) {
+    leftHeld = false;
+  } else if (ImGui::IsMouseClicked(0) && !io.WantCaptureMouse) {
     leftHeld = true;
     leftDrag = false;
     pressMX = mx;
@@ -1240,7 +1506,14 @@ void App::handleInput() {
 #endif
   }
   hover = -1;
-  if (io.WantCaptureMouse) return;
+  if (touch.tap) {  // a finger tapped the board
+    touch.tap = false;
+    mx = touch.tapX;
+    my = touch.tapY;
+    leftClick = true;
+  } else if (touch.used || io.WantCaptureMouse) {
+    return;  // (a finger doesn't hover)
+  }
   bool canAct = anims.empty() && isHumanTurn() && game.result() == chess::Result::Ongoing && !promoPending;
   int sq = pickSquare(mx, my, true);
   if (canAct) {
@@ -1344,7 +1617,11 @@ void App::buildScene(SceneView& sv, int fbW, int fbH) {
   float aspect = fbH > 0 ? (float)fbW / fbH : 1.6f;
   sv.nearZ = 0.08f;
   sv.farZ = 90.0f;
-  proj = glm::perspective(glm::radians(cp.fov), aspect, sv.nearZ, sv.farZ);
+  // views narrower than 16:10 (portrait phones and tablets, tall windows) keep the horizontal
+  // field of view of a 16:10 one, so the board still fits across (as on the Mac, iPhone and iPad)
+  float fovY = glm::radians(cp.fov);
+  if (aspect < 1.6f) fovY = 2.0f * std::atan(std::tan(fovY * 0.5f) * 1.6f / aspect);
+  proj = glm::perspective(fovY, aspect, sv.nearZ, sv.farZ);
   view = glm::lookAt(cp.pos, cp.target, vec3(0, 1, 0));
   camPos = cp.pos;
   sv.view = view;
@@ -1547,13 +1824,28 @@ void App::frame(float dt) {
   world.cam.evaluate(dt, world.trauma, (float)glfwGetTime());
   if (bannerTime > 0 && bannerTime < 1e8f) bannerTime -= dt;
 
+  // frame the board again when the view turns between landscape and portrait (a phone turned,
+  // a window resized); a --camera pose holds until then
+  if ((fbH > fbW ? 1 : 0) != tallView) {
+    bool first = tallView < 0;
+    tallView = fbH > fbW ? 1 : 0;
+    if (!(first && opt.hasCam)) {
+      world.cam.pitch = homePitch();
+      world.cam.dist = homeDist();
+    }
+  }
+
   // keep the internal resolution sane on very high-DPI screens (Ultra renders native)
   renderer.setRenderScale(gfxPreset >= 3 ? 1.0f : std::min(1.0f, 1440.0f / std::max(1, fbH)));
   SceneView sv;
   buildScene(sv, fbW, fbH);
   if (!opt.noRender) renderer.render(sv, fbW, fbH, 0);
-  if (showUI && !opt.noUI) drawUI();
-  else drawBanner();
+  if (showUI && !opt.noUI) {
+    drawUI();
+  } else {
+    drawBanner();
+    if (opt.touch && !opt.noUI) drawTouchShowButton();  // (with the interface hidden: one button brings it back)
+  }
   ImGui::Render();
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
   frameCount++;

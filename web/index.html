@@ -7,6 +7,13 @@
 <meta name="description" content="Chess on a floating board where the pieces come alive and fight for every capture. Play the computer, a friend, or anyone online.">
 <meta property="og:title" content="Living Marble - 3D Fighting Chess">
 <meta property="og:description" content="Chess where the pieces come alive and every capture is a fight. Three armies, ghosts, music, and rated games online.">
+<!-- iPhone and iPad: Add to Home Screen makes it an app of its own, on the whole screen -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Living Marble">
+<meta name="theme-color" content="#050403">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   :root { color-scheme: dark; --bg: #050403; --card: #15110e; --field: #0b0907; --line: #3a2e22; --text: #ede5d6;
           --dim: #a39583; --gold: #f2c873; --gold2: #c9a35a; --red: #ff8f78; --green: #a6d8a0; }
@@ -76,7 +83,11 @@
   body.game #front { display: none; }
   /* the game keeps the canvas's drawing buffer at this size in device pixels */
   #canvas { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh; display: block;
-            outline: none; touch-action: none; -webkit-user-select: none; user-select: none; }
+            outline: none; touch-action: none; -webkit-user-select: none; user-select: none;
+            -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  /* (iPhone and iPad: the page under the game stays put, and a long press selects nothing) */
+  html.game body { position: fixed; inset: 0; overscroll-behavior: none; -webkit-touch-callout: none;
+                   -webkit-user-select: none; user-select: none; }
   #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px;
              background: var(--bg); text-align: center; z-index: 4; }
   #overlay .box { max-width: 34rem; }
@@ -88,6 +99,8 @@
                 border-radius: 8px; background: rgba(14, 11, 10, 0.88); color: var(--gold); font-family: inherit;
                 font-size: 14px; line-height: 1.4;
                 cursor: pointer; }
+  /* touch screens: the account is in the game's Menu */
+  @media (pointer: coarse) { #accountBtn { display: none !important; } }
   #dialog { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
             padding: 16px; background: rgba(0, 0, 0, 0.6); }
   #dialog .card { position: relative; width: 100%; max-width: 420px; max-height: calc(100vh - 32px); overflow: auto; }
@@ -202,7 +215,8 @@
         anyone online in rated games with clocks, a rating and a leaderboard.</p></div>
     <div><h3>Easy to play</h3>
       <p>Click a piece, then a glowing square. Drag to turn the board, even to look underneath; scroll to zoom.
-        Press T for a hint and F1 for help. Runs in Chrome, Edge, Firefox and Safari on a computer.</p></div>
+        Press T for a hint and F1 for help. On an iPhone or iPad, tap, drag and pinch. Runs in Chrome, Edge,
+        Firefox and Safari on a computer, and in Safari on iPhone and iPad.</p></div>
   </div>
 
   <h2>The battles</h2>
@@ -280,6 +294,15 @@
   if (q.has('no-music') || q.has('nomusic')) args.push('--no-music');
   var fen = q.get('fen');
   if (fen && /^[1-8pnbrqkPNBRQK\/]+ [wb] [KQkq-]+ [a-h1-8-]+( \d+ \d+)?$/.test(fen)) args.push('--fen', fen);
+  // a touch screen (iPhone, iPad): fingers and a toolbar; a phone also sculpts one level less
+  // and draws Medium graphics (quicker to load, and lighter on its memory and battery)
+  var touch = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  if (touch) {
+    args.push('--touch');
+    var phone = Math.min(screen.width, screen.height) < 600;
+    if (phone && args.indexOf('--quality') < 0) args.push('--quality', '1');
+    if (phone && args.indexOf('--graphics') < 0) args.push('--graphics', '1');
+  }
   var join = q.get('join');  // a friend's online game
   if (join && /^[A-Za-z0-9]{4,16}$/.test(join)) args.push('--join', join.toUpperCase());
   else join = null;
@@ -289,7 +312,8 @@
     var gl = document.createElement('canvas').getContext('webgl2');
     if (!gl)
       return '<p><b>This browser can\'t show the game.</b></p><p>It needs WebGL 2, which current versions of Chrome, ' +
-             'Edge, Firefox and Safari have. If yours is up to date, check that hardware acceleration is turned on.</p>';
+             'Edge, Firefox and Safari have. If yours is up to date, check that hardware acceleration is turned on. ' +
+             'On an iPhone or iPad, update iOS.</p>';
     if (!gl.getExtension('EXT_color_buffer_float'))
       return '<p><b>This browser\'s graphics are missing a feature the game needs</b> (EXT_color_buffer_float). ' +
              'A current version of Chrome, Edge, Firefox or Safari should have it.</p>';
@@ -455,11 +479,18 @@
         send(m);
       });
     }
-    function copy() {
+    function copy() {  // the game's link: copied (2 for shared, on an iPhone or iPad: its share sheet)
       var l = room ? linkTo(room) : '';
-      if (l && navigator.clipboard && navigator.clipboard.writeText)
-        navigator.clipboard.writeText(l).then(function () { post('copied 1'); }, function () { post('copied 0'); });
-      else post('copied 0');
+      function clip() {
+        if (l && navigator.clipboard && navigator.clipboard.writeText)
+          navigator.clipboard.writeText(l).then(function () { post('copied 1'); }, function () { post('copied 0'); });
+        else post('copied 0');
+      }
+      if (l && touch && navigator.share) {
+        navigator.share({ title: 'Living Marble', text: 'A game of Living Marble with me', url: l }).then(
+          function () { post('copied 2'); },
+          function (e) { if (!e || e.name !== 'AbortError') clip(); });  // (put away: nothing)
+      } else clip();
     }
     var api = {
       onCode: null,       // (code): a recovery code that came too late for its form
@@ -752,6 +783,24 @@
     $('dialog').hidden = true;
     $('accountBtn').textContent = 'Log in';
   };
+
+  window.lmAccount = function () {  // (the game's Menu, on touch screens)
+    if (lmNet.player()) openDialog();
+    else location.reload();
+  };
+  // iPhone and iPad: two fingers on the game zoom the board, never the page
+  document.addEventListener('gesturestart', function (e) { if (started) e.preventDefault(); });
+  // iPhone and iPad stop the sound when the browser is put away: the next touch brings it back
+  ['touchend', 'click'].forEach(function (type) {
+    document.addEventListener(type, function () {
+      var m = window.miniaudio;
+      if (!m || !m.devices || !m.device_state) return;
+      m.devices.forEach(function (d) {
+        if (d && d.webaudio && d.webaudio.state !== 'running' && d.state === m.device_state.started)
+          d.webaudio.resume().catch(function () {});
+      });
+    }, true);
+  });
 
   $('logoutBtn').addEventListener('click', function () {
     lmNet.logout().then(function () { location.href = location.pathname; });  // (back to the front page)

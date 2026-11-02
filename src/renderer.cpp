@@ -376,6 +376,7 @@ void Renderer::buildIBL() {
   };
   envCube = makeCube(envRes, true);
   shEnv.use();
+  shEnv.set("uIncludeLights", 1);
   shEnv.set("uIncludeKey", 1);
   shEnv.set("uKeyDir", lightDir);
   renderFaces(shEnv, envCube, envRes, 0);
@@ -388,6 +389,16 @@ void Renderer::buildIBL() {
   renderFaces(shEnv, envNoKeyCube, 128, 0);
   glBindTexture(GL_TEXTURE_CUBE_MAP, envNoKeyCube);
   glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+
+  // tall views (portrait phones) see high enough to catch the studio lights behind the board
+  backdropCube = makeCube(envRes, true);
+  shEnv.use();
+  shEnv.set("uIncludeLights", 0);
+  renderFaces(shEnv, backdropCube, envRes, 0);
+  glBindTexture(GL_TEXTURE_CUBE_MAP, backdropCube);
+  glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+  shEnv.use();
+  shEnv.set("uIncludeLights", 1);
 
   irrCube = makeCube(32, false);
   shIrr.use();
@@ -844,7 +855,9 @@ void Renderer::render(const SceneView& sv, int fbW, int fbH, GLuint outFbo) {
   shBackground.set("uCamPos", sv.camPos);
   shBackground.set("uBgLod", 3.2f);
   shBackground.set("uBgIntensity", 0.35f);
+  bindTex(12, GL_TEXTURE_CUBE_MAP, backdropCube);
   fullscreen();
+  bindTex(12, GL_TEXTURE_CUBE_MAP, envCube);
 
   // glass, then the ghosts
   shObject.use();

@@ -172,6 +172,8 @@ if(EMSCRIPTEN)
   foreach(shot web-board marble-battle medieval-battle alien-battle)
     configure_file(docs/screenshots/${shot}.jpg screens/${shot}.jpg COPYONLY)
   endforeach()
+  # iPhone and iPad: the icon of the game added to the Home Screen
+  configure_file(linux/icons/256.png apple-touch-icon.png COPYONLY)
 else()
   find_package(Threads REQUIRED)
   target_link_libraries(living_marble PRIVATE Threads::Threads)
