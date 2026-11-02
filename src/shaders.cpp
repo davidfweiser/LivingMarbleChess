@@ -189,7 +189,7 @@ uniform vec4 uRig;     // x bend (rad), y bend direction (rad), z squash/stretch
 uniform float uRigH;   // rest height of the piece
 uniform int uClip;
 uniform int uBoneCount;  // > 0: skinned
-uniform mat4 uBones[20];
+uniform mat4 uBones[24];
 out vec3 vWorld;
 out vec3 vNrm;
 out vec3 vObj;
@@ -306,7 +306,7 @@ flat in float vMat;
 #ifdef GL_ES
 in float vClipDist;
 #endif
-uniform int uMat;        // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass
+uniform int uMat;        // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass, 7 Roman
 uniform int uTeam;       // medieval / aliens: 0 white army, 1 black army
 uniform float uTime;
 uniform vec4 uGlow;      // rgb + strength
@@ -315,6 +315,7 @@ uniform vec3 uCrackColor;
 uniform vec3 uDissolveColor;
 uniform float uHeat;
 uniform float uStone;
+uniform float uInterior;  // Romans: fresh fracture faces show 0 splintered wood, 1 flesh
 uniform float uGroundAO;
 uniform float uGhost;    // > 0: a translucent ghost (its opacity)
 out vec4 oColor;
@@ -609,6 +610,167 @@ void alienSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout 
   }
 }
 
+)GLSL"  // (another literal: MSVC caps a single string literal at 16 KB)
+R"GLSL(
+// The Romans. The white legion wears ivory and crimson over bright steel and
+// bronze, the black legion black and midnight blue over blackened steel.
+void romanSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout float rough, inout float metal,
+                  inout float wrap, inout vec3 sss, inout vec3 N, inout vec3 emissive, inout float specOcc) {
+  float n1 = texture(uNoise, o * 3.1 + uTexOffset * 0.13).r;
+  float n2 = texture(uNoise, o * 11.0 + uTexOffset * 0.07).g;
+  float n3 = texture(uNoise, o * 37.0).b;
+  vec3 V = normalize(uCamPos - vWorld);
+  float NoV = saturate(dot(N, V));
+  if (id == 0) {  // steel: polished plates with fine scratches (blackened for the black legion)
+    float scratch = texture(uNoise, vec3(o.x * 90.0, o.y * 4.0, o.z * 90.0)).r;
+    albedo = black ? vec3(0.13, 0.13, 0.14) : vec3(0.70, 0.70, 0.72);
+    albedo *= 0.86 + 0.18 * n1 + 0.06 * scratch;
+    metal = 1.0;
+    rough = (black ? 0.3 : 0.21) + 0.1 * n2 + 0.06 * scratch;
+  } else if (id == 1) {  // bronze
+    albedo = (black ? vec3(0.42, 0.27, 0.15) : vec3(0.86, 0.58, 0.31)) * (0.85 + 0.2 * n1);
+    albedo = mix(albedo, vec3(0.25, 0.33, 0.24), smoothstep(0.62, 0.8, n2) * 0.35);  // a little verdigris
+    metal = 1.0;
+    rough = 0.26 + 0.12 * n2;
+  } else if (id == 2) {  // gold
+    albedo = vec3(1.0, 0.75, 0.33) * (0.9 + 0.15 * n1);
+    metal = 1.0;
+    rough = 0.17 + 0.08 * n2;
+  } else if (id == 3 || id == 4 || id == 17 || id == 18) {  // wool tunics and cloaks, purple, the stola
+    vec3 base;
+    if (id == 3) base = black ? vec3(0.05, 0.045, 0.045) : vec3(0.80, 0.76, 0.66);
+    else if (id == 4) base = black ? vec3(0.03, 0.045, 0.12) : vec3(0.55, 0.045, 0.04);
+    else if (id == 17) base = black ? vec3(0.13, 0.02, 0.1) : vec3(0.34, 0.04, 0.23);
+    else base = black ? vec3(0.07, 0.065, 0.07) : vec3(0.88, 0.86, 0.80);
+    float weave = 0.92 + 0.08 * sin(o.x * 2300.0 + o.z * 900.0) * sin(o.y * 2300.0);
+    float fold = texture(uNoise, vec3(o.x * 6.0, o.y * 1.5, o.z * 6.0) + uTexOffset * 0.05).r;
+    albedo = base * (0.8 + 0.3 * n1) * weave * (0.85 + 0.3 * fold);
+    rough = id == 17 ? 0.6 : 0.85;
+    wrap = 0.35;
+    emissive += base * pow(1.0 - NoV, 3.0) * (id == 17 ? 0.6 : 0.22);  // the sheen of cloth
+    specOcc = 0.5;
+  } else if (id == 5) {  // horsehair crest
+    float strand = texture(uNoise, vec3(o.x * 80.0, o.y * 30.0, o.z * 9.0)).r;
+    albedo = (black ? vec3(0.03, 0.028, 0.03) : vec3(0.62, 0.05, 0.035)) * (0.6 + 0.7 * strand);
+    rough = black ? 0.35 : 0.5;
+    wrap = 0.3;
+  } else if (id == 6) {  // skin: a tone per figure, sun-browned
+    float h = hash13(floor(uTexOffset * 2.0) + 0.37);
+    vec3 tone = mix(vec3(0.66, 0.46, 0.34), vec3(0.42, 0.27, 0.18), h);
+    albedo = tone * (0.92 + 0.12 * n1);
+    rough = 0.55;
+    wrap = 0.45;
+    sss = vec3(1.0, 0.4, 0.25);
+  } else if (id == 7) {  // hair: dark, mostly
+    float h = hash13(floor(uTexOffset * 3.0) + 0.5);
+    vec3 c = h < 0.45 ? vec3(0.05, 0.035, 0.025) : (h < 0.8 ? vec3(0.17, 0.09, 0.04) : vec3(0.42, 0.40, 0.38));
+    float strand = texture(uNoise, vec3(o.x * 60.0, o.y * 9.0, o.z * 60.0)).r;
+    albedo = c * (0.7 + 0.5 * strand);
+    rough = 0.5;
+  } else if (id == 8) {  // leather
+    albedo = (black ? vec3(0.09, 0.06, 0.045) : vec3(0.36, 0.21, 0.10)) * (0.75 + 0.4 * n1);
+    rough = 0.48 + 0.15 * n2;
+  } else if (id == 9) {  // oiled wood (shafts, the chariot)
+    float g = texture(uNoise, vec3(o.x * 9.0, o.y * 1.3, o.z * 9.0) + uTexOffset * 0.1).r;
+    float ring = abs(fract(g * 7.0) - 0.5) * 2.0;
+    vec3 base = black ? vec3(0.11, 0.07, 0.045) : vec3(0.50, 0.33, 0.18);
+    albedo = base * (0.75 + 0.35 * ring + 0.15 * n2);
+    rough = 0.42 + 0.1 * n3;
+  } else if (id == 10) {  // rough-sawn timber: weathered planks with dark seams and nail heads
+    vec3 an = abs(on);
+    float across = an.x > an.z ? o.z : o.x;
+    float plank = o.y / 0.043;
+    float seam = 1.0 - smoothstep(0.0, 0.07, min(fract(plank), 1.0 - fract(plank)));
+    float id2 = floor(plank);
+    float g = texture(uNoise, vec3(across * 2.0, o.y * 26.0, across * 0.5 + id2 * 3.1)).r;
+    float grain = abs(fract(g * 6.0) - 0.5) * 2.0;
+    vec3 base = black ? vec3(0.12, 0.09, 0.07) : vec3(0.42, 0.31, 0.2);
+    albedo = base * (0.7 + 0.25 * grain + 0.25 * hash13(vec3(id2, 1.0, 7.0)) + 0.15 * n1);
+    albedo *= 1.0 - 0.6 * seam * step(an.y, 0.8);
+    float nail = 1.0 - smoothstep(0.004, 0.007, length(vec2(fract(across / 0.11) - 0.5, fract(plank) - 0.5) * vec2(0.11, 0.043)));
+    albedo = mix(albedo, vec3(0.05, 0.045, 0.04), nail * step(an.y, 0.8));
+    rough = 0.8 + 0.1 * n2;
+    N = normalize(N + (vec3(n2, n3, n1) - 0.5) * 0.25);
+    specOcc = 0.6;
+  } else if (id == 11) {  // the painted face of a scutum: semi-gloss, scuffed at the edges
+    vec3 base = black ? vec3(0.04, 0.04, 0.045) : vec3(0.56, 0.05, 0.04);
+    float wear = smoothstep(0.6, 0.85, n2);
+    albedo = mix(base * (0.85 + 0.2 * n1), black ? vec3(0.2, 0.17, 0.14) : vec3(0.42, 0.3, 0.2), wear * 0.5);
+    rough = 0.35 + 0.25 * wear;
+  } else if (id == 12) {  // horse coat
+    if (black) {
+      albedo = vec3(0.04, 0.034, 0.03) * (0.8 + 0.4 * n1);
+      rough = 0.36;
+    } else {
+      float dap = smoothstep(0.45, 0.62, texture(uNoise, o * 7.0 + uTexOffset * 0.1).g);
+      albedo = mix(vec3(0.74, 0.72, 0.69), vec3(0.5, 0.48, 0.46), dap * 0.5) * (0.92 + 0.1 * n2);
+      rough = 0.48;
+    }
+    wrap = 0.2;
+  } else if (id == 13) {  // mane and tail
+    float strand = texture(uNoise, vec3(o.x * 70.0, o.y * 6.0, o.z * 70.0)).r;
+    albedo = (black ? vec3(0.025, 0.022, 0.02) : vec3(0.82, 0.8, 0.76)) * (0.65 + 0.6 * strand);
+    rough = 0.5;
+  } else if (id == 14) {  // wet rawhide, stretched and nailed
+    float spot = smoothstep(0.5, 0.7, texture(uNoise, o * 5.0 + uTexOffset * 0.1).r);
+    albedo = (black ? vec3(0.17, 0.12, 0.09) : vec3(0.52, 0.39, 0.26)) * (0.75 + 0.35 * n1) * (1.0 - 0.35 * spot);
+    rough = 0.4 + 0.2 * n2;
+    wrap = 0.25;
+    N = normalize(N + (vec3(n1, n2, n3) - 0.5) * 0.3);
+  } else if (id == 15) {  // dark iron, a little rusty
+    albedo = vec3(0.08, 0.075, 0.075) * (0.8 + 0.5 * n1);
+    albedo = mix(albedo, vec3(0.2, 0.08, 0.035), smoothstep(0.55, 0.8, n2) * 0.6);
+    rough = 0.55 + 0.2 * n3;
+    metal = 0.75;
+  } else if (id == 16) {  // rope
+    float twist = sin((o.x + o.y + o.z) * 900.0);
+    albedo = vec3(0.55, 0.45, 0.3) * (0.75 + 0.2 * twist + 0.2 * n1);
+    rough = 0.9;
+  } else if (id == 19 || id == 25) {  // blood, wine: dark, wet and glossy
+    vec3 base = id == 19 ? vec3(0.13, 0.002, 0.002) : vec3(0.12, 0.0, 0.04);
+    albedo = base * (0.75 + 0.35 * n1);
+    rough = 0.1 + 0.08 * n2;
+    wrap = 0.2;
+    sss = vec3(0.25, 0.0, 0.0);
+    specOcc = 1.0;
+  } else if (id == 20) {  // the dark inside
+    albedo = vec3(0.012, 0.01, 0.009);
+    rough = 0.95;
+    specOcc = 0.0;
+  } else if (id == 21) {  // mail: little rings
+    albedo = black ? vec3(0.14, 0.14, 0.15) : vec3(0.6, 0.6, 0.62);
+    metal = 1.0;
+    rough = 0.3;
+    vec2 q = vec2(o.x + o.z, o.y) / 0.0065;
+    q.x += 0.5 * mod(floor(q.y), 2.0);
+    vec2 f = fract(q) - 0.5;
+    float rr = 1.0 - smoothstep(0.06, 0.16, abs(length(f) - 0.32));
+    albedo *= 0.35 + 0.75 * rr;
+    rough = mix(0.6, rough, rr);
+    N = normalize(N + vec3(f.x, 0.0, f.y) * rr * 0.6);
+  } else if (id == 22 || id == 23) {  // a lion's fur, and his mane
+    float strand = texture(uNoise, vec3(o.x * 50.0, o.y * 50.0, o.z * 12.0)).r;
+    vec3 base = id == 22 ? vec3(0.66, 0.47, 0.25) : vec3(0.34, 0.19, 0.08);
+    albedo = base * (0.75 + 0.35 * n1) * (0.8 + 0.3 * strand);
+    rough = 0.75;
+    wrap = 0.35;
+  } else if (id == 24) {  // teeth, claws
+    albedo = vec3(0.88, 0.84, 0.72) * (0.9 + 0.1 * n1);
+    rough = 0.3;
+  } else if (id == 26) {  // eyes
+    albedo = vec3(0.03, 0.025, 0.02);
+    rough = 0.08;
+  }
+  // fresh fracture faces: splintered wood, or flesh
+  if (vAux > 0.0) {
+    vec3 broken = uInterior > 0.5 ? vec3(0.32, 0.02, 0.02) * (0.7 + 0.5 * n3) : vec3(0.62, 0.48, 0.32) * (0.8 + 0.3 * n3);
+    albedo = mix(albedo, broken, vAux);
+    rough = mix(rough, uInterior > 0.5 ? 0.25 : 0.85, vAux);
+    metal = mix(metal, 0.0, vAux);
+    sss *= 1.0 - vAux;
+  }
+}
+
 // Glass: reflections and a faint tint, more opaque at grazing angles (premultiplied alpha).
 vec4 glassColor(vec3 N, vec3 V, bool black) {
   float NoV = max(dot(N, V), 1e-4);
@@ -713,6 +875,9 @@ void main() {
   } else {
     if (uMat == 5)
       alienSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
+                   specOcc);
+    else if (uMat == 7)
+      romanSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
                    specOcc);
     else
       medievalSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,

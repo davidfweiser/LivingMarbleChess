@@ -464,6 +464,11 @@ void Renderer::uploadAlien(const alien::Library& lib) {
   alienReady = true;
 }
 
+void Renderer::uploadRoman(const roman::Library& lib) {
+  uploadFigures(roman, lib.asset, roman::R_COUNT);
+  romanReady = true;
+}
+
 void Renderer::uploadBoardTextures(const tex::Image& albedo, const tex::Image& detail, float half) {
   delTex(boardAlbedo);
   delTex(boardDetail);
@@ -627,6 +632,7 @@ void Renderer::drawItem(Shader& s, const DrawItem& it, bool lowLod, bool shadowP
       s.set("uDissolveColor", it.dissolveColor);
       s.set("uHeat", it.heat);
       s.set("uStone", it.stone);
+      s.set("uInterior", it.interior);
       s.set("uGroundAO", it.groundAO ? 1.0f : 0.0f);
       s.set("uGhost", it.ghost);
     }

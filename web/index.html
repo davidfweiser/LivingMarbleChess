@@ -6,7 +6,7 @@
 <title>Living Marble - 3D Fighting Chess</title>
 <meta name="description" content="Chess on a floating board where the pieces come alive and fight for every capture. Play the computer, a friend, or anyone online.">
 <meta property="og:title" content="Living Marble - 3D Fighting Chess">
-<meta property="og:description" content="Chess where the pieces come alive and every capture is a fight. Three armies, ghosts, music, and rated games online.">
+<meta property="og:description" content="Chess where the pieces come alive and every capture is a fight. Four armies, ghosts, music, and rated games online.">
 <!-- iPhone and iPad: Add to Home Screen makes it an app of its own, on the whole screen -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -343,10 +343,11 @@
       <p>Pieces hop, lean and turn to face each other. Each kind knows three attacks &mdash; a bull charge, a joust,
         a judgment beam, a cannon shot, a frost nova, a rain of golden swords &mdash; and the loser breaks into real
         fragments that tumble across the board.</p></div>
-    <div><h3>Three armies</h3>
+    <div><h3>Four armies</h3>
       <p>Carved Staunton <b>marble</b>; a <b>medieval</b> army of men-at-arms, knights on horseback, bishops on their
-        thrones and a gatehouse with a dragon inside; and the <b>aliens</b>: little green men, flying saucers and
-        big-brained psychics floating in glass jars.</p></div>
+        thrones and a gatehouse with a dragon inside; the <b>aliens</b>: little green men, flying saucers and
+        big-brained psychics floating in glass jars; and the <b>Romans</b>: legionaries in cloaks with spears and
+        swords, war chariots, a wooden siege tower, the empress and the emperor &mdash; who fight hand to hand.</p></div>
     <div><h3>The fallen come back</h3>
       <p>A captured piece returns as a translucent ghost beside the board, watches the rest of the game and cheers its
         side on.</p></div>
@@ -528,7 +529,7 @@
   var args = [];
   var q = new URLSearchParams(location.search);
   var pieces = q.get('pieces');
-  if (pieces && /^(marble|medieval|alien|aliens)$/.test(pieces)) args.push('--pieces', pieces);
+  if (pieces && /^(marble|medieval|alien|aliens|roman|romans)$/.test(pieces)) args.push('--pieces', pieces);
   [['quality', /^[0-3]$/], ['graphics', /^[0-3]$/], ['level', /^[0-4]$/]].forEach(function (o) {
     var v = q.get(o[0]);
     if (v !== null && o[1].test(v)) args.push('--' + o[0], v);

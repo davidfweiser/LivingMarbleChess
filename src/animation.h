@@ -13,6 +13,7 @@
 #include "meshgen.h"
 #include "particles.h"
 #include "renderer.h"
+#include "roman.h"
 
 constexpr float kPI = 3.14159265358979f;
 
@@ -29,12 +30,12 @@ struct Spring1 {
   void step(float target, float k, float zeta, float dt);
 };
 
-// Bone matrices of a skinned figure (set 1 medieval, 2 aliens).
+// Bone matrices of a skinned figure (set 1 medieval, 2 aliens, 3 Romans).
 void figurePose(int set, int asset, const medieval::Controls& c, medieval::Pose& out);
 
 struct Actor {
   int id = -1, kind = 0, color = 0, square = -1;
-  int set = 0;  // 0 marble, 1 medieval, 2 aliens
+  int set = 0;  // 0 marble, 1 medieval, 2 aliens, 3 Romans
   bool alive = true, visible = true;
   glm::vec3 pos{0};
   float yaw = 0, yawTarget = 0, baseYaw = 0, yawRate = 9.0f;
@@ -85,13 +86,13 @@ struct Actor {
   glm::quat rotation() const;
   float height() const;
   float radius() const;
-  bool skinned() const { return set != 0; }  // a medieval or alien figure (ctl / pose)
+  bool skinned() const { return set != 0; }  // a medieval, alien or Roman figure (ctl / pose)
   glm::vec3 forward() const { return glm::vec3(std::sin(yaw), 0, std::cos(yaw)); }
 };
 
 struct Chunk {
   int kind = 0, color = 0, index = 0;
-  int set = 0;  // 1: 'kind' is a medieval asset, 2: an alien one
+  int set = 0;  // 1: 'kind' is a medieval asset, 2: an alien one, 3: a Roman one
   bool half = false;
   glm::vec3 pos{0}, v{0}, w{0};
   glm::quat rot{1, 0, 0, 0};
@@ -117,10 +118,11 @@ struct Prop {
   int id = 0;
 };
 
-// A skinned creature or object that is not a chessman (the dragon, a cow, the mothership).
+// A skinned creature or object that is not a chessman (the dragon, a cow, the
+// mothership, a lion, a fallen Roman, a pool of blood).
 struct Puppet {
   int asset = 0, color = 0, id = 0;
-  int set = 1;  // 1 medieval asset, 2 alien asset
+  int set = 1;  // 1 medieval asset, 2 alien asset, 3 Roman asset
   glm::vec3 pos{0};
   float yaw = 0, scale = 1;
   glm::quat tilt{1, 0, 0, 0};  // applied after the yaw (a flying spear's pitch)
@@ -130,6 +132,12 @@ struct Puppet {
   glm::vec4 glow{0};
   glm::vec3 texOffset{0};
   bool alive = true;
+  // left to itself (a body, a pool of blood): it fades away 'life' seconds from now
+  // (< 0: never) and grows towards 'growTo' at 'growRate' (scale per second)
+  float life = -1, fadeRate = 0.8f;
+  float growRate = 0, growTo = 1;
+  bool shadow = true;  // casts a shadow and shows in the board
+  float interior = 0;  // what its fracture faces show (Romans: 1 flesh)
   glm::mat4 model() const;
 };
 
@@ -202,7 +210,8 @@ class World {
   const meshgen::Library* lib = nullptr;
   const medieval::Library* mlib = nullptr;
   const alien::Library* alib = nullptr;
-  int pieceSet = 0;  // 0 Living Marble, 1 medieval, 2 aliens
+  const roman::Library* rlib = nullptr;
+  int pieceSet = 0;  // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans
   std::vector<Puppet> puppets;
   int nextPuppetId = 1;
   Puppet* puppet(int id);
@@ -268,7 +277,7 @@ class World {
                     const glm::vec3& texOffset, const glm::vec3& impact, const glm::vec3& impulse, float explode,
                     float upBias, float spin, float glow, const glm::vec3& glowColor, int set = 1);
   void glassBurst(const Actor& a);  // an alien's canopy / jar shattering
-  // the meshes of a skinned set's asset (set 1 medieval, 2 aliens)
+  // the meshes of a skinned set's asset (set 1 medieval, 2 aliens, 3 Romans)
   const meshgen::PieceAssets& figureAssets(int set, int asset) const;
   glm::mat4 seatModel(const Actor& a) const;
   const meshgen::PieceAssets& assetsOf(const Chunk& c) const;

@@ -389,12 +389,13 @@ void App::drawSettings(float S) {
   pick("Opponent", &aiLevel, levels, 5, opt.touch);
   ImGui::EndDisabled();
   {
-    const char* sets[] = {"Living Marble", "Medieval", "Aliens"};
+    const char* sets[] = {"Living Marble", "Medieval", "Aliens", "Romans"};
     int ps = pendingSet >= 0 ? pendingSet : pieceSet;
     ImGui::SetNextItemWidth(-90 * S);
-    if (pick("Pieces", &ps, sets, 3, opt.touch)) setPieceSet(ps);
+    if (pick("Pieces", &ps, sets, 4, opt.touch)) setPieceSet(ps);
     if (armyBuilding(1)) ImGui::TextDisabled("Raising the medieval army... %d%%", (int)(armyProgress(1) * 100));
     if (armyBuilding(2)) ImGui::TextDisabled("The aliens are landing... %d%%", (int)(armyProgress(2) * 100));
+    if (armyBuilding(3)) ImGui::TextDisabled("Mustering the legions... %d%%", (int)(armyProgress(3) * 100));
   }
   ImGui::Checkbox("Battle animations", &battles);
   ImGui::Checkbox("Cinematic camera", &world.cinematic);
@@ -673,6 +674,7 @@ void App::drawTouchUI() {
   if (mode == Mode::Online && !online.ratingText.empty()) ImGui::TextDisabled("%s", online.ratingText.c_str());
   if (armyBuilding(1)) ImGui::TextDisabled("Raising the medieval army... %d%%", (int)(armyProgress(1) * 100));
   if (armyBuilding(2)) ImGui::TextDisabled("The aliens are landing... %d%%", (int)(armyProgress(2) * 100));
+  if (armyBuilding(3)) ImGui::TextDisabled("Mustering the legions... %d%%", (int)(armyProgress(3) * 100));
   if (noticeTime > 0 && !notice.empty()) ImGui::TextColored(kRed, "%s", notice.c_str());
   ImGui::PopTextWrapPos();
   const ImVec2 statusPos = ImGui::GetWindowPos(), statusSize = ImGui::GetWindowSize();

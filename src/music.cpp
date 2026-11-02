@@ -239,7 +239,7 @@ struct Cell {
 };
 
 const char* const kPieceNames[kPieces] = {"pawn", "knight", "bishop", "rook", "queen", "king"};
-const char* const kArmyNames[kArmies] = {"marble", "medieval", "alien"};
+const char* const kArmyNames[kArmies] = {"marble", "medieval", "alien", "roman"};
 constexpr int kSlots = kArmies * kPieces;  // an army's piece: army * kPieces + piece
 
 std::vector<std::string> splitWS(const std::string& s) {
@@ -1465,7 +1465,7 @@ void Engine::play(int piece) {
 }
 
 void Engine::setArmy(int army) {
-  army = army == 1 || army == 2 ? army : 0;
+  army = army >= 1 && army < kArmies ? army : 0;
   if (army == d->army) return;
   d->army = army;
   if (d->cur < 0 || d->fadeTarget <= 0.0f) return;

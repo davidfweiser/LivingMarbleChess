@@ -23,6 +23,14 @@ guns, flying saucers, big-brained psychics floating in glass jars, tripod war
 machines, an alien queen and an overlord on a hovering egg-chair throne — with
 their own (slightly ridiculous) battles, B-movie sound effects and music.
 
+And a fourth: **the Romans** (`--pieces roman`). Legionaries in crested
+helmets, banded armour and cloaks with pilum, scutum and gladius, war chariots
+drawn by two horses, a centurion with sword and dagger, a wooden siege tower on
+wheels, the empress and the emperor. They don't shatter like marble: they fight
+hand to hand - parrying, somersaulting, stabbing - and the fallen bleed and lie
+on the board a moment before they fade away. (The Romans are in the Windows,
+Linux and web versions; not yet on the Mac, iPhone and iPad.)
+
 In every army, **the fallen come back as ghosts**: a captured piece slowly
 takes shape again, translucent, beside the board, and watches the rest of the
 game — cheering its side on.
@@ -31,9 +39,10 @@ And there is **music**, written for each army: every type of piece has three
 themes of its own — concert-hall classical for the marble pieces (a minuet for
 the pawn, a galop for the knight, a waltz for the queen, a coronation anthem
 for the king), early music for the medieval army (recorders, bagpipes,
-hurdy-gurdy, lute and tabor) and 1950s science fiction for the aliens
-(theremin, vibraphone, bongos and bleeps) — and when a piece moves, its music
-takes over.
+hurdy-gurdy, lute and tabor), 1950s science fiction for the aliens
+(theremin, vibraphone, bongos and bleeps) and sword-and-sandal epics for the
+Romans (cornu and buccina, lyre, aulos, water organ, war drums and choir) — and
+when a piece moves, its music takes over.
 
 Everything is procedural. There are **no model, texture or sound files**:
 the pieces are sculpted from signed-distance fields at startup, the board's
@@ -45,7 +54,8 @@ AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
 [`macos/`](macos)). The same Swift code runs on iPhone and iPad with touch
 controls (see [`ios/`](ios)). Windows and Linux use the C++/OpenGL version in
 `src/`, which also builds for a web page (WebAssembly and WebGL 2, see
-[`web/`](web)). All versions play, look and sound the same, with no depth-of-field blur
+[`web/`](web)). All versions play, look and sound the same (but for the Romans, so far only in
+the C++ version), with no depth-of-field blur
 by default. The Windows, Linux and Mac versions start at the finest sculpting
 detail and *Ultra* graphics; iPhone and iPad, to load quicker and stay cool,
 at one sculpting level less (`--quality 2`) and *High* graphics, and so does
@@ -168,6 +178,17 @@ church bell, the check horn — the music steps back.
 | Queen  | **Spade-Tail Tango** — a slinky theremin tango over habanera bass, vibes and strings, with harp glissandi · **Shell Bodice Bossa** — a glamorous space-age bossa nova: theremin, vibes, rim clicks, shaker and harp · **Royal Hive Waltz** — a dramatic lounge waltz for ondes Martenot, vibes, strings and harp |
 | King   | **Hail the Overlord** — a pompous anthem for trumpets, church organ, timpani and choir, with a theremin descant · **Mothership Arrival** — a majestic brass fanfare over a ring-modulated hum, a saucer pad, landing-light blips and choir · **Big Red Button Swing** — swaggering big-band swing (trumpet, sax section, walking bass, ride cymbal), with a "bee-boop" button press |
 
+**The Romans** — cornu and buccina, lyre and kithara, aulos, water organ, war drums, cymbals and sistrum, choir
+
+| Piece | Themes |
+|---|---|
+| Pawn   | **March of the Legion** — a D-minor march: cornu over war drum, side drum and tuba, then buccina with strings and choir · **Testudo** — the tortoise advances: an aulos over a drone, a men's chant and shields clashing · **Wine for the Tenth Legion** — a soldiers' tavern dance in 6/8 for aulos and lyre with tympanum and sistrum |
+| Knight | **Circus Maximus** — a galloping G-minor fanfare for buccina and horn over spiccato strings and racing drums · **The Charioteer** — a broad, heroic 6/8 theme for cornu, lyre and strings, then choir and buccina · **Seven Laps** — the race itself: a whirling aulos over rolling drums and a driving bass |
+| Bishop | **The Centurion's Oath** — a solemn C-minor hymn for horns and strings, then choir and buccina · **Vine Staff Drill** — a brisk parade drill for aulos, side drum and tuba, the anvil ringing · **Blood on the Sand** — a fierce E-minor fight for aulos and horn over tremolo strings, war drums and choir |
+| Rook   | **The Siege of Alesia** — a heavy Phrygian siege march: cornu over a drone, hammering drums, then the legion chanting · **Ballista** — ticking ratchets and pizzicato, then buccina and aulos bursts · **Ram at the Gates** — the ram's pounding beat under horns, strings and choir |
+| Queen  | **The Empress's Garden** — a graceful waltz for flute and kithara over harp, then violin · **Livia's Poison** — a slinky Phrygian-dominant dance for aulos over a drone, tympanum and sistrum · **Augusta** — a majestic E-flat anthem for horn, strings and harp, then choir and buccina |
+| King   | **Triumph of Caesar** — a triumphal march: buccina fanfares over war drum and side drum, then choir and cornu · **Ave Imperator** — a hymn to the emperor for choir and water organ, then cornu and buccina · **Bread and Circuses** — the games: a festive aulos dance over lyre, tympanum, sistrum and cymbals |
+
 The panel has a *Music* volume of its own beside *Volume* (which turns
 everything up or down), and *Play music* (or **M**) turns it on and off; it
 also shows what is playing. On the Mac it is also *Game › Music*, on iPhone and
@@ -276,6 +297,58 @@ Sounds of the aliens: ray-gun pews, a theremin, the saucer's hum and its
 tractor beam, gibbering, slurps and burps, boings, splats, a moo, the tripod's
 horn and heat ray, the shrink ray, sizzling acid, a hatching egg, the
 mothership's drone and a sputtering disintegrator.
+
+## The Romans
+
+The fourth army (*Pieces › Romans*, or `--pieces roman`) is sculpted the same
+way, also in the background the first time. White's legion wears ivory and
+crimson over bright steel, Black's black and midnight blue over blackened
+steel.
+
+- **Pawn** — a legionary in an imperial Gallic helmet with a horsehair crest,
+  banded armour, a tunic and a cloak, with a curved scutum, a pilum and his
+  gladius at his right hip. He marches
+- **Knight** — a war chariot drawn by two horses, with a charioteer holding the
+  reins and a spear, spoked wheels and scythe blades on the axle. It gallops
+  and leaps (the knight's move is a jump)
+- **Bishop** — a centurion with a transverse crest, mail and medals and greaves,
+  a gladius in one hand and a pugio (dagger) in the other
+- **Rook** — a wooden siege tower on four wheels: three storeys of timber, a
+  battering ram hung inside, a door that drops as a ramp, a boarding bridge, a
+  scorpion (bolt-thrower) and two lookouts on the roof, and a vexillum. It
+  rolls, creaking
+- **Queen** — the empress, with diadem, pearls, stola and palla, and a spear
+  (and a golden goblet, and a dagger, kept out of sight)
+- **King** — the emperor in a gilded muscled cuirass, pteruges, a purple
+  cloak and a laurel wreath, with the eagle sceptre and his sword at his hip
+
+Cloaks swing as they walk and stream out when they run or leap. The Romans
+fight back: a victim raises its shield and weapon and strikes at its attacker,
+and blows are parried in a shower of sparks. The fallen don't shatter: they
+stagger, their knees give and they fall on their backs (or on their faces) -
+or are knocked flying - and lie in a spreading pool of blood for a moment
+before they fade away; blood sprays from the wounds and spatters the board. An
+overturned chariot goes down with its horses; a beaten siege tower collapses in
+splinters.
+
+| Attacker | Attacks |
+|---|---|
+| Pawn   | **Pilum** — hurls it from afar; it pierces shield and all and stays in the body as it falls, and he draws his gladius · **Shield and gladius** — takes the victim's blow on his scutum, punches with the boss and stabs underneath · **Vault** — plants his pilum, pole-vaults over the victim in a somersault, lands behind it and stabs it in the back |
+| Knight | **Run down** — a crack of the whip and a charge: the victim goes under the hooves and is flung through the air; the chariot wheels round and comes back · **Scythed wheels** — races past so close that the blades on the axle cut the victim down · **Charioteer's leap** — the horses rear and the charioteer somersaults over their heads onto the victim with his spear, then back-flips into his car |
+| Bishop | **Duel** — parries two blows, spins round with a cut across the chest and finishes it with his dagger · **Leaping strike** — a run, a somersault and his sword driven down from above · **Thrown knife** — flips his pugio, catches it, throws it end over end into the victim's throat and walks over to pull it out |
+| Rook   | **Battering ram** — the door drops and the ram swings out, sending the victim flying · **Sally** — two legionaries charge out of the tower: one takes the victim's blow on his shield, the other cuts it down, and back they go · **Scorpion** — the bolt-thrower on the roof swings round, aims and looses; the bolt knocks the victim off its feet |
+| Queen  | **Hidden dagger** — she holds out her hand in friendship; as the victim bows she draws a dagger and stabs, twice · **Poisoned cup** — she offers her goblet; the victim drinks, drops the cup, clutches its throat and falls · **Whirling spear** — she twirls her spear, sweeps the victim's legs so that it flips head over heels, and spears it where it lands |
+| King   | **Thumbs down** — the crowd roars, he turns his thumb down, and a volley of pila rains from the sky · **Gladius duel** — draws his sword across his body, parries, is parried, then spins and runs the victim through · **The lion** — he points; a lion bounds onto the board, leaps on the victim, mauls it, roars to the crowd and lopes away |
+
+A promoted legionary becomes the empress in a pillar of light; a mated emperor
+is struck down by unseen daggers - he staggers, drops his sceptre, falls to his
+knees and onto his face.
+
+Sounds of the Romans: blades slashing and stabbing, blood spattering, swords
+drawn, blade ringing on blade and on the scutum, soldiers' grunts, battle cries
+and death cries, armour crashing to the ground, the roar of the arena, the
+cornu, chariot wheels and a whip, creaking timber, the ram, the scorpion, a
+lion and a poisoned cup.
 
 ## Graphics
 
@@ -431,8 +504,8 @@ the Mac and iOS apps).
 
 On startup the pieces are sculpted and fractured procedurally — at the default
 detail (`--quality 3`) this takes about 5–10 seconds on a fast multi-core PC
-(about 13 seconds on an M2 Mac), longer when starting with the medieval or
-alien army (shown on the loading screen). On a slower computer `--quality 1`
+(about 13 seconds on an M2 Mac), longer when starting with the medieval,
+alien or Roman army (shown on the loading screen). On a slower computer `--quality 1`
 starts much quicker.
 
 ### Web page
@@ -516,7 +589,7 @@ many pixels, and screenshots show the 3D scene without the interface panels.
 --demo                  watch the AI play itself
 --level 0..4            AI strength
 --fen "<FEN>"           start from a position
---pieces marble|medieval|alien  which army to play with (default marble)
+--pieces marble|medieval|alien|roman  which army to play with (default marble)
 --dof                   depth of field: blur what the camera is not focused on
 --mute                  no sound
 --no-music              no background music (M turns it on and off)
@@ -531,7 +604,7 @@ style 0–2 instead of a random one), `--shots t1,t2,...` (screenshots at those
 times, with `--battle K` or with `--fen "<FEN>" --move e2e4` for any move),
 `--camera yaw,pitch,dist[,tx,ty,tz]`, `--no-cinematic` (keeps that camera still
 through the battles), `--scenario 4` (a gallery of ghosts on both sides),
-`--no-ui`. All of them work with `--pieces medieval` and `--pieces alien`.
+`--no-ui`. All of them work with `--pieces medieval`, `--pieces alien` and `--pieces roman`.
 
 *Ultra*, the default, renders at the screen's full resolution (on a 4K screen
 too); *High* caps the internal resolution at 1440p. If the frame rate is low,
@@ -568,7 +641,7 @@ across the short side), with 4× instead of 8× MSAA.
 | `medieval.h`, `medieval_mesh.cpp` | The medieval army: figures built from blended, painted SDF parts, each bound to a bone; skeletons and skin weights |
 | `medieval_pose.cpp` | Turns animation controls into bone matrices: walking, riding, standing up, drawbridge, dragon |
 | `alien.h`, `alien_mesh.cpp`, `alien_pose.cpp` | The aliens: their figures, skeletons and poses (waddling, hovering, the saucer's flight, the tripod's legs, tongues, tails) |
-| `sculpt.h`, `pose_kit.h` | The sculpting and posing kit shared by the medieval army and the aliens |
+| `sculpt.h`, `pose_kit.h` | The sculpting and posing kit shared by the medieval army, the aliens and the Romans |
 | `textures.*` | Bakes the inlaid wooden board (grain, pores, seams, brass, lettering) and 3D noise |
 | `shaders.cpp` | All GLSL: PBR, PCSS, marble, lacquer, IBL generation, SSAO, DoF, bloom, tone mapping |
 | `renderer.*` | Render passes: shadow → reflection → prepass → SSAO → MSAA HDR → DoF → bloom → composite |
@@ -576,9 +649,11 @@ across the short side), with 4× instead of 8× MSAA.
 | `battle.*`, `battle_kit.h` | Choreography for moves, castling, promotion, checkmate and the marble battles |
 | `battle_medieval.cpp` | The medieval army's moves, castling, checkmate and its 18 battles |
 | `battle_alien.cpp` | The aliens' moves, castling, checkmate and their 18 battles |
+| `roman.h`, `roman_mesh.cpp`, `roman_pose.cpp` | The Romans: their figures (and the lion), skeletons and poses (marching, fighting, kicking, somersaulting, falling limp, cloaks swinging, the chariot, the siege tower's ram, bridge, door and scorpion) |
+| `battle_roman.cpp` | The Romans' moves, castling, checkmate and their 18 battles: hand-to-hand fights, blood, bodies falling |
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
 | `audio.*` | Procedural sound synthesis (including a pipe organ and choir) and a small real-time mixer (miniaudio) |
-| `music.*`, `music_score.cpp` | The music: a real-time synthesiser and sequencer, and the score of the 54 themes (three for each piece in each army) |
+| `music.*`, `music_score.cpp` | The music: a real-time synthesiser and sequencer, and the score of the 72 themes (three for each piece in each army) |
 | `app.*`, `ui.cpp` | Window, game flow, input/picking, frame rate, Dear ImGui interface |
 | `power.*` | Whether the system asks to save power (Windows battery saver, Linux power-saver profile) |
 
