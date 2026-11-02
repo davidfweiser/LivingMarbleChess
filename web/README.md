@@ -58,14 +58,12 @@ library):
 ```sh
 mkdir -p build-rules
 g++ -O2 -std=c++17 -shared -fPIC -Isrc -o build-rules/liblmrules.so src/chess.cpp web/chess_rules.cpp
-python3 web/relay.py --static build-web --rules build-rules/liblmrules.so --allow-same-ip
+python3 web/relay.py --static build-web --rules build-rules/liblmrules.so
 # then open http://localhost:8765/
 ```
 
 Open the game in a private window (or another browser) to play the other side:
-each browser remembers its player and its side. (`--allow-same-ip` treats two
-players on one computer as if they were on different connections: paired at
-once, and their games rated.)
+each browser remembers its player and its side.
 
 The page is `build-web/index.html` with `avatars.js` (the players' pictures),
 `living_marble.js`, `.wasm`, `.worker.js` and `.data` (the fonts) beside it, the front page's pictures in
@@ -148,20 +146,12 @@ The game waits behind it, paused and silent:
   can't ask again for a minute. Two players asking each other start the game.
 - *Back to the game* closes the lobby, and stops waiting and any invitation.
 
-The games are timed, 10 minutes each plus 5 seconds a move, with random
-colours, and rated, except in two cases, where the game is played just the same
-but the ratings stay as they are. The card, the invitation and the game itself
-say so ("Not rated: ..."):
-
-- **The same internet connection** (for IPv6, the same /64 network): a family
-  at home, or one person with two accounts. They can join or invite each other;
-  and if both are waiting, the server pairs them once both have waited 20
-  seconds with nobody else.
-- **Too many games together:** after 3 rated games between the same two players
-  in 24 hours (aborted games don't count), the next are unrated until a day has
-  passed since the first of them.
-
-And for every game:
+The games are rated and timed, 10 minutes each plus 5 seconds a move, with
+random colours. Players on the same internet connection (a family at home)
+play each other like anyone else. After 3 rated games between the same two
+players in 24 hours (aborted games don't count), their next games are played
+the same way but aren't rated, until a day has passed since the first of the
+3; the card, the invitation and the game itself say so ("Not rated: ...").
 
 - Losing on time, resigning, or staying away for 90 seconds loses the game;
   a draw can be offered and accepted. A game that ends before both players have
@@ -170,9 +160,9 @@ And for every game:
   30 games). *Leaderboard* shows the best 20, from 5 rated games on.
 - Against cheating: the server checks every move with the game's own rules
   ([`chess_rules.cpp`](chess_rules.cpp)) and decides how games end, and a rated
-  game's side can be taken up again only by its player, logged in. Games on one
-  connection aren't rated (no handing wins to a second account), and two
-  players can move each other's ratings by at most 3 games a day. It can't tell
+  game's side can be taken up again only by its player, logged in. Two players
+  can move each other's ratings by at most 3 games a day: whether they're
+  friends trading wins, or one person with a second account. It can't tell
   whether someone uses a chess engine.
 
 In both, reloading the page or a dropped connection comes back to the same game
@@ -197,8 +187,12 @@ and side; *Undo* and *Hint* are off.
   it: their pages are logged out ("This account was deleted"), a game they are
   playing ends aborted and unrated, and their account and logins leave the
   database; their games stay, shown without them, so their opponents keep
-  theirs. The name is free again. (With the game server stopped, the database
-  is changed directly.)
+  theirs. The name is free again. The game server holds a lock
+  (`server.lock`, beside the database) while it runs, which is how the admin
+  app knows to ask it; with the game server stopped, the database is changed
+  directly. If the game server is running but doesn't answer within 20
+  seconds, nothing is deleted and the admin app says so (its log, below, may
+  say why).
 - The players (with the pictures they chose) and their games:
   `/var/lib/living-marble/players.db` (SQLite). Version 3 of it adds the
   pictures; the game server brings an older one up to date as it starts.

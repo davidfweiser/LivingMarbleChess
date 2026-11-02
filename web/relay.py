@@ -13,10 +13,10 @@ Browsers connect with a WebSocket at /ws (behind nginx). The server
 Two kinds of game:
 - with a friend: one player creates it and sends the link (?join=CODE). Untimed, unrated.
 - matched: two players from the lobby, 10 minutes each plus 5 seconds a move. Rated (Elo),
-  unless the two are on the same internet connection, or have played 3 rated games with each
-  other in the last 24 hours (then it's played the same way, and their ratings stay as they
-  are). Resigning, running out of time or staying away for 90 seconds loses; a game that ends
-  before both players have moved is aborted (unrated).
+  unless the two have played 3 rated games with each other in the last 24 hours (then it's
+  played the same way, and their ratings stay as they are). Resigning, running out of time or
+  staying away for 90 seconds loses; a game that ends before both players have moved is
+  aborted (unrated).
 
 Players have accounts: a name and a password (kept as a scrypt hash), and a recovery code
 for a forgotten password, shown once. A browser that logs in gets a session key. Each side of
@@ -30,6 +30,7 @@ Needs the websockets package, version 10 or later (Ubuntu: apt install python3-w
 import argparse
 import asyncio
 import ctypes
+import fcntl
 import hashlib
 import http
 import ipaddress
@@ -75,7 +76,6 @@ TOP_SIZE = 20
 LOBBY_SIZE = 80                  # the lobby lists this many players at most,
 LOBBY_GAMES = 30                 # and this many of the games going on
 PAIR_RATED_GAMES = 3             # rated games between the same two players in 24 hours; more aren't rated
-SAME_NETWORK_WAIT = 20           # two waiting players on one connection are paired after this long (unrated)
 CHALLENGE_SECONDS = 30           # an invitation to play waits this long for an answer
 CHALLENGES_PER_IP = 30           # invitations from one address in 10 minutes
 ASK_AGAIN_SECONDS = 60           # after a "no thanks", the same player can't ask again for this long
@@ -93,7 +93,6 @@ ENDINGS = {1: ("1-0", "checkmate"), 2: ("0-1", "checkmate"), 3: ("1/2-1/2", "sta
            4: ("1/2-1/2", "fifty"), 5: ("1/2-1/2", "repetition"), 6: ("1/2-1/2", "material")}
 
 log = logging.getLogger("relay")
-allow_same_ip = False
 
 
 def other(seat):
@@ -781,11 +780,8 @@ async def start_match(a, b):
 
 
 def unrated_why(a, b):
-    """Why a game between pages a and b won't change ratings (None: it will). Two players on one
-    internet connection may be one person with two accounts; and two who keep playing each other
-    could be trading wins."""
-    if a.ip == b.ip and not allow_same_ip:
-        return "Not rated: you're both on the same internet connection."
+    """Why a game between pages a and b won't change ratings (None: it will): two players who keep
+    playing each other could be trading wins (or be one person, with two accounts)."""
     if players and players.rated_together(a.player.id, b.player.id, 86400) >= PAIR_RATED_GAMES:
         return f"Not rated: you've played {PAIR_RATED_GAMES} rated games with each other in the last 24 hours."
     return None
@@ -793,8 +789,7 @@ def unrated_why(a, b):
 
 async def matchmaker():
     """Pairs the players waiting for an opponent, closest ratings first. The range of
-    ratings a player takes on widens the longer they wait. Two on the same internet connection
-    are paired only once both have waited a while (for a game that isn't rated)."""
+    ratings a player takes on widens the longer they wait."""
     while True:
         await asyncio.sleep(1)
         now = time.monotonic()
@@ -806,8 +801,6 @@ async def matchmaker():
             for j in range(i + 1, min(i + 6, len(waiting))):
                 b = waiting[j]
                 if b.player.id == a.player.id:
-                    continue
-                if b.ip == a.ip and not allow_same_ip and min(now - queue[a], now - queue[b]) < SAME_NETWORK_WAIT:
                     continue
                 if a.player.id in in_game or b.player.id in in_game:  # (playing on another page)
                     continue
@@ -965,7 +958,7 @@ async def challenge(c, name):
         return await no("That's you!")
     if them.id in in_game:
         return await no(f"{them.name} is playing a game right now.")
-    waiting = sorted((o for o in theirs if o in queue), key=lambda o: o.ip == c.ip)  # (another connection first)
+    waiting = [o for o in theirs if o in queue]
     if waiting:  # (they're waiting for anyone: the game starts now)
         return await start_match(c, waiting[0])
     asked = next((ch for ch in challenges.values() if ch.asker.id == them.id and ch.dst.id == me.id), None)
@@ -1020,7 +1013,7 @@ async def profile(c, name):
         out["vs"] = players.head_to_head(c.player.id, pid)  # (the asker's wins, draws and losses against them)
         theirs = [o for o in pages if o in lobby or o in queue]
         if theirs:  # (a game with them now: rated or not)
-            out["unrated"] = unrated_why(c, sorted(theirs, key=lambda o: o.ip == c.ip)[0])
+            out["unrated"] = unrated_why(c, theirs[0])
     await send(c.ws, out)
 
 
@@ -1461,6 +1454,19 @@ def requests_folder(db_path):
     return os.path.join(os.path.dirname(os.path.abspath(db_path)), "admin-requests")
 
 
+def take_lock(db_path, wait):
+    """The lock beside the database, server.lock: the game server holds it while it runs, and
+    --delete-player while it changes the database itself, so each knows whether the other is
+    there. The open file (the lock lasts until it's closed), or None if someone else has it."""
+    fd = os.open(os.path.join(os.path.dirname(os.path.abspath(db_path)), "server.lock"), os.O_RDONLY | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    return fd
+
+
 async def admin_requests(folder):
     """Requests from the admin app (web/admin.py, run as root): a file each in the folder,
     NAME.request, answered in NAME.answer. Only root and this server can write there."""
@@ -1482,10 +1488,14 @@ async def admin_requests(folder):
                 os.remove(path)
             except OSError:
                 pass
-            if req.get("t") == "delete":
-                answer = await delete_player(str(req.get("name", "")).strip())
-            else:
-                answer = {"ok": False, "why": "The game server doesn't know that request."}
+            try:  # (whatever goes wrong with one, the next ones are still answered)
+                if req.get("t") == "delete":
+                    answer = await delete_player(str(req.get("name", "")).strip())
+                else:
+                    answer = {"ok": False, "why": "The game server doesn't know that request."}
+            except Exception as e:
+                log.exception("admin request %s", req)
+                answer = {"ok": False, "why": f"The game server couldn't do it: {e}"}
             out = path[:-len(".request")] + ".answer"
             try:
                 with open(out + ".tmp", "w") as fh:
@@ -1496,9 +1506,9 @@ async def admin_requests(folder):
 
 
 async def delete_from_command_line(db_path, status_path, name):
-    """--delete-player: the running game server does it (it knows who is online and playing);
-    without one, the database is changed here. True if the player was deleted."""
-    def server_running():
+    """--delete-player: the running game server does it (it knows who is online and playing, and
+    logs them out); without one, the database is changed here. True if the player was deleted."""
+    def status_fresh():  # (a game server from before the lock writes its status every 2 seconds)
         try:
             with open(status_path) as f:
                 return time.time() - json.load(f).get("time", 0) < 10
@@ -1506,7 +1516,15 @@ async def delete_from_command_line(db_path, status_path, name):
             return False
 
     folder = requests_folder(db_path)
-    if server_running() and os.path.isdir(folder):
+    lock = take_lock(db_path, wait=False)
+    if lock is not None and status_fresh():
+        os.close(lock)
+        lock = None
+    if lock is None:  # the game server is running: it does it
+        if not os.path.isdir(folder):
+            print("The game server is running, but too old to delete players: update it (linode-setup.sh), "
+                  "or stop it first (systemctl stop living-marble-relay).")
+            return False
         key = secrets.token_hex(8)
         req, ans = os.path.join(folder, key + ".request"), os.path.join(folder, key + ".answer")
         with open(req + ".tmp", "w") as f:
@@ -1525,21 +1543,24 @@ async def delete_from_command_line(db_path, status_path, name):
             os.remove(req)
         except OSError:
             pass
-        if server_running():
-            print("The game server didn't answer. Is it busy? Try again in a moment.")
-            return False
-    global players
-    players = Players(db_path)
-    row = players._by_name(name)
-    if row is None:
-        print(f"There is no player called {name}.")
-        ok = False
-    else:
-        ok = players.delete(row[0])
-        print(f"{row[1]} is deleted.")
-    players.db.close()
-    keep_owner(db_path)
-    return ok
+        print("The game server is running but didn't answer in 20 seconds; nothing was deleted. "
+              "Its log may say why: journalctl -u living-marble-relay")
+        return False
+    try:  # (no game server: the database itself, with the lock held, so that one starting now waits)
+        global players
+        players = Players(db_path)
+        row = players._by_name(name)
+        if row is None:
+            print(f"There is no player called {name}.")
+            ok = False
+        else:
+            ok = players.delete(row[0])
+            print(f"{row[1]} is deleted.")
+        players.db.close()
+        keep_owner(db_path)
+        return ok
+    finally:
+        os.close(lock)
 
 
 async def write_status(path):
@@ -1627,7 +1648,7 @@ def static_files(root):
 
 
 async def main():
-    global rules, players, allow_same_ip
+    global rules, players
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description="The server for Living Marble's online games.")
     ap.add_argument("--host", default="127.0.0.1")
@@ -1642,8 +1663,7 @@ async def main():
     ap.add_argument("--delete-player", metavar="NAME",
                     help="delete a player (logged out, their games kept without them), print what happened and stop")
     ap.add_argument("--static", metavar="FOLDER", help="also serve the web page from FOLDER (local tests)")
-    ap.add_argument("--allow-same-ip", action="store_true",
-                    help="pair players from the same address at once, and rate their games (local tests)")
+    ap.add_argument("--allow-same-ip", action="store_true", help=argparse.SUPPRESS)  # (once for local tests: no longer needed)
     ap.add_argument("--pair-games", type=int, default=PAIR_RATED_GAMES,
                     help=f"rated games between the same two players in 24 hours; more are played unrated "
                          f"(default {PAIR_RATED_GAMES})")
@@ -1661,7 +1681,6 @@ async def main():
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("websockets").setLevel(logging.WARNING)  # (not every connection)
-    allow_same_ip = args.allow_same_ip
     globals().update(MAX_CONNECTIONS_PER_IP=args.per_ip, CLOCK_MS=int(args.clock * 60000),
                      INCREMENT_MS=int(args.increment * 1000), AWAY_SECONDS=args.away, TOP_MIN_GAMES=args.top_min,
                      NAMES_PER_IP_PER_DAY=args.names_per_ip, PAIR_RATED_GAMES=args.pair_games)
@@ -1687,6 +1706,10 @@ async def main():
             raise SystemExit(1)
         return
     if args.db != "none":
+        lock = take_lock(args.db, wait=False)  # (kept until the server stops: the admin app knows it's here)
+        if lock is None:
+            log.info("waiting for the database: another game server, or the admin app, is using it")
+            lock = take_lock(args.db, wait=True)
         players = Players(args.db)
         asyncio.ensure_future(write_status(status))
         asyncio.ensure_future(admin_requests(requests_folder(args.db)))
