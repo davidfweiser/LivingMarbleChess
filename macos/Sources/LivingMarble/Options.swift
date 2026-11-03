@@ -101,11 +101,12 @@ struct Options {
       case "--mute": o.noAudio = true
       case "--no-music": o.noMusic = true
       case "--pieces":
-        let v = next()
-        o.pieces = (v == "medieval" || v == "1") ? 1
-          : (v == "alien" || v == "aliens" || v == "2") ? 2
-          : (v == "roman" || v == "romans" || v == "3") ? 3
-          : 0
+        switch next() {
+        case "medieval", "1": o.pieces = 1
+        case "alien", "aliens", "2": o.pieces = 2
+        case "roman", "romans", "3": o.pieces = 3
+        default: o.pieces = 0
+        }
       case "--selftest": o.selftest = true
       case "--shot": o.shotPath = next()
       case "--frames": o.frames = Int(next()) ?? o.frames
