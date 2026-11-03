@@ -298,6 +298,8 @@ const meshgen::PieceAssets& World::assetsOf(const Chunk& c) const {
 void World::reset() {
   actors.clear();
   puppets.clear();
+  solids.clear();
+  grips.clear();
   for (int& a : actorAt) a = -1;
   fx.clear();
   chunks.clear();
@@ -1115,6 +1117,170 @@ void World::updateGhosts(float dt) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Animals that must not pass through each other (the dinosaurs' fights). Each is its bulk
+// (balls packed inside it, riding on its bones); wherever two of them overlap they are
+// shoved apart, the lighter one the more: along the board while both stand on it, any way
+// at all once one of them is off the ground (leaping, flying, held in the jaws, thrown).
+// ---------------------------------------------------------------------------
+void World::keepApart() {
+  if (solids.empty()) {
+    grips.clear();
+    return;
+  }
+  struct Group {  // a run of balls on one bone, lying close together, and their bounds
+    int bone, first, end;
+    vec3 lo, hi;
+  };
+  struct Body {
+    int actor = -1;  // (-1: a puppet)
+    vec3* pos = nullptr;
+    float mass = 1;
+    bool free = false;  // off the ground: it may be shoved up or down too
+    std::vector<vec3> c;
+    std::vector<float> r;
+    std::vector<Group> group;
+    vec3 lo{1e9f}, hi{-1e9f};  // the bounds of all of them
+    vec3 off{0};               // how far it has been shoved
+  };
+  std::vector<Body> bodies;
+  std::vector<const void*> seen;
+  auto add = [&](const void* who, int actor, int kind, const glm::mat4& M, const medieval::Pose& pose, float scale,
+                 vec3* pos) {
+    if (!dlib || kind < 0 || kind >= 6 || pose.count <= 0) return;
+    if (std::find(seen.begin(), seen.end(), who) != seen.end()) return;
+    seen.push_back(who);
+    const std::vector<dino::Ball>& bulk = dlib->bulk[kind];
+    if (bulk.empty()) return;
+    Body b;
+    b.actor = actor;
+    b.pos = pos;
+    b.mass = dino::bodyMass(kind);
+    b.free = pos->y > 0.01f;
+    b.c.resize(bulk.size());
+    b.r.resize(bulk.size());
+    for (size_t i = 0; i < bulk.size(); ++i) {
+      const dino::Ball& k = bulk[i];
+      if (b.group.empty() || b.group.back().bone != k.bone || (int)i - b.group.back().first >= dino::kBulkRun) {
+        if (!b.group.empty()) b.group.back().end = (int)i;
+        b.group.push_back({k.bone, (int)i, (int)i, vec3(1e9f), vec3(-1e9f)});
+      }
+      vec3 c = vec3(M * (pose.bone[k.bone] * vec4(k.c, 1.0f)));
+      float r = k.r * scale;
+      b.c[i] = c;
+      b.r[i] = r;
+      Group& g = b.group.back();
+      g.lo = glm::min(g.lo, c - vec3(r));
+      g.hi = glm::max(g.hi, c + vec3(r));
+    }
+    b.group.back().end = (int)bulk.size();
+    for (const Group& g : b.group) {
+      b.lo = glm::min(b.lo, g.lo);
+      b.hi = glm::max(b.hi, g.hi);
+    }
+    bodies.push_back(std::move(b));
+  };
+  for (const Solid& s : solids) {
+    if (s.puppet) {
+      Puppet* p = puppet(s.id);
+      if (p && p->alive && p->set == 4 && p->dissolve < 0.5f) add(p, -1, p->asset, p->model(), p->pose, p->scale, &p->pos);
+    } else if (s.id >= 0 && s.id < (int)actors.size()) {
+      Actor& a = actors[s.id];
+      if (a.alive && a.visible && a.set == 4 && a.dissolve < 0.5f) add(&a, s.id, a.kind, a.model(), a.pose, a.scale, &a.pos);
+    }
+  }
+  solids.clear();
+  auto apart = [](const vec3& alo, const vec3& ahi, const vec3& blo, const vec3& bhi) {
+    return ahi.x < blo.x || ahi.y < blo.y || ahi.z < blo.z || bhi.x < alo.x || bhi.y < alo.y || bhi.z < alo.z;
+  };
+  for (int sweep = 0; sweep < 2; ++sweep)
+    for (size_t i = 0; i < bodies.size(); ++i)
+      for (size_t j = i + 1; j < bodies.size(); ++j) {
+        Body& A = bodies[i];
+        Body& B = bodies[j];
+        // one holding the other in its jaws: those bones of the holder are left out
+        int skipA[2] = {-1, -1}, skipB[2] = {-1, -1};
+        for (const Grip& g : grips) {
+          if (A.actor >= 0 && g.holder == A.actor && g.held == B.actor) skipA[0] = g.bone1, skipA[1] = g.bone2;
+          if (B.actor >= 0 && g.holder == B.actor && g.held == A.actor) skipB[0] = g.bone1, skipB[1] = g.bone2;
+        }
+        for (int iter = 0; iter < 8; ++iter) {
+          if (apart(A.lo + A.off, A.hi + A.off, B.lo + B.off, B.hi + B.off)) break;
+          // the deepest overlap of a ball of one with a ball of the other
+          float best = 0.0015f;
+          vec3 delta(0);
+          float reach = 0;
+          for (const Group& ga : A.group) {
+            if (ga.bone == skipA[0] || ga.bone == skipA[1]) continue;
+            vec3 alo = ga.lo + A.off, ahi = ga.hi + A.off;
+            if (apart(alo, ahi, B.lo + B.off, B.hi + B.off)) continue;
+            for (const Group& gb : B.group) {
+              if (gb.bone == skipB[0] || gb.bone == skipB[1]) continue;
+              vec3 blo = gb.lo + B.off, bhi = gb.hi + B.off;
+              if (apart(alo, ahi, blo, bhi)) continue;
+              for (int a = ga.first; a < ga.end; ++a) {
+                vec3 ca = A.c[a] + A.off;
+                float ra = A.r[a];
+                if (ca.x + ra < blo.x || ca.y + ra < blo.y || ca.z + ra < blo.z || ca.x - ra > bhi.x ||
+                    ca.y - ra > bhi.y || ca.z - ra > bhi.z)
+                  continue;
+                for (int b = gb.first; b < gb.end; ++b) {
+                  vec3 d = ca - (B.c[b] + B.off);
+                  float R = ra + B.r[b];
+                  float d2 = glm::dot(d, d);
+                  if (d2 >= R * R) continue;
+                  float pen = R - std::sqrt(d2);
+                  if (pen > best) {
+                    best = pen;
+                    delta = d;
+                    reach = R;
+                  }
+                }
+              }
+            }
+          }
+          if (reach <= 0) break;
+          float wa = B.mass / (A.mass + B.mass);  // A's share of the shove
+          vec3 ma(0), mb(0);
+          if (!A.free && !B.free) {
+            // both stand on the board: apart along it (from body to body if the balls are one
+            // above the other), just far enough
+            vec3 h(delta.x, 0, delta.z);
+            if (glm::length(h) < 0.35f * glm::length(delta)) h = vec3((*A.pos + A.off) - (*B.pos + B.off)) * vec3(1, 0, 1);
+            if (glm::length(h) < 1e-5f) h = vec3(1, 0, 0);
+            h = glm::normalize(h);
+            float p = glm::dot(delta, h);
+            float s = -p + std::sqrt(std::max(0.0f, p * p - glm::dot(delta, delta) + reach * reach));
+            ma = h * (s * wa);
+            mb = -h * (s * (1.0f - wa));
+          } else {
+            float l = glm::length(delta);
+            vec3 n = l > 1e-5f ? delta / l : vec3(0, 1, 0);
+            vec3 push = n * (reach - l);
+            ma = push * wa;
+            mb = -push * (1.0f - wa);
+            // one standing on the board keeps to it: the other takes all of the shove up or down
+            if (!A.free) {
+              mb.y = -push.y;
+              ma.y = 0;
+            } else if (!B.free) {
+              ma.y = push.y;
+              mb.y = 0;
+            }
+          }
+          A.off += ma;
+          B.off += mb;
+        }
+      }
+  grips.clear();
+  for (Body& b : bodies) {
+    float l = glm::length(b.off);
+    if (l > 0.3f) b.off *= 0.3f / l;
+    *b.pos += b.off;
+    if (b.free && b.pos->y < 0.0f) b.pos->y = 0.0f;
+  }
+}
+
 void World::simulate(float dt) {
   updateFidgets(dt);
   // dust motes drifting through the pool of light
@@ -1165,6 +1331,7 @@ void World::simulate(float dt) {
   }
   puppets.erase(std::remove_if(puppets.begin(), puppets.end(), [](const Puppet& p) { return !p.alive; }),
                 puppets.end());
+  keepApart();
   fx.update(dt);
   updateChunks(dt);
   for (TimedLight& l : lights) l.life -= dt;

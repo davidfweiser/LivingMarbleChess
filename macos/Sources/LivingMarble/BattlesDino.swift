@@ -885,6 +885,11 @@ class DBattle: BattleBase {
     let before = phase
     let done = super.update(w, dt)
     if phase != before { first = true }
+    // the two of them are solid: whatever the moves, neither passes through the other
+    if !done {
+      w.solid(plan.mover)
+      if plan.victim >= 0 { w.solid(plan.victim) }
+    }
     return done
   }
 
@@ -1098,30 +1103,42 @@ struct DGlide {
   }
 }
 
-/// Holding a victim in the jaws: a small one hangs from them, kicking; a big one is held
-/// by the neck and wrenched about.
+/// Holding a victim in the jaws: a small one hangs across them by its neck, kicking; a big
+/// one is held by the neck and wrenched about.
 struct DHeld {
-  var grab = vec3(0), base = vec3(0)
-  var baseYaw: Float = 0
+  var base = vec3(0), from = vec3(0)
+  var bite = vec3(0)  // where the jaws hold it: its neck (in its own model space, as it was seized)
+  var baseYaw: Float = 0, fromYaw: Float = 0, hold: Float = 0
   var lifted = false
   mutating func take(_ a: Actor, _ v: Actor) {
-    grab = v.pos - dMouthOf(a)
     base = v.pos
+    from = v.pos
     baseYaw = v.yaw
+    fromYaw = v.yaw
     lifted = dIsSmall(v)
+    if lifted { baseYaw = a.yaw + kPI * 0.5 }  // (it hangs across the jaws, its head on one side)
+    bite = vec3(inverse(v.model()) * vec4(dNeckOf(v), 1))
+    hold = 0
   }
-  func update(_ a: Actor, _ v: Actor, _ t: Float, _ dt: Float, _ lift: Float) {
-    if lifted {
-      var p = dMouthOf(a) + grab
-      p.y = max(0, p.y + lift)
-      v.pos = p
-      v.yaw = baseYaw + 0.9 * a.ctl.headYaw
+  mutating func update(_ a: Actor, _ v: Actor, _ t: Float, _ dt: Float) {
+    if lifted {  // it hangs from the jaws by its neck, kicking
+      hold += dt
+      let k = smoothstep(0, 0.15, hold)  // (taken up from where it stood)
+      v.yaw = fromYaw + wrapAngle(baseYaw + 0.9 * a.ctl.headYaw - fromYaw) * k
       v.yawTarget = v.yaw
       v.tiltPivot = vec3(0, v.height() / max(v.scale, 1e-3) * 0.6, 0)
       v.tilt = angleAxis(0.35 * sin(t * 9), vec3(0, 0, 1)) * angleAxis(0.3, vec3(1, 0, 0))
+      v.pos = vec3(0)
+      var p = dMouthOf(a) - vec3(v.model() * vec4(bite, 1))
+      p.y = max(0, p.y)
+      v.pos = mix(from, p, k)
       v.ctl.gait += dt * 14
       v.ctl.stride = 1
       v.ctl.dead = 0.25
+      if dIsPtero(v) {  // its wings drawn in, fluttering
+        v.ctl.wings = approach(v.ctl.wings, 0.2, dt * 4)
+        v.ctl.flap += dt * 12
+      }
     } else {
       let side = vec3(cos(v.yaw), 0, -sin(v.yaw))
       v.pos = base + side * 0.05 * sin(t * 12)
@@ -1134,6 +1151,8 @@ struct DHeld {
     v.tremble = 0.5
     v.idleWeight = 0
   }
+  /// While it holds on, its jaws (and head) may sink into the victim; the rest of them are solid.
+  func grip(_ w: World, _ a: Actor, _ v: Actor) { w.grip(a.id, v.id, dHeadBone(a), THB.jaw) }
 }
 
 /// The fling of something held in the jaws: the head drawn back to one side, then swung hard

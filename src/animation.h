@@ -249,6 +249,22 @@ class World {
   void droopGhosts(int color, float seconds);
   static glm::vec3 ghostSpot(int color, int slot);
 
+  // Animals that must not pass through each other: a fight names them every frame (the
+  // dinosaurs'), and simulate() shoves apart any of them that overlap, then forgets them.
+  struct Solid {
+    int id;
+    bool puppet;
+  };
+  std::vector<Solid> solids;
+  void solid(int actorId) { solids.push_back({actorId, false}); }
+  void solidPuppet(int puppetId) { solids.push_back({puppetId, true}); }
+  // ... and one holding another in its jaws: those two bones of the holder may sink into it
+  struct Grip {
+    int holder, held, bone1, bone2;
+  };
+  std::vector<Grip> grips;
+  void grip(int holder, int held, int bone1, int bone2) { grips.push_back({holder, held, bone1, bone2}); }
+
   void reset();
   void spawnFromBoard(const uint8_t sq[64], bool materialize);
   Actor* at(int square) { return actorAt[square] >= 0 ? &actors[actorAt[square]] : nullptr; }
@@ -296,5 +312,6 @@ class World {
   void updateChunks(float dt);
   void updateFidgets(float dt);
   void updateGhosts(float dt);
+  void keepApart();
   void figureItems(Renderer& r, const Actor& a, std::vector<DrawItem>& out) const;
 };

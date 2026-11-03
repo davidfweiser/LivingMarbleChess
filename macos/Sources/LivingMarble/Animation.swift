@@ -496,6 +496,24 @@ final class World {
   var ghosts: [Ghost] = []
   var ghostFocus = vec3(0)  // what they are watching
 
+  /// Animals that must not pass through each other: a fight names them every frame (the
+  /// dinosaurs'), and simulate() shoves apart any of them that overlap, then forgets them.
+  struct Solid {
+    var id: Int
+    var puppet: Bool
+  }
+  var solids: [Solid] = []
+  func solid(_ actorId: Int) { solids.append(Solid(id: actorId, puppet: false)) }
+  func solidPuppet(_ puppetId: Int) { solids.append(Solid(id: puppetId, puppet: true)) }
+  /// ... and one holding another in its jaws: those two bones of the holder may sink into it.
+  struct Grip {
+    var holder: Int, held: Int, bone1: Int, bone2: Int
+  }
+  var grips: [Grip] = []
+  func grip(_ holder: Int, _ held: Int, _ bone1: Int, _ bone2: Int) {
+    grips.append(Grip(holder: holder, held: held, bone1: bone1, bone2: bone2))
+  }
+
   func at(_ square: Int) -> Actor? { actorAt[square] >= 0 ? actors[actorAt[square]] : nil }
   func puppet(_ id: Int) -> Puppet? { puppets.first { $0.id == id } }
   func addPuppet(_ asset: Int, _ color: Int, _ set: Int = 1) -> Int {
@@ -538,6 +556,8 @@ final class World {
   func reset() {
     actors.removeAll()
     puppets.removeAll()
+    solids.removeAll()
+    grips.removeAll()
     for i in 0..<64 { actorAt[i] = -1 }
     fx.clear()
     chunks.removeAll()
@@ -1415,6 +1435,7 @@ final class World {
       }
     }
     puppets.removeAll { !$0.alive }
+    keepApart()
     fx.update(dt)
     updateChunks(dt)
     for i in lights.indices { lights[i].life -= dt }
@@ -1422,6 +1443,172 @@ final class World {
     rings.removeAll { $0.life <= 0 }
     lights.removeAll { $0.life <= 0 }
     props.removeAll { !$0.alive }
+  }
+
+  /// Animals that must not pass through each other (the dinosaurs' fights). Each is its bulk
+  /// (balls packed inside it, riding on its bones); wherever two of them overlap they are
+  /// shoved apart, the lighter one the more: along the board while both stand on it, any way
+  /// at all once one of them is off the ground (leaping, flying, held in the jaws, thrown).
+  private func keepApart() {
+    if solids.isEmpty {
+      grips.removeAll()
+      return
+    }
+    struct Group {  // a run of balls on one bone, lying close together, and their bounds
+      var bone: Int, first: Int, end: Int
+      var lo: vec3, hi: vec3
+    }
+    struct Body {
+      var actor: Actor?
+      var puppet: Puppet?
+      var pos: vec3
+      var mass: Float
+      var free: Bool  // off the ground: it may be shoved up or down too
+      var c: [vec3] = []
+      var r: [Float] = []
+      var group: [Group] = []
+      var lo = vec3(1e9), hi = vec3(-1e9)  // the bounds of all of them
+      var off = vec3(0)                    // how far it has been shoved
+    }
+    var bodies: [Body] = []
+    func add(_ actor: Actor?, _ puppet: Puppet?, _ kind: Int, _ M: mat4, _ pose: MPose, _ scale: Float, _ pos: vec3) {
+      guard kind >= 0, kind < 6, pose.count > 0 else { return }
+      if bodies.contains(where: { b in
+        (actor != nil && b.actor === actor) || (puppet != nil && b.puppet === puppet)
+      }) { return }
+      let bulk = dlib.bulk[kind]
+      if bulk.isEmpty { return }
+      var b = Body(actor: actor, puppet: puppet, pos: pos, mass: Dino.bodyMass(kind), free: pos.y > 0.01)
+      b.c.reserveCapacity(bulk.count)
+      b.r.reserveCapacity(bulk.count)
+      for (i, k) in bulk.enumerated() {
+        if b.group.isEmpty || b.group[b.group.count - 1].bone != k.bone || i - b.group[b.group.count - 1].first >= Dino.bulkRun {
+          if !b.group.isEmpty { b.group[b.group.count - 1].end = i }
+          b.group.append(Group(bone: k.bone, first: i, end: i, lo: vec3(1e9), hi: vec3(-1e9)))
+        }
+        let c = vec3(M * (pose.bone[k.bone] * vec4(k.c, 1)))
+        let r = k.r * scale
+        b.c.append(c)
+        b.r.append(r)
+        let g = b.group.count - 1
+        b.group[g].lo = simd_min(b.group[g].lo, c - vec3(r))
+        b.group[g].hi = simd_max(b.group[g].hi, c + vec3(r))
+      }
+      b.group[b.group.count - 1].end = bulk.count
+      for g in b.group {
+        b.lo = simd_min(b.lo, g.lo)
+        b.hi = simd_max(b.hi, g.hi)
+      }
+      bodies.append(b)
+    }
+    for s in solids {
+      if s.puppet {
+        if let p = puppet(s.id), p.alive, p.set == 4, p.dissolve < 0.5 {
+          add(nil, p, p.asset, p.model(), p.pose, p.scale, p.pos)
+        }
+      } else if s.id >= 0 && s.id < actors.count {
+        let a = actors[s.id]
+        if a.alive && a.visible && a.set == 4 && a.dissolve < 0.5 { add(a, nil, a.kind, a.model(), a.pose, a.scale, a.pos) }
+      }
+    }
+    solids.removeAll()
+    func apart(_ alo: vec3, _ ahi: vec3, _ blo: vec3, _ bhi: vec3) -> Bool {
+      ahi.x < blo.x || ahi.y < blo.y || ahi.z < blo.z || bhi.x < alo.x || bhi.y < alo.y || bhi.z < alo.z
+    }
+    for _ in 0..<2 {
+      for i in 0..<bodies.count {
+        for j in (i + 1)..<bodies.count {
+          // one holding the other in its jaws: those bones of the holder are left out
+          var skipA = (-1, -1), skipB = (-1, -1)
+          if let ai = bodies[i].actor, let bj = bodies[j].actor {
+            for g in grips {
+              if g.holder == ai.id && g.held == bj.id { skipA = (g.bone1, g.bone2) }
+              if g.holder == bj.id && g.held == ai.id { skipB = (g.bone1, g.bone2) }
+            }
+          }
+          for _ in 0..<8 {
+            let A = bodies[i], B = bodies[j]
+            if apart(A.lo + A.off, A.hi + A.off, B.lo + B.off, B.hi + B.off) { break }
+            // the deepest overlap of a ball of one with a ball of the other
+            var best: Float = 0.0015
+            var delta = vec3(0)
+            var reach: Float = 0
+            for ga in A.group {
+              if ga.bone == skipA.0 || ga.bone == skipA.1 { continue }
+              let alo = ga.lo + A.off, ahi = ga.hi + A.off
+              if apart(alo, ahi, B.lo + B.off, B.hi + B.off) { continue }
+              for gb in B.group {
+                if gb.bone == skipB.0 || gb.bone == skipB.1 { continue }
+                let blo = gb.lo + B.off, bhi = gb.hi + B.off
+                if apart(alo, ahi, blo, bhi) { continue }
+                for a in ga.first..<ga.end {
+                  let ca = A.c[a] + A.off
+                  let ra = A.r[a]
+                  if ca.x + ra < blo.x || ca.y + ra < blo.y || ca.z + ra < blo.z || ca.x - ra > bhi.x || ca.y - ra > bhi.y
+                    || ca.z - ra > bhi.z { continue }
+                  for b in gb.first..<gb.end {
+                    let d = ca - (B.c[b] + B.off)
+                    let R = ra + B.r[b]
+                    let d2 = simd_dot(d, d)
+                    if d2 >= R * R { continue }
+                    let pen = R - d2.squareRoot()
+                    if pen > best {
+                      best = pen
+                      delta = d
+                      reach = R
+                    }
+                  }
+                }
+              }
+            }
+            if reach <= 0 { break }
+            let wa = B.mass / (A.mass + B.mass)  // A's share of the shove
+            var ma = vec3(0), mb = vec3(0)
+            if !A.free && !B.free {
+              // both stand on the board: apart along it (from body to body if the balls are one
+              // above the other), just far enough
+              var h = vec3(delta.x, 0, delta.z)
+              if simd_length(h) < 0.35 * simd_length(delta) {
+                let ab = (A.pos + A.off) - (B.pos + B.off)
+                h = vec3(ab.x, 0, ab.z)
+              }
+              if simd_length(h) < 1e-5 { h = vec3(1, 0, 0) }
+              h = simd_normalize(h)
+              let p = simd_dot(delta, h)
+              let s = -p + max(0, p * p - simd_dot(delta, delta) + reach * reach).squareRoot()
+              ma = h * (s * wa)
+              mb = -h * (s * (1 - wa))
+            } else {
+              let l = simd_length(delta)
+              let n = l > 1e-5 ? delta / l : vec3(0, 1, 0)
+              let push = n * (reach - l)
+              ma = push * wa
+              mb = -push * (1 - wa)
+              // one standing on the board keeps to it: the other takes all of the shove up or down
+              if !A.free {
+                mb.y = -push.y
+                ma.y = 0
+              } else if !B.free {
+                ma.y = push.y
+                mb.y = 0
+              }
+            }
+            bodies[i].off += ma
+            bodies[j].off += mb
+          }
+        }
+      }
+    }
+    grips.removeAll()
+    for b in bodies {
+      var off = b.off
+      let l = simd_length(off)
+      if l > 0.3 { off *= 0.3 / l }
+      var p = b.pos + off
+      if b.free && p.y < 0 { p.y = 0 }
+      if let a = b.actor { a.pos = p }
+      if let q = b.puppet { q.pos = p }
+    }
   }
 
   /// The draw items of one figure (a chessman or a ghost).

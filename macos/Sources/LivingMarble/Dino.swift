@@ -79,8 +79,18 @@ enum QDB {
   static let count = 21
 }
 
+/// The bulk of an animal: balls packed inside its body, each riding on a bone (rest-pose
+/// model space). They keep two animals that fight from passing through each other. They come
+/// in bone order, each bone's in runs of Dino.bulkRun lying close together.
+struct DinoBall {
+  var c: vec3
+  var r: Float
+  var bone: Int
+}
+
 final class DinoLibrary: @unchecked Sendable {  // filled on a loader thread, read after it finishes
   var asset = [PieceAssets](repeating: PieceAssets(), count: DAsset.count)
+  var bulk = [[DinoBall]](repeating: [], count: DAsset.count)  // (the six animals)
   var built = false
 }
 
@@ -469,6 +479,13 @@ enum Dino {
   }
   /// The pteranodon's left wing tip, wings spread (rest pose).
   static func wingTip() -> vec3 { toModel(DAsset.knight, DinoPJ.tipL) }
+  /// The balls of an animal's bulk come in runs of this many (see DinoBall).
+  static let bulkRun = 16
+  /// How hard an animal is to shove (a raptor 1).
+  static func bodyMass(_ kind: Int) -> Float {
+    let M: [Float] = [1.0, 0.8, 7.0, 30.0, 9.0, 12.0]
+    return M[max(0, min(5, kind))]
+  }
   /// Half the width of the body (how far a flank is from the middle).
   static func bodyHalfWidth(_ kind: Int) -> Float {
     let W: [Float] = [0.05, 0.05, 0.13, 0.15, 0.06, 0.09]

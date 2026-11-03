@@ -5,6 +5,7 @@
 // like animals - claws, horns, jaws and tails - and the fallen bleed.
 #pragma once
 #include <glm/glm.hpp>
+#include <vector>
 
 #include "medieval.h"
 
@@ -102,8 +103,18 @@ const Skeleton& skeleton(int asset);  // count == 0 for rigid assets
 //   tail      tail swish phase
 void buildPose(int asset, const Controls& c, Pose& out);
 
+// The bulk of an animal: balls packed inside its body, each riding on a bone (rest-pose
+// model space). They keep two animals that fight from passing through each other.
+// They come in bone order, each bone's in runs of kBulkRun lying close together.
+struct Ball {
+  glm::vec3 c{0};
+  float r = 0;
+  int bone = 0;
+};
+constexpr int kBulkRun = 16;
 struct Library {
   meshgen::PieceAssets asset[D_COUNT];
+  std::vector<Ball> bulk[D_COUNT];  // (the six animals)
   bool built = false;
 };
 // quality: 0 = fast, 1 = normal, 2 = ultra, 3 = extreme
@@ -127,6 +138,7 @@ float strideCycle(int kind);     // distance covered by one walk cycle
 float gape(int kind);
 float bodyLength(int kind);      // from the snout to the tail tip (rest pose)
 float bodyHalfWidth(int kind);   // half the width of the body (how far a flank is from the middle)
+float bodyMass(int kind);        // how hard an animal is to shove (a raptor 1)
 glm::vec3 wingTip();             // the pteranodon's left wing tip, wings spread (rest pose)
 // Rest-pose points that stand on the board (feet, and the pteranodon's hands) and their bones;
 // the pose keeps the lowest of them on the board. Returns how many.

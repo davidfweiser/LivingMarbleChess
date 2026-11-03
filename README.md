@@ -4,7 +4,7 @@
 
 | Living Marble | Medieval | Aliens | Romans | Dinosaurs |
 | :---: | :---: | :---: | :---: | :---: |
-| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) | ![A legionary pole-vaults over his enemy in a somersault](docs/screenshots/roman-battle.jpg) | ![A tyrannosaurus lunges, jaws wide, at a pteranodon stabbing with its beak](docs/screenshots/dino-battle.jpg) |
+| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) | ![A legionary pole-vaults over his enemy in a somersault](docs/screenshots/roman-battle.jpg) | ![A tyrannosaurus lifts a pteranodon in its jaws by the neck](docs/screenshots/dino-battle.jpg) |
 
 A photoreal 3D chess game in C++ where carved marble Staunton pieces come alive:
 they hop, lean, wobble and turn to face each other — and every capture is a
@@ -421,6 +421,17 @@ bowled over away from the blow, swept through the legs its feet go first, and
 a victim shaken in the jaws flies off the way the head was swinging when it
 let go.
 
+In a fight they are solid. Each animal carries a bulk of a few hundred balls
+packed inside its body, down to its horns, its beak, the frill, the sail and the
+crest, riding on its bones; wherever two of them would pass through each other
+they are shoved apart, the lighter one the more. A raptor that leaps onto a
+triceratops rides on its neck behind the frill, two heads that clash butt
+instead of sinking into each other, horns lock instead of passing through a
+skull, and a tail swung across a victim pushes it along. Seized in the jaws, a
+small victim hangs across them by its neck, kicking (a pteranodon with its
+wings drawn in), and a pteranodon striking with its talons throws its wings up
+out of the way at the last moment.
+
 | Attacker | Attacks |
 |---|---|
 | Pawn   | **Killing claw** — a hiss, a sprint and a leap: it lands on the victim feet first and clings to its neck, kicking with its sickle claws until it goes down · **Pack attack** — it calls, two more raptors come running from the edges of the board, the victim turns on one of them and the others are on it; the pack feeds, then runs off · **Dodge and bite** — it circles; the victim lunges, it slips aside and the jaws close on air; it darts in, seizes the throat and hangs on until it rips it open |
@@ -737,13 +748,13 @@ across the short side), with 4× instead of 8× MSAA.
 | `textures.*` | Bakes the inlaid wooden board (grain, pores, seams, brass, lettering) and 3D noise |
 | `shaders.cpp` | All GLSL: PBR, PCSS, marble, lacquer, IBL generation, SSAO, DoF, bloom, tone mapping |
 | `renderer.*` | Render passes: shadow → reflection → prepass → SSAO → MSAA HDR → DoF → bloom → composite |
-| `animation.*` | The living-piece rig, rigid-body debris, props, lights, cinematic camera, the ghosts |
+| `animation.*` | The living-piece rig, rigid-body debris, props, lights, cinematic camera, the ghosts; fighting dinosaurs kept from passing through each other |
 | `battle.*`, `battle_kit.h` | Choreography for moves, castling, promotion, checkmate and the marble battles |
 | `battle_medieval.cpp` | The medieval army's moves, castling, checkmate and its 18 battles |
 | `battle_alien.cpp` | The aliens' moves, castling, checkmate and their 18 battles |
 | `roman.h`, `roman_mesh.cpp`, `roman_pose.cpp` | The Romans: their figures (and the lion), skeletons and poses (marching, fighting, kicking, somersaulting, falling limp, cloaks swinging, the chariot, the siege tower's ram, bridge, door and scorpion) |
 | `battle_roman.cpp` | The Romans' moves, castling, checkmate and their 18 battles: hand-to-hand fights, blood, bodies falling |
-| `dino.h`, `dino_mesh.cpp`, `dino_pose.cpp` | The dinosaurs: their figures, skeletons and poses (running, flying, folding wings, rearing, lunging, pouncing, lying limp; feet kept on the board) |
+| `dino.h`, `dino_mesh.cpp`, `dino_pose.cpp` | The dinosaurs: their figures, skeletons, bulk (the balls that keep them solid) and poses (running, flying, folding wings, rearing, lunging, pouncing, lying limp; feet kept on the board) |
 | `battle_dino.cpp` | The dinosaurs' moves, castling, the meteor and their 18 battles: claws, horns, jaws and tails |
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
 | `audio.*` | Procedural sound synthesis (including a pipe organ and choir) and a small real-time mixer (miniaudio) |

@@ -1309,6 +1309,10 @@ float bodyLength(int kind) {
   }
 }
 vec3 wingTip() { return toModel(D_KNIGHT, pj::tipL); }
+float bodyMass(int kind) {
+  static const float M[6] = {1.0f, 0.8f, 7.0f, 30.0f, 9.0f, 12.0f};
+  return M[std::max(0, std::min(5, kind))];
+}
 float bodyHalfWidth(int kind) {
   static const float W[6] = {0.05f, 0.05f, 0.13f, 0.15f, 0.06f, 0.09f};
   return W[std::max(0, std::min(5, kind))];
@@ -1354,6 +1358,185 @@ int groundPoints(int asset, vec3* pts, int* bones) {
   }
 }
 
+// Orders a bone's balls in runs of kBulkRun lying close together (split again and again
+// across their longest side, a whole number of runs on one side).
+static void orderRuns(std::vector<Ball>& v, int first, int end) {
+  const int run = kBulkRun;
+  int n = end - first;
+  if (n <= run) return;
+  vec3 lo(1e9f), hi(-1e9f);
+  for (int i = first; i < end; ++i) {
+    lo = glm::min(lo, v[i].c);
+    hi = glm::max(hi, v[i].c);
+  }
+  vec3 e = hi - lo;
+  int ax = e.x >= e.y && e.x >= e.z ? 0 : (e.y >= e.z ? 1 : 2);
+  int mid = first + run * ((n + 2 * run - 1) / (2 * run));  // (a whole number of runs on one side)
+  std::stable_sort(v.begin() + first, v.begin() + end, [ax](const Ball& a, const Ball& b) { return a.c[ax] < b.c[ax]; });
+  orderRuns(v, first, mid);
+  orderRuns(v, mid, end);
+}
+
+// The bulk of an animal: balls packed inside its body, each riding on the bone its middle is
+// skinned to (rest-pose model space, in bone order). Every candidate is a point inside with the
+// biggest ball that fits there; the one over which the balls already taken leave the skin
+// furthest out goes next, until they leave none of it more than a few millimetres out (or there
+// are 'most' of them). Then the same, with smaller balls, for the horns and the beak, and for the
+// frill, the sail and the crest (thin, but they must not pass through anyone either). Thin skin,
+// wings, claws and teeth are left out.
+static std::vector<Ball> fillBulk(const Model& m, vec3 lo, vec3 hi, float rmin, int most) {
+  const float hc = 0.02f, hf = 0.005f, hf2 = 0.0025f, rminThin = 0.0025f;
+  struct Cand {
+    vec3 p;
+    float r;
+    float ext;  // how far below the skin over it the balls taken so far leave it (as of 'seen' of them)
+    int seen;
+    bool trimmed;
+  };
+  // rays all round (an icosahedron and the middles of its edges)
+  std::vector<vec3> dirs;
+  {
+    const float g = 1.618034f;
+    vec3 ico[12] = {{-1, g, 0}, {1, g, 0}, {-1, -g, 0}, {1, -g, 0}, {0, -1, g}, {0, 1, g},
+                    {0, -1, -g}, {0, 1, -g}, {g, 0, -1}, {g, 0, 1}, {-g, 0, -1}, {-g, 0, 1}};
+    for (const vec3& a : ico) dirs.push_back(glm::normalize(a));
+    for (int i = 0; i < 12; ++i)
+      for (int j = i + 1; j < 12; ++j)
+        if (glm::length(ico[i] - ico[j]) < 2.1f) dirs.push_back(glm::normalize(ico[i] + ico[j]));
+  }
+  glm::ivec3 n = glm::max(glm::ivec3(1), glm::ivec3(glm::ceil((hi - lo) / hc)));
+  std::vector<std::vector<Cand>> slab((size_t)n.z), slabRod((size_t)n.z), slabSheet((size_t)n.z);
+  // the coarse cells: deep inside, a cell's middle will do; near the skin, it is sampled finely
+  // (and more finely still where it is horn, frill, sail or crest)
+  parallelFor(n.z, [&](int k) {
+    std::vector<Cand>& out = slab[(size_t)k];
+    for (int j = 0; j < n.y; ++j)
+      for (int i = 0; i < n.x; ++i) {
+        vec3 q = lo + (vec3((float)i, (float)j, (float)k) + 0.5f) * hc;
+        float d = m.eval(q);
+        if (d > hc * 0.87f) continue;  // all outside
+        if (d < -hc * 1.5f) {
+          out.push_back({q, -d, -d, 0, false});
+          continue;
+        }
+        const int f = 4;
+        for (int c = 0; c < f; ++c)
+          for (int b = 0; b < f; ++b)
+            for (int a = 0; a < f; ++a) {
+              vec3 p = q + (vec3((float)a, (float)b, (float)c) - (f - 1) * 0.5f) * hf;
+              float e = m.eval(p);
+              if (e < -rmin) out.push_back({p, -e, -e, 0, false});
+            }
+        int mat = m.materialAt(q, nullptr, nullptr);
+        if (mat == DM_HORN || mat == DM_FRILL || mat == DM_SAIL || mat == DM_CREST) {
+          std::vector<Cand>& thin = mat == DM_HORN ? slabRod[(size_t)k] : slabSheet[(size_t)k];
+          const int f2 = 8;
+          for (int c = 0; c < f2; ++c)
+            for (int b = 0; b < f2; ++b)
+              for (int a = 0; a < f2; ++a) {
+                vec3 p = q + (vec3((float)a, (float)b, (float)c) - (f2 - 1) * 0.5f) * hf2;
+                float e = m.eval(p);
+                if (e < -rminThin) thin.push_back({p, -e, -e, 0, false});
+              }
+        }
+      }
+  });
+  // how far below the skin a ball b leaves the skin over a candidate (the skin is c.r from it;
+  // inside b, b's surface is sqrt(b.r^2 - d^2) away across the line between them)
+  auto gap = [](const vec3& p, float r, const Ball& b) {
+    float d = glm::length(p - b.c);
+    return d < b.r ? r - std::sqrt(b.r * b.r - d * d) : r + d - b.r;
+  };
+  // a max-heap on 'ext' (ties: the bigger ball, then the position, so that it is repeatable)
+  auto less = [](const Cand& a, const Cand& b) {
+    if (a.ext != b.ext) return a.ext < b.ext;
+    if (a.r != b.r) return a.r < b.r;
+    if (a.p.z != b.p.z) return a.p.z > b.p.z;
+    if (a.p.y != b.p.y) return a.p.y > b.p.y;
+    return a.p.x > b.p.x;
+  };
+  std::vector<Ball> out;
+  auto fill = [&](std::vector<std::vector<Cand>>& from, int budget, float smallest, float enough) {
+    std::vector<Cand> heap;
+    for (auto& s : from) heap.insert(heap.end(), s.begin(), s.end());
+    for (Cand& c : heap) c.seen = 0;
+    std::make_heap(heap.begin(), heap.end(), less);
+    int taken = 0;
+    while (!heap.empty() && taken < budget) {
+      std::pop_heap(heap.begin(), heap.end(), less);
+      Cand c = heap.back();
+      heap.pop_back();
+      if (c.seen < (int)out.size()) {  // stale: measure it against the newer balls and put it back
+        for (size_t i = (size_t)c.seen; i < out.size(); ++i) c.ext = std::min(c.ext, gap(c.p, c.r, out[i]));
+        c.seen = (int)out.size();
+        if (c.ext > enough) {
+          heap.push_back(c);
+          std::push_heap(heap.begin(), heap.end(), less);
+        }
+        continue;
+      }
+      if (c.ext <= enough) break;
+      // the field says how deep a point is only roughly (blends make it deeper than it is): the
+      // ball is trimmed to the nearest point of the skin along rays all round, and then waits
+      // its turn again
+      if (!c.trimmed) {
+        float r = c.r;
+        for (const vec3& d : dirs) {
+          float t = 0, last = 0;
+          while (t < r) {
+            float e = m.eval(c.p + d * t);
+            if (e >= 0.0f) {
+              float a = last, b = t;
+              for (int k = 0; k < 5; ++k) {
+                float mid = 0.5f * (a + b);
+                if (m.eval(c.p + d * mid) >= 0.0f) b = mid;
+                else a = mid;
+              }
+              r = std::min(r, a);
+              break;
+            }
+            last = t;
+            t += std::max(0.001f, -e * 0.5f);
+          }
+        }
+        r -= 0.0008f;
+        if (r < smallest) continue;
+        c.r = r;
+        c.trimmed = true;
+        c.ext = r;
+        for (const Ball& b : out) c.ext = std::min(c.ext, gap(c.p, r, b));
+        c.seen = (int)out.size();
+        if (c.ext > enough) {
+          heap.push_back(c);
+          std::push_heap(heap.begin(), heap.end(), less);
+        }
+        continue;
+      }
+      Vertex v;
+      v.pos = c.p;
+      m.skin(v);
+      int b1 = (int)std::floor(v.bones / 64.0f + 0.001f);
+      int b0 = (int)(v.bones - 64.0f * (float)b1 + 0.5f);
+      float w0 = v.mat - std::floor(v.mat + 0.0001f);
+      out.push_back({c.p, c.r, w0 >= 0.499f ? b0 : b1});
+      taken++;
+    }
+  };
+  fill(slab, most, rmin, 0.003f);
+  fill(slabRod, 200, rminThin, 0.002f);    // horns, the beak
+  fill(slabSheet, 120, rminThin, 0.004f);  // the frill, the sail, the crest
+  // in bone order, and each bone's in runs of 16 close together (split again and again across
+  // their longest side): the bounds of a run, or of a bone, tell whom it may touch
+  std::stable_sort(out.begin(), out.end(), [](const Ball& a, const Ball& b) { return a.bone < b.bone; });
+  for (size_t i = 0; i < out.size();) {
+    size_t j = i;
+    while (j < out.size() && out[j].bone == out[i].bone) ++j;
+    orderRuns(out, (int)i, (int)j);
+    i = j;
+  }
+  return out;
+}
+
 void buildLibrary(Library& lib, int quality, meshgen::BuildProgress* prog) {
   quality = std::max(0, std::min(3, quality));
   if (prog) {
@@ -1372,6 +1555,8 @@ void buildLibrary(Library& lib, int quality, meshgen::BuildProgress* prog) {
     vec3 d(0, 0, animalShift(kind));
     if (d.z != 0.0f) shiftAll(m, d);
     buildAsset(lib.asset[kind], m, toModel(kind, lo), toModel(kind, hi), quality, 0, 0u, pieceHeight(kind), pieceRadius(kind));
+    lib.bulk[kind] = fillBulk(m, toModel(kind, lo), toModel(kind, hi), kind <= D_KNIGHT ? 0.0055f : 0.008f,
+                              kind <= D_KNIGHT ? 240 : 400);
   };
   build(D_PAWN, raptorModel(), vec3(-0.11f, -0.005f, -0.52f), vec3(0.11f, 0.5f, 0.36f));
   tick("Hatching the raptors");

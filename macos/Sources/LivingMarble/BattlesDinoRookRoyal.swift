@@ -412,7 +412,8 @@ final class DSpinoSnatch: DBattle {
       a.ctl.crouch = approach(a.ctl.crouch, 0.1, dt * 2.0)
       a.ctl.headYaw = 0.55 * sin(pt * 15.0) * dSeg(pt, 0.2, 0.5)
       a.ctl.headPitch = 0.1 * sin(pt * 11.0)
-      held.update(a, v, pt, dt, 0.06 * dSeg(pt, 0.0, 0.3))
+      held.update(a, v, pt, dt)
+      held.grip(w, a, v)
       if fmod(pt, 0.3) < dt {
         let spray: vec3 = side * sin(pt * 15.0) + vec3(0, 0.3, 0)
         dBloodSpray(w, dMouthOf(a), spray, 18, 1.6)
@@ -425,7 +426,8 @@ final class DSpinoSnatch: DBattle {
         w.sound(.whoosh, 0.7, dMouthOf(a), 0.8)
       }
       if fling.swing(a, pt) {
-        held.update(a, v, pt + 1.25, dt, 0.06)
+        held.update(a, v, pt + 1.25, dt)
+        held.grip(w, a, v)
       } else if !letGo {
         letGo = true
         let out = fling.out
@@ -624,7 +626,8 @@ final class DRexCrush: DBattle {
       a.ctl.lean = approach(a.ctl.lean, -0.12, dt * 2.5)
       a.ctl.crouch = approach(a.ctl.crouch, 0.15, dt * 2.0)
       a.ctl.headYaw = 0.5 * sin(pt * 12.0) * dSeg(pt, 0.25, 0.5)
-      held.update(a, v, pt, dt, 0.1 * dSeg(pt, 0.0, 0.3))
+      held.update(a, v, pt, dt)
+      held.grip(w, a, v)
       if !held.lifted {  // a big one: its front hauled up
         v.tiltPivot = vec3(0, 0, -0.3)
         let pitch = angleAxis(-0.22 * dSeg(pt, 0.0, 0.4), vec3(1, 0, 0))
@@ -643,7 +646,8 @@ final class DRexCrush: DBattle {
         w.sound(.whoosh, 0.8, dMouthOf(a), 0.6)
       }
       if fling.swing(a, pt) {
-        held.update(a, v, pt + 1.35, dt, 0.1)
+        held.update(a, v, pt + 1.35, dt)
+        held.grip(w, a, v)
         if !held.lifted {  // (a big one: its front still hauled up)
           v.tiltPivot = vec3(0, 0, -0.3)
           v.tilt = angleAxis(-0.22, vec3(1, 0, 0)) * angleAxis(0.1 * sin(pt * 12), vec3(0, 0, 1))

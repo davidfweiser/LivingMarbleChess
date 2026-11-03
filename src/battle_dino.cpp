@@ -823,6 +823,11 @@ class DBattle : public BattleBase {
     int before = phase;
     bool done = BattleBase::update(w, dt);
     if (phase != before) first = true;
+    // the two of them are solid: whatever the moves, neither passes through the other
+    if (!done) {
+      w.solid(plan.mover);
+      if (plan.victim >= 0) w.solid(plan.victim);
+    }
     return done;
   }
 
@@ -1168,6 +1173,8 @@ class DRaptorPack : public DBattle {
     Actor& a = w.actors[plan.mover];
     Actor& v = w.actors[plan.victim];
     vec3 side(-dir.z, 0, dir.x);
+    for (int i = 0; i < 2; ++i)
+      if (mates[i] >= 0) w.solidPuppet(mates[i]);
     switch (phase) {
       case 0:
         shotExtra = 1.1f;
@@ -1851,8 +1858,13 @@ class DPteroTalons : public DBattle {
         a.yawTarget = faceAngle(flightDir);
         a.ctl.tuck = 1.0f;
         a.ctl.hover = 1.0f;
-        a.ctl.wings = 1.0f;
-        a.ctl.flap += dt * (u > 0.7f ? 16.0f : 4.0f);
+        // at the last moment the wings are thrown up and half folded (clear of the victim's
+        // body): the beat held at the top of an upstroke
+        float flare = seg(u, 0.5f, 0.85f);
+        a.ctl.wings = 1.0f - 0.5f * flare;
+        a.ctl.flap += dt * (u > 0.7f ? 16.0f : 4.0f) * (1.0f - flare);
+        float top = kPI * 0.5f + kTau * std::ceil((a.ctl.flap - kPI * 0.5f) / kTau);
+        a.ctl.flap = glm::mix(a.ctl.flap, top, flare);
         a.ctl.lean = -0.3f * u;
         a.ctl.jaw = 0.6f;
         brace(w, 1.0f);
@@ -1875,6 +1887,7 @@ class DPteroTalons : public DBattle {
         bool down = g.update(a, dt, false);
         float u = seg(pt, 0.0f, 0.55f);
         a.ctl.flap += dt * 13.0f;
+        a.ctl.wings = approach(a.ctl.wings, 1.0f, dt * 3.0f);  // (open again to come down)
         a.ctl.hover = 1.0f - seg(u, 0.4f, 1.0f);
         a.ctl.tuck = 1.0f;
         a.ctl.lean = -0.35f;
@@ -2613,30 +2626,40 @@ class DSpinoClaws : public DBattle {
   }
 };
 
-// Holding a victim in the jaws: a small one hangs from them, kicking; a big one is held
-// by the neck and wrenched about.
+// Holding a victim in the jaws: a small one hangs across them by its neck, kicking; a big
+// one is held by the neck and wrenched about.
 struct Held {
-  vec3 grab{0}, base{0};
-  float baseYaw = 0;
+  vec3 base{0}, from{0};
+  vec3 bite{0};  // where the jaws hold it: its neck (in its own model space, as it was seized)
+  float baseYaw = 0, fromYaw = 0, hold = 0;
   bool lifted = false;
   void take(Actor& a, Actor& v) {
-    grab = v.pos - mouthOf(a);
-    base = v.pos;
-    baseYaw = v.yaw;
+    base = from = v.pos;
+    baseYaw = fromYaw = v.yaw;
     lifted = isSmall(v);
+    if (lifted) baseYaw = a.yaw + kPI * 0.5f;  // (it hangs across the jaws, its head on one side)
+    bite = vec3(glm::inverse(v.model()) * glm::vec4(neckOf(v), 1.0f));
+    hold = 0;
   }
-  void update(Actor& a, Actor& v, float t, float dt, float lift) {
-    if (lifted) {
-      vec3 p = mouthOf(a) + grab;
-      p.y = std::max(0.0f, p.y + lift);
-      v.pos = p;
-      v.yaw = baseYaw + 0.9f * a.ctl.headYaw;
+  void update(Actor& a, Actor& v, float t, float dt) {
+    if (lifted) {  // it hangs from the jaws by its neck, kicking
+      hold += dt;
+      float k = glm::smoothstep(0.0f, 0.15f, hold);  // (taken up from where it stood)
+      v.yaw = fromYaw + wrapAngle(baseYaw + 0.9f * a.ctl.headYaw - fromYaw) * k;
       v.yawTarget = v.yaw;
       v.tiltPivot = vec3(0, v.height() / std::max(v.scale, 1e-3f) * 0.6f, 0);
       v.tilt = glm::angleAxis(0.35f * std::sin(t * 9.0f), vec3(0, 0, 1)) * glm::angleAxis(0.3f, vec3(1, 0, 0));
+      v.pos = vec3(0);
+      vec3 p = mouthOf(a) - vec3(v.model() * glm::vec4(bite, 1.0f));
+      p.y = std::max(0.0f, p.y);
+      v.pos = glm::mix(from, p, k);
       v.ctl.gait += dt * 14.0f;
       v.ctl.stride = 1.0f;
       v.ctl.dead = 0.25f;
+      if (isPtero(v)) {  // its wings drawn in, fluttering
+        v.ctl.wings = approach(v.ctl.wings, 0.2f, dt * 4.0f);
+        v.ctl.flap += dt * 12.0f;
+      }
     } else {
       vec3 side(std::cos(v.yaw), 0, -std::sin(v.yaw));
       v.pos = base + side * 0.05f * std::sin(t * 12.0f);
@@ -2649,6 +2672,8 @@ struct Held {
     v.tremble = 0.5f;
     v.idleWeight = 0;
   }
+  // while it holds on, its jaws (and head) may sink into the victim; the rest of them are solid
+  void grip(World& w, const Actor& a, const Actor& v) const { w.grip(a.id, v.id, headBone(a), dn::TH_JAW); }
 };
 
 // The fling of something held in the jaws: the head drawn back to one side, then swung hard
@@ -2729,7 +2754,8 @@ class DSpinoSnatch : public DBattle {
         a.ctl.crouch = approach(a.ctl.crouch, 0.1f, dt * 2.0f);
         a.ctl.headYaw = 0.55f * std::sin(pt * 15.0f) * seg(pt, 0.2f, 0.5f);
         a.ctl.headPitch = 0.1f * std::sin(pt * 11.0f);
-        held.update(a, v, pt, dt, 0.06f * seg(pt, 0.0f, 0.3f));
+        held.update(a, v, pt, dt);
+        held.grip(w, a, v);
         if (std::fmod(pt, 0.3f) < dt) {
           bloodSpray(w, mouthOf(a), side * std::sin(pt * 15.0f) + vec3(0, 0.3f, 0), 18, 1.6f);
           w.sound(SFX_TEAR, 0.4f, mouthOf(a), w.fx.rnd(1.0f, 1.2f));
@@ -2743,7 +2769,8 @@ class DSpinoSnatch : public DBattle {
           w.sound(SFX_WHOOSH, 0.7f, mouthOf(a), 0.8f);
         }
         if (fling.swing(a, pt)) {
-          held.update(a, v, pt + 1.25f, dt, 0.06f);
+          held.update(a, v, pt + 1.25f, dt);
+          held.grip(w, a, v);
         } else if (!released) {
           released = true;
           if (held.lifted) {
@@ -2957,7 +2984,8 @@ class DRexCrush : public DBattle {
         a.ctl.lean = approach(a.ctl.lean, -0.12f, dt * 2.5f);
         a.ctl.crouch = approach(a.ctl.crouch, 0.15f, dt * 2.0f);
         a.ctl.headYaw = 0.5f * std::sin(pt * 12.0f) * seg(pt, 0.25f, 0.5f);
-        held.update(a, v, pt, dt, 0.1f * seg(pt, 0.0f, 0.3f));
+        held.update(a, v, pt, dt);
+        held.grip(w, a, v);
         if (!held.lifted) {  // a big one: its front hauled up
           v.tiltPivot = vec3(0, 0, -0.3f);
           v.tilt = glm::angleAxis(-0.22f * seg(pt, 0.0f, 0.4f), vec3(1, 0, 0)) *
@@ -2976,7 +3004,8 @@ class DRexCrush : public DBattle {
           w.sound(SFX_WHOOSH, 0.8f, mouthOf(a), 0.6f);
         }
         if (fling.swing(a, pt)) {
-          held.update(a, v, pt + 1.35f, dt, 0.1f);
+          held.update(a, v, pt + 1.35f, dt);
+          held.grip(w, a, v);
           if (!held.lifted) {  // (a big one: its front still hauled up)
             v.tiltPivot = vec3(0, 0, -0.3f);
             v.tilt = glm::angleAxis(-0.22f, vec3(1, 0, 0)) * glm::angleAxis(0.1f * std::sin(pt * 12.0f), vec3(0, 0, 1));

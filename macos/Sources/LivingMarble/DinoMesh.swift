@@ -1006,6 +1006,226 @@ extension Dino {
   }
 
   // ---------------------------------------------------------------------------
+  /// Orders a bone's balls in runs of Dino.bulkRun lying close together (split again and again
+  /// across their longest side, a whole number of runs on one side).
+  private static func orderRuns(_ v: inout [DinoBall], _ first: Int, _ end: Int) {
+    let run = Dino.bulkRun
+    let n = end - first
+    if n <= run { return }
+    var lo = vec3(1e9), hi = vec3(-1e9)
+    for i in first..<end {
+      lo = simd_min(lo, v[i].c)
+      hi = simd_max(hi, v[i].c)
+    }
+    let e = hi - lo
+    let ax = e.x >= e.y && e.x >= e.z ? 0 : (e.y >= e.z ? 1 : 2)
+    let mid = first + run * ((n + 2 * run - 1) / (2 * run))
+    v[first..<end].sort { $0.c[ax] < $1.c[ax] }
+    orderRuns(&v, first, mid)
+    orderRuns(&v, mid, end)
+  }
+
+  /// The bulk of an animal: balls packed inside its body, each riding on the bone its middle
+  /// is skinned to (rest-pose model space, in bone order). Every candidate is a point inside
+  /// with the biggest ball that fits there; the one over which the balls already taken leave
+  /// the skin furthest out goes next, until they leave none of it more than a few millimetres
+  /// out (or there are 'most' of them). Then the same, with smaller balls, for the horns and
+  /// the beak, and for the frill, the sail and the crest (thin, but they must not pass through
+  /// anyone either). Thin skin, wings, claws and teeth are left out.
+  private static func fillBulk(_ m: Model, _ lo: vec3, _ hi: vec3, rmin: Float, most: Int) -> [DinoBall] {
+    let hc: Float = 0.02, hf: Float = 0.005, hf2: Float = 0.0025, rminThin: Float = 0.0025
+    struct Cand {
+      var p: vec3
+      var r: Float
+      var ext: Float  // how far below the skin over it the balls taken so far leave it (as of 'seen' of them)
+      var seen: Int
+      var trimmed: Bool
+    }
+    // rays all round (an icosahedron and the middles of its edges)
+    let g: Float = 1.618034
+    let ico: [vec3] = [vec3(-1, g, 0), vec3(1, g, 0), vec3(-1, -g, 0), vec3(1, -g, 0), vec3(0, -1, g), vec3(0, 1, g),
+                       vec3(0, -1, -g), vec3(0, 1, -g), vec3(g, 0, -1), vec3(g, 0, 1), vec3(-g, 0, -1), vec3(-g, 0, 1)]
+    var dirs = ico.map { normalize($0) }
+    for i in 0..<12 {
+      for j in (i + 1)..<12 where length(ico[i] - ico[j]) < 2.1 { dirs.append(normalize(ico[i] + ico[j])) }
+    }
+    let nx = max(1, Int(ceil((hi.x - lo.x) / hc)))
+    let ny = max(1, Int(ceil((hi.y - lo.y) / hc)))
+    let nz = max(1, Int(ceil((hi.z - lo.z) / hc)))
+    // per slab of cells: the candidates of the body, of the horns and beak, of the frill, sail and crest
+    let slab = UnsafeMutablePointer<[Cand]>.allocate(capacity: nz * 3)
+    slab.initialize(repeating: [], count: nz * 3)
+    defer {
+      slab.deinitialize(count: nz * 3)
+      slab.deallocate()
+    }
+    // the coarse cells: deep inside, a cell's middle will do; near the skin, it is sampled finely
+    // (and more finely still where it is horn, frill, sail or crest)
+    parallelFor(nz) { k in
+      var out: [Cand] = []
+      var rod: [Cand] = []
+      var sheet: [Cand] = []
+      for j in 0..<ny {
+        for i in 0..<nx {
+          let q = lo + (vec3(Float(i), Float(j), Float(k)) + vec3(0.5)) * hc
+          let d = m.eval(q)
+          if d > hc * 0.87 { continue }  // all outside
+          if d < -hc * 1.5 {
+            out.append(Cand(p: q, r: -d, ext: -d, seen: 0, trimmed: false))
+            continue
+          }
+          let f = 4
+          for c in 0..<f {
+            for b in 0..<f {
+              for a in 0..<f {
+                let p = q + (vec3(Float(a), Float(b), Float(c)) - vec3(Float(f - 1) * 0.5)) * hf
+                let e = m.eval(p)
+                if e < -rmin { out.append(Cand(p: p, r: -e, ext: -e, seen: 0, trimmed: false)) }
+              }
+            }
+          }
+          let mat = m.materialAt(q, nil).mat
+          if mat == DMat.horn || mat == DMat.frill || mat == DMat.sail || mat == DMat.crest {
+            let f2 = 8
+            for c in 0..<f2 {
+              for b in 0..<f2 {
+                for a in 0..<f2 {
+                  let p = q + (vec3(Float(a), Float(b), Float(c)) - vec3(Float(f2 - 1) * 0.5)) * hf2
+                  let e = m.eval(p)
+                  if e < -rminThin {
+                    let cand = Cand(p: p, r: -e, ext: -e, seen: 0, trimmed: false)
+                    if mat == DMat.horn { rod.append(cand) } else { sheet.append(cand) }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      slab[k] = out
+      slab[nz + k] = rod
+      slab[2 * nz + k] = sheet
+    }
+    // how far below the skin a ball b leaves the skin over a candidate (the skin is r from it;
+    // inside b, b's surface is sqrt(b.r^2 - d^2) away across the line between them)
+    func gap(_ p: vec3, _ r: Float, _ b: DinoBall) -> Float {
+      let d = length(p - b.c)
+      return d < b.r ? r - (b.r * b.r - d * d).squareRoot() : r + d - b.r
+    }
+    // a max-heap on 'ext' (ties: the bigger ball, then the position, so that it is repeatable)
+    func less(_ a: Cand, _ b: Cand) -> Bool {
+      if a.ext != b.ext { return a.ext < b.ext }
+      if a.r != b.r { return a.r < b.r }
+      if a.p.z != b.p.z { return a.p.z > b.p.z }
+      if a.p.y != b.p.y { return a.p.y > b.p.y }
+      return a.p.x > b.p.x
+    }
+    func siftDown(_ h: inout [Cand], _ start: Int) {
+      var i = start
+      while true {
+        let l = 2 * i + 1, r = l + 1
+        var top = i
+        if l < h.count && less(h[top], h[l]) { top = l }
+        if r < h.count && less(h[top], h[r]) { top = r }
+        if top == i { return }
+        h.swapAt(i, top)
+        i = top
+      }
+    }
+    func push(_ h: inout [Cand], _ c: Cand) {
+      h.append(c)
+      var i = h.count - 1
+      while i > 0 {
+        let parent = (i - 1) / 2
+        if !less(h[parent], h[i]) { return }
+        h.swapAt(i, parent)
+        i = parent
+      }
+    }
+    func pop(_ h: inout [Cand]) -> Cand {
+      let top = h[0]
+      let last = h.removeLast()
+      if !h.isEmpty {
+        h[0] = last
+        siftDown(&h, 0)
+      }
+      return top
+    }
+    var out: [DinoBall] = []
+    func fill(_ kind: Int, _ budget: Int, _ smallest: Float, _ enough: Float) {
+      var heap: [Cand] = []
+      for k in 0..<nz { heap.append(contentsOf: slab[kind * nz + k]) }
+      if heap.isEmpty { return }
+      for i in stride(from: heap.count / 2 - 1, through: 0, by: -1) { siftDown(&heap, i) }
+      var taken = 0
+      while !heap.isEmpty && taken < budget {
+        var c = pop(&heap)
+        if c.seen < out.count {  // stale: measure it against the newer balls and put it back
+          for i in c.seen..<out.count { c.ext = min(c.ext, gap(c.p, c.r, out[i])) }
+          c.seen = out.count
+          if c.ext > enough { push(&heap, c) }
+          continue
+        }
+        if c.ext <= enough { break }
+        // the field says how deep a point is only roughly (blends make it deeper than it is):
+        // the ball is trimmed to the nearest point of the skin along rays all round, and then
+        // waits its turn again
+        if !c.trimmed {
+          var r = c.r
+          for d in dirs {
+            var t: Float = 0, last: Float = 0
+            while t < r {
+              let e = m.eval(c.p + d * t)
+              if e >= 0 {
+                var a = last, b = t
+                for _ in 0..<5 {
+                  let mid = 0.5 * (a + b)
+                  if m.eval(c.p + d * mid) >= 0 { b = mid } else { a = mid }
+                }
+                r = min(r, a)
+                break
+              }
+              last = t
+              t += max(0.001, -e * 0.5)
+            }
+          }
+          r -= 0.0008
+          if r < smallest { continue }
+          c.r = r
+          c.trimmed = true
+          c.ext = r
+          for b in out { c.ext = min(c.ext, gap(c.p, r, b)) }
+          c.seen = out.count
+          if c.ext > enough { push(&heap, c) }
+          continue
+        }
+        var v = Vertex(pos: c.p, nrm: vec3(0, 1, 0))
+        m.skin(&v)
+        let b1 = Int(floor(v.bones / 64 + 0.001))
+        let b0 = Int(v.bones - 64 * Float(b1) + 0.5)
+        let w0 = v.mat - floor(v.mat + 0.0001)
+        out.append(DinoBall(c: c.p, r: c.r, bone: w0 >= 0.499 ? b0 : b1))
+        taken += 1
+      }
+    }
+    fill(0, most, rmin, 0.003)
+    fill(1, 200, rminThin, 0.002)  // horns, the beak
+    fill(2, 120, rminThin, 0.004)  // the frill, the sail, the crest
+    // in bone order, and each bone's in runs lying close together: the bounds of a run, or of a
+    // bone, tell whom it may touch
+    out = out.enumerated().sorted { $0.element.bone != $1.element.bone ? $0.element.bone < $1.element.bone : $0.offset < $1.offset }
+      .map { $0.element }
+    var i = 0
+    while i < out.count {
+      var j = i
+      while j < out.count && out[j].bone == out[i].bone { j += 1 }
+      orderRuns(&out, i, j)
+      i = j
+    }
+    return out
+  }
+
+  // ---------------------------------------------------------------------------
   /// quality: 0 = fast, 1 = normal, 2 = ultra, 3 = extreme.
   static func buildLibrary(_ lib: DinoLibrary, quality qIn: Int, progress prog: BuildProgress?) {
     let quality = max(0, min(3, qIn))
@@ -1027,6 +1247,10 @@ extension Dino {
       buildAsset(&lib.asset[kind], m, toModel(kind, lo) - d, toModel(kind, hi) - d, quality, 0, 0, pieceHeight(kind),
                  pieceRadius(kind))
       if d.z != 0 { shiftAll(&lib.asset[kind], d) }
+      // its bulk (found where the model stands, then moved by d like the meshes)
+      let small = kind <= DAsset.knight
+      lib.bulk[kind] = fillBulk(m, toModel(kind, lo) - d, toModel(kind, hi) - d, rmin: small ? 0.0055 : 0.008,
+                                most: small ? 240 : 400).map { DinoBall(c: $0.c + d, r: $0.r, bone: $0.bone) }
     }
     build(DAsset.pawn, raptorModel(), vec3(-0.11, -0.005, -0.52), vec3(0.11, 0.5, 0.36))
     tick("Hatching the raptors")

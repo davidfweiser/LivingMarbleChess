@@ -160,6 +160,7 @@ final class DRaptorPack: DBattle {
     let a = w.actors[plan.mover]
     let v = w.actors[plan.victim]
     let side = vec3(-dir.z, 0, dir.x)
+    for i in 0..<2 where mates[i] >= 0 { w.solidPuppet(mates[i]) }
     switch phase {
     case 0:
       shotExtra = 1.1
@@ -798,8 +799,13 @@ final class DPteroTalons: DBattle {
       a.yawTarget = faceAngle(flightDir)
       a.ctl.tuck = 1.0
       a.ctl.hover = 1.0
-      a.ctl.wings = 1.0
-      a.ctl.flap += dt * (u > 0.7 ? 16.0 : 4.0)
+      // at the last moment the wings are thrown up and half folded (clear of the victim's
+      // body): the beat held at the top of an upstroke
+      let flare = dSeg(u, 0.5, 0.85)
+      a.ctl.wings = 1.0 - 0.5 * flare
+      a.ctl.flap += dt * (u > 0.7 ? 16.0 : 4.0) * (1.0 - flare)
+      let top: Float = kPI * 0.5 + kTau * ceil((a.ctl.flap - kPI * 0.5) / kTau)
+      a.ctl.flap = mix(a.ctl.flap, top, flare)
       a.ctl.lean = -0.3 * u
       a.ctl.jaw = 0.6
       brace(w, 1.0)
@@ -820,6 +826,7 @@ final class DPteroTalons: DBattle {
       let down = g.update(a, dt, false)
       let u = dSeg(pt, 0.0, 0.55)
       a.ctl.flap += dt * 13.0
+      a.ctl.wings = approach(a.ctl.wings, 1.0, dt * 3.0)  // (open again to come down)
       a.ctl.hover = 1.0 - dSeg(u, 0.4, 1.0)
       a.ctl.tuck = 1.0
       a.ctl.lean = -0.35
