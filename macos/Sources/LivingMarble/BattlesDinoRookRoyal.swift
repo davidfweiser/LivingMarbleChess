@@ -369,7 +369,7 @@ final class DSpinoClaws: DBattle {
 final class DSpinoSnatch: DBattle {
   private var held = DHeld()
   private var fling = DFling()
-  private var bit = false, released = false
+  private var bit = false, letGo = false  // C++ `released`, which BattleBase already names
   private var lunge0 = vec3(0)
 
   override func step(_ w: World, _ dt: Float) -> Bool {
@@ -426,8 +426,8 @@ final class DSpinoSnatch: DBattle {
       }
       if fling.swing(a, pt) {
         held.update(a, v, pt + 1.25, dt, 0.06)
-      } else if !released {
-        released = true
+      } else if !letGo {
+        letGo = true
         let out = fling.out
         if held.lifted {
           let vel: vec3 = out * 2.4 + dir * 0.5 + vec3(0, 2.2, 0)
@@ -441,8 +441,8 @@ final class DSpinoSnatch: DBattle {
         w.slowmo(0.35, 0.5)
         w.shake(0.2)
       }
-      a.ctl.jaw = released ? 0.5 : 0.12
-      if released && victimDown(w, dt) && pt > 0.6 { next() }
+      a.ctl.jaw = letGo ? 0.5 : 0.12
+      if letGo && victimDown(w, dt) && pt > 0.6 { next() }
     case 5:
       if first { dCallOf(w, a) }
       triumph(w, pt / 1.2)
@@ -578,7 +578,7 @@ final class DSpinoTail: DBattle {
 final class DRexCrush: DBattle {
   private var held = DHeld()
   private var fling = DFling()
-  private var bit = false, released = false
+  private var bit = false, letGo = false  // C++ `released`, which BattleBase already names
   private var lunge0 = vec3(0)
 
   override func step(_ w: World, _ dt: Float) -> Bool {
@@ -648,8 +648,8 @@ final class DRexCrush: DBattle {
           v.tiltPivot = vec3(0, 0, -0.3)
           v.tilt = angleAxis(-0.22, vec3(1, 0, 0)) * angleAxis(0.1 * sin(pt * 12), vec3(0, 0, 1))
         }
-      } else if !released {
-        released = true
+      } else if !letGo {
+        letGo = true
         let out = fling.out
         if held.lifted {
           let vel: vec3 = out * 2.8 + dir * 0.8 + vec3(0, 2.4, 0)
@@ -663,8 +663,8 @@ final class DRexCrush: DBattle {
         w.slowmo(0.35, 0.5)
         w.shake(0.3)
       }
-      a.ctl.jaw = released ? 0.5 : 0.15
-      if released && victimDown(w, dt) && pt > 0.7 { next() }
+      a.ctl.jaw = letGo ? 0.5 : 0.15
+      if letGo && victimDown(w, dt) && pt > 0.7 { next() }
     case 5:  // the roar over its kill
       if first {
         dCallOf(w, a)
