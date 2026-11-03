@@ -864,6 +864,15 @@ void fightShot(World& w, const vec3& A, const vec3& V, float heightBias, float e
 class RBattle : public BattleBase {
  public:
   using BattleBase::BattleBase;
+  // Staged clears 'first' after every step (so on its own it only holds for the very
+  // first frame); the Romans' phases set themselves up with it, so it is raised
+  // again for the first frame of each new phase
+  bool update(World& w, float dt) override {
+    int before = phase;
+    bool done = BattleBase::update(w, dt);
+    if (phase != before) first = true;
+    return done;
+  }
 
  protected:
   Walker walker;
