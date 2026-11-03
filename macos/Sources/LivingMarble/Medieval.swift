@@ -138,6 +138,12 @@ struct MControls {
   var hover: Float = 0      // the base floats this much higher than at rest
   var spin: Float = 0       // saucer light ring, throne fans (radians)
   var hatch: Float = 0      // saucer belly hatch / tripod eye opening (0..1)
+  // the Romans (Roman.swift)
+  var draw: Float = 0       // the blade drawn from its scabbard into the right hand (0..1)
+  var cape: Float = 0       // the cloak streams out behind (0..1)
+  var dead: Float = 0       // limp: a body falling and lying still (0..1)
+  var rider = vec3(0)       // the charioteer leaping out of his car (offset, model units)
+  var riderSpin: Float = 0  // ... and somersaulting (radians)
 }
 
 struct MPose {
@@ -276,7 +282,7 @@ enum DJ {
 // Skeletons and rest-pose queries
 // ---------------------------------------------------------------------------
 enum Medieval {
-  static let maxBones = 20
+  static let maxBones = 24
 
   private static let pawnSkel = HumanJ.pawn().skeleton()
   private static let bishopSkel = HumanJ.seated(MAsset.bishop).skeleton()

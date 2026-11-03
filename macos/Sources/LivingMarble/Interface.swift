@@ -22,7 +22,7 @@ final class GameModel {
   var gfxPreset = 2
   var depthOfField = false  // blur what the camera is not focused on (High and Ultra only)
   var savePower = true  // fewer frames while the board is at rest and in Low Power Mode
-  var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens (what the picker shows: the set being switched to)
+  var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans (what the picker shows: the set being switched to)
   var exposure: Float = 1
   var showUI = true
   var showHelp = false
@@ -50,6 +50,8 @@ final class GameModel {
   var medievalProgress: Double = 0
   var alienBuilding = false  // ... and the aliens
   var alienProgress: Double = 0
+  var romanBuilding = false  // ... and the Romans
+  var romanProgress: Double = 0
   var screenshotsSaved = 0  // counts saved screenshots (the touch interface confirms each)
 
   /// The frame-rate readout: "120 fps", or "30 fps (at rest)" while Save Power holds it down.
@@ -293,6 +295,7 @@ private struct ControlPanel: View {
         Text("Living Marble").tag(0)
         Text("Medieval").tag(1)
         Text("Aliens").tag(2)
+        Text("Romans").tag(3)
       }
       if model.medievalBuilding {
         Text("Raising the medieval army... \(Int(model.medievalProgress * 100))%")
@@ -301,6 +304,11 @@ private struct ControlPanel: View {
       }
       if model.alienBuilding {
         Text("The aliens are landing... \(Int(model.alienProgress * 100))%")
+          .font(.system(size: 12))
+          .foregroundStyle(Palette.dim)
+      }
+      if model.romanBuilding {
+        Text("Mustering the legions... \(Int(model.romanProgress * 100))%")
           .font(.system(size: 12))
           .foregroundStyle(Palette.dim)
       }

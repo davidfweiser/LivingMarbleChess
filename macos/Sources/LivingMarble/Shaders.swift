@@ -77,11 +77,12 @@ struct DrawU {
   float crack;
   float heat;
   float groundAO;
-  int mat;           // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass
-  int team;          // medieval / aliens: 0 white army, 1 black army
+  int mat;           // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass, 7 Roman
+  int team;          // medieval / aliens / Romans: 0 white army, 1 black army
   int boneCount;     // > 0: skinned
   float stone;       // medieval: turned to salt
   float ghost;       // > 0: a translucent ghost (its opacity)
+  float interior;    // Romans: fresh fracture faces show 0 splintered wood, 1 flesh
 };
 
 // board-only parameters (occluders, rings and the 8x8 state live in their own buffers)
@@ -677,6 +678,167 @@ void alienSurface(int id, bool black, float3 o, float3 on, float aux, float3 tex
   }
 }
 
+// The Romans. The white legion wears ivory and crimson over bright steel and
+// bronze, the black legion black and midnight blue over blackened steel.
+void romanSurface(int id, bool black, float3 o, float3 on, float aux, float interior, float3 texOffset, float3 V,
+                  texture3d<float> noise, thread float3& albedo, thread float& rough, thread float& metal,
+                  thread float& wrap, thread float3& sss, thread float3& N, thread float3& emissive,
+                  thread float& specOcc) {
+  float n1 = noise.sample(sNoise, o * 3.1 + texOffset * 0.13).r;
+  float n2 = noise.sample(sNoise, o * 11.0 + texOffset * 0.07).g;
+  float n3 = noise.sample(sNoise, o * 37.0).b;
+  float NoV = saturate(dot(N, V));
+  if (id == 0) {  // steel: polished plates with fine scratches (blackened for the black legion)
+    float scratch = noise.sample(sNoise, float3(o.x * 90.0, o.y * 4.0, o.z * 90.0)).r;
+    albedo = black ? float3(0.13, 0.13, 0.14) : float3(0.70, 0.70, 0.72);
+    albedo *= 0.86 + 0.18 * n1 + 0.06 * scratch;
+    metal = 1.0;
+    rough = (black ? 0.3 : 0.21) + 0.1 * n2 + 0.06 * scratch;
+  } else if (id == 1) {  // bronze
+    albedo = (black ? float3(0.42, 0.27, 0.15) : float3(0.86, 0.58, 0.31)) * (0.85 + 0.2 * n1);
+    albedo = mix(albedo, float3(0.25, 0.33, 0.24), smoothstep(0.62, 0.8, n2) * 0.35);  // a little verdigris
+    metal = 1.0;
+    rough = 0.26 + 0.12 * n2;
+  } else if (id == 2) {  // gold
+    albedo = float3(1.0, 0.75, 0.33) * (0.9 + 0.15 * n1);
+    metal = 1.0;
+    rough = 0.17 + 0.08 * n2;
+  } else if (id == 3 || id == 4 || id == 17 || id == 18) {  // wool tunics and cloaks, purple, the stola
+    float3 base;
+    if (id == 3) base = black ? float3(0.05, 0.045, 0.045) : float3(0.80, 0.76, 0.66);
+    else if (id == 4) base = black ? float3(0.03, 0.045, 0.12) : float3(0.55, 0.045, 0.04);
+    else if (id == 17) base = black ? float3(0.1, 0.015, 0.09) : float3(0.21, 0.025, 0.17);
+    else base = black ? float3(0.07, 0.065, 0.07) : float3(0.88, 0.86, 0.80);
+    float weave = 0.92 + 0.08 * sin(o.x * 2300.0 + o.z * 900.0) * sin(o.y * 2300.0);
+    float fold = noise.sample(sNoise, float3(o.x * 6.0, o.y * 1.5, o.z * 6.0) + texOffset * 0.05).r;
+    albedo = base * (0.8 + 0.3 * n1) * weave * (0.85 + 0.3 * fold);
+    rough = id == 17 ? 0.6 : 0.85;
+    wrap = 0.35;
+    emissive += base * pow(1.0 - NoV, 3.0) * (id == 17 ? 0.35 : 0.22);  // the sheen of cloth
+    specOcc = 0.5;
+  } else if (id == 5) {  // horsehair crest
+    float strand = noise.sample(sNoise, float3(o.x * 80.0, o.y * 30.0, o.z * 9.0)).r;
+    albedo = (black ? float3(0.03, 0.028, 0.03) : float3(0.62, 0.05, 0.035)) * (0.6 + 0.7 * strand);
+    rough = black ? 0.35 : 0.5;
+    wrap = 0.3;
+  } else if (id == 6) {  // skin: a tone per figure, sun-browned
+    float h = hash13(floor(texOffset * 2.0) + 0.37);
+    float3 tone = mix(float3(0.66, 0.46, 0.34), float3(0.42, 0.27, 0.18), h);
+    albedo = tone * (0.92 + 0.12 * n1);
+    rough = 0.55;
+    wrap = 0.45;
+    sss = float3(1.0, 0.4, 0.25);
+  } else if (id == 7) {  // hair: dark, mostly
+    float h = hash13(floor(texOffset * 3.0) + 0.5);
+    float3 c = h < 0.45 ? float3(0.05, 0.035, 0.025) : (h < 0.8 ? float3(0.17, 0.09, 0.04) : float3(0.42, 0.40, 0.38));
+    float strand = noise.sample(sNoise, float3(o.x * 60.0, o.y * 9.0, o.z * 60.0)).r;
+    albedo = c * (0.7 + 0.5 * strand);
+    rough = 0.5;
+  } else if (id == 8) {  // leather
+    albedo = (black ? float3(0.09, 0.06, 0.045) : float3(0.36, 0.21, 0.10)) * (0.75 + 0.4 * n1);
+    rough = 0.48 + 0.15 * n2;
+  } else if (id == 9) {  // oiled wood (shafts, the chariot)
+    float g = noise.sample(sNoise, float3(o.x * 9.0, o.y * 1.3, o.z * 9.0) + texOffset * 0.1).r;
+    float ring = abs(fract(g * 7.0) - 0.5) * 2.0;
+    float3 base = black ? float3(0.11, 0.07, 0.045) : float3(0.50, 0.33, 0.18);
+    albedo = base * (0.75 + 0.35 * ring + 0.15 * n2);
+    rough = 0.42 + 0.1 * n3;
+  } else if (id == 10) {  // rough-sawn timber: weathered planks with dark seams and nail heads
+    float3 an = abs(on);
+    float across = an.x > an.z ? o.z : o.x;
+    float plank = o.y / 0.043;
+    float seam = 1.0 - smoothstep(0.0, 0.07, min(fract(plank), 1.0 - fract(plank)));
+    float id2 = floor(plank);
+    float g = noise.sample(sNoise, float3(across * 2.0, o.y * 26.0, across * 0.5 + id2 * 3.1)).r;
+    float grain = abs(fract(g * 6.0) - 0.5) * 2.0;
+    float3 base = black ? float3(0.12, 0.09, 0.07) : float3(0.42, 0.31, 0.2);
+    albedo = base * (0.7 + 0.25 * grain + 0.25 * hash13(float3(id2, 1.0, 7.0)) + 0.15 * n1);
+    albedo *= 1.0 - 0.6 * seam * step(an.y, 0.8);
+    float nail = 1.0 - smoothstep(0.004, 0.007,
+                                  length(float2(fract(across / 0.11) - 0.5, fract(plank) - 0.5) * float2(0.11, 0.043)));
+    albedo = mix(albedo, float3(0.05, 0.045, 0.04), nail * step(an.y, 0.8));
+    rough = 0.8 + 0.1 * n2;
+    N = normalize(N + (float3(n2, n3, n1) - 0.5) * 0.25);
+    specOcc = 0.6;
+  } else if (id == 11) {  // the painted face of a scutum: semi-gloss, scuffed at the edges
+    float3 base = black ? float3(0.04, 0.04, 0.045) : float3(0.56, 0.05, 0.04);
+    float wear = smoothstep(0.6, 0.85, n2);
+    albedo = mix(base * (0.85 + 0.2 * n1), black ? float3(0.2, 0.17, 0.14) : float3(0.42, 0.3, 0.2), wear * 0.5);
+    rough = 0.35 + 0.25 * wear;
+  } else if (id == 12) {  // horse coat
+    if (black) {
+      albedo = float3(0.04, 0.034, 0.03) * (0.8 + 0.4 * n1);
+      rough = 0.36;
+    } else {
+      float dap = smoothstep(0.45, 0.62, noise.sample(sNoise, o * 7.0 + texOffset * 0.1).g);
+      albedo = mix(float3(0.74, 0.72, 0.69), float3(0.5, 0.48, 0.46), dap * 0.5) * (0.92 + 0.1 * n2);
+      rough = 0.48;
+    }
+    wrap = 0.2;
+  } else if (id == 13) {  // mane and tail
+    float strand = noise.sample(sNoise, float3(o.x * 70.0, o.y * 6.0, o.z * 70.0)).r;
+    albedo = (black ? float3(0.025, 0.022, 0.02) : float3(0.82, 0.8, 0.76)) * (0.65 + 0.6 * strand);
+    rough = 0.5;
+  } else if (id == 14) {  // wet rawhide, stretched and nailed
+    float spot = smoothstep(0.5, 0.7, noise.sample(sNoise, o * 5.0 + texOffset * 0.1).r);
+    albedo = (black ? float3(0.17, 0.12, 0.09) : float3(0.52, 0.39, 0.26)) * (0.75 + 0.35 * n1) * (1.0 - 0.35 * spot);
+    rough = 0.4 + 0.2 * n2;
+    wrap = 0.25;
+    N = normalize(N + (float3(n1, n2, n3) - 0.5) * 0.3);
+  } else if (id == 15) {  // dark iron, a little rusty
+    albedo = float3(0.08, 0.075, 0.075) * (0.8 + 0.5 * n1);
+    albedo = mix(albedo, float3(0.2, 0.08, 0.035), smoothstep(0.55, 0.8, n2) * 0.6);
+    rough = 0.55 + 0.2 * n3;
+    metal = 0.75;
+  } else if (id == 16) {  // rope
+    float twist = sin((o.x + o.y + o.z) * 900.0);
+    albedo = float3(0.55, 0.45, 0.3) * (0.75 + 0.2 * twist + 0.2 * n1);
+    rough = 0.9;
+  } else if (id == 19 || id == 25) {  // blood, wine: dark, wet and glossy
+    float3 base = id == 19 ? float3(0.13, 0.002, 0.002) : float3(0.12, 0.0, 0.04);
+    albedo = base * (0.75 + 0.35 * n1);
+    rough = 0.1 + 0.08 * n2;
+    wrap = 0.2;
+    sss = float3(0.25, 0.0, 0.0);
+    specOcc = 1.0;
+  } else if (id == 20) {  // the dark inside
+    albedo = float3(0.012, 0.01, 0.009);
+    rough = 0.95;
+    specOcc = 0.0;
+  } else if (id == 21) {  // mail: little rings
+    albedo = black ? float3(0.14, 0.14, 0.15) : float3(0.6, 0.6, 0.62);
+    metal = 1.0;
+    rough = 0.3;
+    float2 q = float2(o.x + o.z, o.y) / 0.0065;
+    q.x += 0.5 * gmod(floor(q.y), 2.0);
+    float2 f = fract(q) - 0.5;
+    float rr = 1.0 - smoothstep(0.06, 0.16, abs(length(f) - 0.32));
+    albedo *= 0.35 + 0.75 * rr;
+    rough = mix(0.6, rough, rr);
+    N = normalize(N + float3(f.x, 0.0, f.y) * rr * 0.6);
+  } else if (id == 22 || id == 23) {  // a lion's fur, and his mane
+    float strand = noise.sample(sNoise, float3(o.x * 50.0, o.y * 50.0, o.z * 12.0)).r;
+    float3 base = id == 22 ? float3(0.66, 0.47, 0.25) : float3(0.34, 0.19, 0.08);
+    albedo = base * (0.75 + 0.35 * n1) * (0.8 + 0.3 * strand);
+    rough = 0.75;
+    wrap = 0.35;
+  } else if (id == 24) {  // teeth, claws
+    albedo = float3(0.88, 0.84, 0.72) * (0.9 + 0.1 * n1);
+    rough = 0.3;
+  } else if (id == 26) {  // eyes
+    albedo = float3(0.03, 0.025, 0.02);
+    rough = 0.08;
+  }
+  // fresh fracture faces: splintered wood, or flesh
+  if (aux > 0.0) {
+    float3 broken = interior > 0.5 ? float3(0.32, 0.02, 0.02) * (0.7 + 0.5 * n3) : float3(0.62, 0.48, 0.32) * (0.8 + 0.3 * n3);
+    albedo = mix(albedo, broken, aux);
+    rough = mix(rough, interior > 0.5 ? 0.25 : 0.85, aux);
+    metal = mix(metal, 0.0, aux);
+    sss *= 1.0 - aux;
+  }
+}
+
 // Glass: reflections and a faint tint, more opaque at grazing angles (premultiplied alpha).
 float4 glassColor(float3 N, float3 V, bool black, float3 P, constant PassU& u, texturecube<float> prefilter) {
   float NoV = max(dot(N, V), 1e-4);
@@ -781,6 +943,9 @@ fragment float4 objectFS(MeshFrag in [[stage_in]], bool front [[front_facing]], 
     if (d.mat == 5)
       alienSurface(int(in.mat + 0.5), d.team == 1, in.obj, normalize(in.objN), in.aux, d.texOffset, V, u.time, noise,
                    albedo, rough, metalness, wrap, sss, N, emissive, specOcc);
+    else if (d.mat == 7)
+      romanSurface(int(in.mat + 0.5), d.team == 1, in.obj, normalize(in.objN), in.aux, d.interior, d.texOffset, V,
+                   noise, albedo, rough, metalness, wrap, sss, N, emissive, specOcc);
     else
       medievalSurface(int(in.mat + 0.5), d.team == 1, in.obj, normalize(in.objN), in.aux, d.texOffset, V, noise,
                       albedo, rough, metalness, wrap, sss, N, emissive, specOcc);

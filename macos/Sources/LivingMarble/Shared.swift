@@ -74,6 +74,26 @@ enum Sfx: Int, CaseIterable {
   case hatch     // an egg cracking open, chirps
   case drone     // the mothership
   case sputter   // a machine sputtering and dying
+  // the Romans
+  case slash     // a blade cutting through flesh
+  case stab      // a blade driven in
+  case blood     // blood splashing on the board
+  case draw      // a sword drawn from its scabbard
+  case parry     // blade on blade
+  case shield    // a blow on a wooden shield with a bronze boss
+  case grunt     // a soldier's grunt of effort
+  case shout     // a battle cry
+  case death     // a dying groan
+  case fall      // a body in armour hitting the ground
+  case crowd     // the arena's crowd roaring
+  case cornu     // a Roman horn call
+  case wheels    // chariot wheels rumbling over the board
+  case whip      // a whip crack
+  case creak     // timber creaking (the siege tower)
+  case ram       // the battering ram striking
+  case scorpion  // the bolt-thrower loosing
+  case lion      // a lion's roar
+  case gulp      // drinking, then choking
   // the ghosts of captured pieces
   case cheer     // a far-off little crowd of ghosts cheering
 }

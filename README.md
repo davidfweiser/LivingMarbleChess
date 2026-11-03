@@ -28,8 +28,7 @@ helmets, banded armour and cloaks with pilum, scutum and gladius, war chariots
 drawn by two horses, a centurion with sword and dagger, a wooden siege tower on
 wheels, the empress and the emperor. They don't shatter like marble: they fight
 hand to hand - parrying, somersaulting, stabbing - and the fallen bleed and lie
-on the board a moment before they fade away. (The Romans are in the Windows,
-Linux and web versions; not yet on the Mac, iPhone and iPad.)
+on the board a moment before they fade away.
 
 In every army, **the fallen come back as ghosts**: a captured piece slowly
 takes shape again, translucent, beside the board, and watches the rest of the
@@ -54,8 +53,7 @@ AppKit/SwiftUI window, menus and interface, and AVAudioEngine sound (see
 [`macos/`](macos)). The same Swift code runs on iPhone and iPad with touch
 controls (see [`ios/`](ios)). Windows and Linux use the C++/OpenGL version in
 `src/`, which also builds for a web page (WebAssembly and WebGL 2, see
-[`web/`](web)). All versions play, look and sound the same (but for the Romans, so far only in
-the C++ version), with no depth-of-field blur
+[`web/`](web)). All versions play, look and sound the same, with no depth-of-field blur
 by default. The Windows, Linux and Mac versions start at the finest sculpting
 detail and *Ultra* graphics; iPhone and iPad, to load quicker and stay cool,
 at one sculpting level less (`--quality 2`) and *High* graphics, and so does
@@ -666,6 +664,7 @@ same design:
 | `SDF.swift`, `MeshGen.swift`, `Textures.swift` | Procedural sculpting, fracture and the baked board (as `sdf.*`, `meshgen.*`, `textures.*`) |
 | `Medieval.swift`, `MedievalMesh.swift`, `MedievalPose.swift` | The medieval army, its skeletons and poses (as `medieval*`) |
 | `Alien.swift`, `AlienMesh.swift`, `AlienPose.swift` | The aliens, their skeletons and poses (as `alien*`) |
+| `Roman.swift`, `RomanMesh.swift`, `RomanPose.swift` | The Romans (and the lion), their skeletons and poses (as `roman*`) |
 | `Sculpt.swift`, `PoseKit.swift` | The shared sculpting and posing kit (as `sculpt.h`, `pose_kit.h`) |
 | `Shaders.swift` | All Metal Shading Language, compiled at startup |
 | `Renderer.swift` | The same render passes on Metal |
@@ -673,6 +672,7 @@ same design:
 | `BattleCore.swift`, `Battles*.swift` | Moves, castling, promotion, checkmate and all 18 battle styles |
 | `BattlesMedieval*.swift` | The medieval army's choreography and battles (as `battle_medieval.cpp`) |
 | `BattlesAlien*.swift` | The aliens' choreography and battles (as `battle_alien.cpp`) |
+| `BattlesRoman*.swift` | The Romans' choreography and battles (as `battle_roman.cpp`) |
 | `Audio.swift` | Procedural sounds mixed in real time through AVAudioEngine |
 | `Music.swift`, `MusicScore.swift` | The music (as `music.*`; it plays exactly the same samples) |
 | `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, frame rate, capture tools |
