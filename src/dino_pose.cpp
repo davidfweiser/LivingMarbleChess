@@ -73,8 +73,9 @@ void theroPose(int asset, const Controls& c, Pose& out) {
   float neckUp = c.neck * 0.6f + dead * 0.9f - 0.04f * st * std::sin(g * 2.0f);
   b.R[TH_NECK] = aa(c.headYaw * 0.45f + c.twist * 0.3f, Y) * aa(-neckUp + 0.012f * breath, X);
   b.R[TH_HEAD] = aa(c.headYaw * 0.55f, Y) * aa(c.headPitch + c.neck * 0.25f + dead * 0.3f, X) * aa(dead * 0.2f, Z);
-  float jawMax = asset == D_KING ? 0.75f : (asset == D_QUEEN ? 0.7f : 0.8f);
-  b.R[TH_JAW] = aa(jawMax * glm::clamp(c.jaw + 0.25f * dead, 0.0f, 1.0f), X);
+  // (the mouth is sculpted agape: closed, the jaw turns up by the gape)
+  float jawMax = asset == D_KING ? 0.9f : (asset == D_QUEEN ? 0.8f : 0.9f);
+  b.R[TH_JAW] = aa(jawMax * glm::clamp(c.jaw + 0.25f * dead, 0.0f, 1.0f) - gape(asset), X);
   // --- the tail: a gentle curl at rest, the stride's sway, a lash to one side ('itemYaw'),
   // raised ('itemPitch'); limp when dead
   float curl = restCurl(c, asset == D_PAWN ? 0.06f : (asset == D_KING ? 0.13f : 0.15f)) * alive;
@@ -148,7 +149,7 @@ void quadPose(int asset, const Controls& c, Pose& out) {
   }
   float headYaw = c.headYaw * (1.0f - 3.0f * yawShare);
   b.R[QD_HEAD] = aa(headYaw, Y) * aa(c.headPitch + (brachio ? 0.25f : 0.1f) * c.neck - pitch * 0.5f + (brachio ? -0.3f : 0.2f) * dead, X);
-  b.R[QD_JAW] = aa((brachio ? 0.5f : 0.45f) * glm::clamp(c.jaw + 0.2f * dead, 0.0f, 1.0f), X);
+  b.R[QD_JAW] = aa((brachio ? 0.55f : 0.5f) * glm::clamp(c.jaw + 0.2f * dead, 0.0f, 1.0f) - gape(asset), X);
   // --- the tail: curled to one side at rest (slowly shifting from side to side), drawn
   // straight behind as it walks or swings it
   const int tb[3] = {QD_TAIL1, QD_TAIL2, QD_TAIL3};
@@ -205,7 +206,7 @@ void pteroPose(const Controls& c, Pose& out) {
   // neck and head: level in flight, stabbing ('neck' -) or drawn back (+)
   b.R[PT_NECK] = aa(c.headYaw * 0.4f, Y) * aa(-(c.neck * 0.7f) + 0.35f * air - 0.5f * dead + 0.01f * breath, X);
   b.R[PT_HEAD] = aa(c.headYaw * 0.6f, Y) * aa(c.headPitch + c.neck * 0.25f - 0.15f * air + 0.25f * dead, X);
-  b.R[PT_JAW] = aa(0.55f * glm::clamp(c.jaw + 0.2f * dead, 0.0f, 1.0f), X);
+  b.R[PT_JAW] = aa(0.6f * glm::clamp(c.jaw + 0.2f * dead, 0.0f, 1.0f) - gape(D_KNIGHT), X);
   // the wings
   for (int side = 0; side < 2; ++side) {
     float s = side == 0 ? 1.0f : -1.0f;

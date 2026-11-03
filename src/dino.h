@@ -28,7 +28,7 @@ enum Asset {
 };
 
 // Per-vertex materials (integer part of Vertex::mat). Colours depend on the army:
-// the white army is sand and cream with rust markings, the black army slate and
+// the white army is sand and tan with dark brown markings, the black army slate and
 // charcoal with crimson.
 enum Mat {
   DM_SKIN = 0,   // scaly hide (countershaded, banded)
@@ -122,6 +122,9 @@ glm::vec3 clawPoint(int kind);   // the raptor's sickle claw (right foot), the s
 glm::vec3 hornPoint(int kind);   // the triceratops' brow horns (between their tips)
 glm::vec3 tailTip(int kind);     // the end of the tail (on the last tail bone)
 float strideCycle(int kind);     // distance covered by one walk cycle
+// The mouths are sculpted agape, the lower jaw turned down about its hinge by this much
+// (radians), so that the jaws are separate surfaces; the pose closes them.
+float gape(int kind);
 float bodyLength(int kind);      // from the snout to the tail tip (rest pose)
 float bodyHalfWidth(int kind);   // half the width of the body (how far a flank is from the middle)
 glm::vec3 wingTip();             // the pteranodon's left wing tip, wings spread (rest pose)

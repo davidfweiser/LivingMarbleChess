@@ -329,6 +329,7 @@ void addEye(Model& m, int bone, vec3 c, float r, vec3 out) {
 }
 
 // A row of teeth along the jaw from a to b (both sides of the mouth: x and -x), pointing 'dir'.
+// Each tooth is rigid on its jaw: it never bends towards the other one.
 void addTeeth(Model& m, int bone, vec3 a, vec3 b, int n, vec3 dir, float len, float r) {
   for (int i = 0; i < n; ++i) {
     float u = n > 1 ? (float)i / (n - 1) : 0.0f;
@@ -336,9 +337,84 @@ void addTeeth(Model& m, int bone, vec3 a, vec3 b, int n, vec3 dir, float len, fl
     float s = 1.0f - 0.35f * std::fabs(u - 0.35f);
     for (int sd = -1; sd <= 1; sd += 2) {
       vec3 q(p.x * sd, p.y, p.z);
-      m.add(bone, DM_TEETH, 0.0f, coneS(q, q + dir * len * s, r * s, r * 0.15f));
+      // (curved a little back along their length, like a real tooth)
+      vec3 tip = q + dir * len * s, mid = glm::mix(q, tip, 0.55f) + vec3(0, 0, len * s * 0.08f);
+      m.addR(bone, DM_TEETH, 0.0f, coneS(q, mid, r * s, r * s * 0.62f));
+      m.addR(bone, DM_TEETH, 0.0f, coneS(mid, tip, r * s * 0.62f, r * 0.12f));
     }
   }
+}
+
+// The mouth. Every animal is sculpted with its mouth agape: the lower jaw's parts (and the
+// paint on them), from 'from' on, are turned down about the hinge by gape(), so that the jaws,
+// their teeth, the palate and the tongue are surfaces of their own that come apart cleanly as
+// the mouth opens (blended into one, they would stretch a sheet of skin between them). The pose
+// closes the mouth again.
+void openJaw(Model& m, size_t from, vec3 hinge, float angle) {
+  mat3 R = rotXm(angle), Rt = glm::transpose(R);
+  for (size_t i = from; i < m.parts.size(); ++i) {
+    Model::Part& q = m.parts[i];
+    Fn f = q.s.f;
+    q.s.f = [f, Rt, hinge](const vec3& p) { return f(Rt * (p - hinge) + hinge); };
+    q.s.c = R * (q.s.c - hinge) + hinge;
+    if (q.w) {
+      Fn w = q.w;
+      q.w = [w, Rt, hinge](const vec3& p) { return w(Rt * (p - hinge) + hinge); };
+    }
+  }
+}
+
+// Trims the lower jaw's parts (from 'from' to 'to', before openJaw) to the mouth line from the
+// hinge along 'dir', a little rounded at the rim, so that they don't reach up into the upper
+// jaw; or (upper) the upper jaw's parts, in front of the hinge, so that they don't hang down
+// over the lower one.
+void trimJaw(Model& m, size_t from, vec3 hinge, vec3 dir, float k, bool upper = false, size_t to = (size_t)-1) {
+  dir = glm::normalize(vec3(0, dir.y, dir.z));
+  vec3 up(0, dir.z, -dir.y);
+  for (size_t i = from; i < std::min(to, m.parts.size()); ++i) {
+    Model::Part& q = m.parts[i];
+    if (q.op != Model::ADD) continue;
+    Fn f = q.s.f;
+    if (upper)
+      q.s.f = [f, hinge, up, dir, k](const vec3& p) {
+        vec3 d = p - hinge;
+        return smax(f(p), std::min(-glm::dot(d, up), glm::dot(d, dir)), k);
+      };
+    else
+      q.s.f = [f, hinge, up, k](const vec3& p) { return smax(f(p), glm::dot(p - hinge, up), k); };
+  }
+}
+
+// The throat under the lower jaw: skin that goes with the jaw at the front, but towards the
+// back (where it runs into the neck) more and more with the head, so that it stretches smoothly
+// as the jaw moves.
+void addThroat(Model& m, int jawBone, int headBone, int mat, float k, const Shape& s, vec3 hinge, vec3 dir, float len) {
+  dir = glm::normalize(vec3(0, dir.y, dir.z));
+  m.addStretch(jawBone, headBone, mat, k, s, [hinge, dir, len](const vec3& p) {
+    return glm::smoothstep(-0.15f * len, len, glm::dot(p - hinge, dir));
+  });
+}
+
+// The inside of the mouth, painted over the skin: the palate under the upper jaw, or (upper =
+// false, painted with the lower jaw's parts so that it turns with them) the tongue and gums on
+// the lower jaw. The mouth line (where the jaws meet when closed) runs from the hinge forward
+// along 'dir' (in the yz plane) to 'len' from it. The palate is the upper jaw's surface over
+// the line bisecting the gape and no more than 'depth' above the mouth line; the tongue the
+// lower jaw's under that line (its own, before it is turned) and no more than 'depth' below it;
+// both inside the half-width hw0 (at the hinge) .. hw1 (at the front), short of the lips.
+void paintMouth(Model& m, vec3 hinge, vec3 dir, float len, float gapeAngle, bool upper, float depth, float hw0, float hw1,
+                int mat = DM_MOUTH, int only = DM_SKIN) {
+  dir = glm::normalize(vec3(0, dir.y, dir.z));
+  vec3 up(0, dir.z, -dir.y);
+  vec3 bis = rotXm(upper ? gapeAngle * 0.5f : -gapeAngle * 0.5f) * up;  // the bisector's normal
+  float sg = upper ? 1.0f : -1.0f;
+  m.paint(mat, fnS([=](const vec3& p) {
+            vec3 q = p - hinge;
+            float t = glm::dot(q, dir), h = glm::dot(q, up) * sg, b = glm::dot(q, bis) * sg;
+            float hw = glm::mix(hw0, hw1, glm::clamp(t / len, 0.0f, 1.0f));
+            float d = std::max(std::max(h - depth, -b), std::fabs(p.x) - hw);
+            return std::max(d, std::max(-t, t - len));
+          }, hinge + dir * len * 0.5f, len * 0.75f + std::max(hw0, hw1) + depth), only);
 }
 
 // A tube through a polyline: tapering cones, each bound to its bone.
@@ -580,14 +656,19 @@ Model raptorModel() {
     addEye(m, TH_HEAD, hc + vec3(sd * 0.021f, 0.009f, -0.004f), 0.0102f, vec3(sd * 1.0f, 0.1f, 0.5f));
     m.paint(DM_DARK, ellS(vec3(sd * 0.008f, 0.428f, 0.322f), vec3(0.0035f, 0.0025f, 0.005f)), DM_SKIN);  // nostril
   }
-  // the lower jaw
-  m.add(TH_JAW, DM_SKIN, 0.008f, coneS(vec3(0, 0.407f, 0.222f), vec3(0, 0.403f, 0.327f), 0.017f, 0.0075f));
-  m.add(TH_JAW, DM_BELLY, 0.01f, ellS(vec3(0, 0.398f, 0.235f), vec3(0.014f, 0.01f, 0.03f)));  // the throat
-  m.paint(DM_MOUTH, fnS([](const vec3& p) {
-            return std::max(std::fabs(p.y - 0.413f) - 0.003f, std::max(0.235f - p.z, p.z - 0.335f));
-          }, vec3(0, 0.413f, 0.28f), 0.08f), DM_SKIN);
-  addTeeth(m, TH_HEAD, vec3(0.012f, 0.416f, 0.255f), vec3(0.007f, 0.415f, 0.326f), 6, vec3(0, -1, 0.15f), 0.008f, 0.0042f);
-  addTeeth(m, TH_JAW, vec3(0.011f, 0.41f, 0.26f), vec3(0.006f, 0.408f, 0.318f), 5, vec3(0, 1, 0.1f), 0.0065f, 0.0024f);
+  // the palate; the lower jaw, sculpted agape (openJaw) with its tongue, gums and teeth
+  const vec3 mouthDir(0, -0.02f, 1);
+  const float G = gape(D_PAWN);
+  paintMouth(m, j.jaw, mouthDir, 0.125f, G, true, 0.008f, 0.012f, 0.006f);
+  size_t jaw0 = m.parts.size();
+  m.add(TH_JAW, DM_SKIN, 0.008f, coneS(vec3(0, 0.405f, 0.222f), vec3(0, 0.403f, 0.327f), 0.015f, 0.0072f));
+  addThroat(m, TH_JAW, TH_HEAD, DM_BELLY, 0.01f, ellS(vec3(0, 0.396f, 0.235f), vec3(0.013f, 0.01f, 0.03f)), j.jaw, mouthDir, 0.05f);
+  trimJaw(m, jaw0, j.jaw, mouthDir, 0.003f);
+  m.add(TH_JAW, DM_MOUTH, 0.004f, ellS(vec3(0, 0.407f, 0.265f), vec3(0.0075f, 0.004f, 0.04f)));  // the tongue
+  paintMouth(m, j.jaw, mouthDir, 0.125f, G, false, 0.008f, 0.011f, 0.005f);
+  addTeeth(m, TH_JAW, vec3(0.008f, 0.41f, 0.262f), vec3(0.005f, 0.408f, 0.318f), 5, vec3(0, 1, 0.1f), 0.0065f, 0.0024f);
+  openJaw(m, jaw0, j.jaw, G);
+  addTeeth(m, TH_HEAD, vec3(0.0125f, 0.416f, 0.255f), vec3(0.0075f, 0.415f, 0.326f), 6, vec3(0, -1, 0.15f), 0.008f, 0.0042f);
   // arms folded at the sides, a fan of quills on each forearm
   addTheroArms(m, j, 0.0135f, 0.0095f, 3, 0.013f, DM_FEATHER);
   for (int sd = -1; sd <= 1; sd += 2) {
@@ -649,7 +730,7 @@ Model spinoModel() {
   m.add(TH_CHEST, DM_SKIN, 0.04f, ellS(vec3(0, 0.39f, 0.08f), vec3(0.06f, 0.055f, 0.12f)));  // the belly
   // the head: a long, narrow snout ending in a rosette of teeth, a small crest
   vec3 hc(0, 0.635f, 0.465f);
-  m.add(TH_HEAD, DM_SKIN, 0.0f, ellS(hc, vec3(0.034f, 0.038f, 0.055f)));
+  m.add(TH_HEAD, DM_SKIN, 0.0f, ellS(hc + vec3(0, 0.003f, 0), vec3(0.034f, 0.034f, 0.055f)));
   m.add(TH_HEAD, DM_SKIN, 0.02f, coneS(hc + vec3(0, -0.004f, 0.03f), vec3(0, 0.607f, 0.69f), 0.026f, 0.015f));
   m.add(TH_HEAD, DM_SKIN, 0.012f, ellS(vec3(0, 0.605f, 0.69f), vec3(0.02f, 0.018f, 0.03f)));
   m.add(TH_HEAD, DM_SCUTE, 0.008f, ellS(vec3(0, 0.663f, 0.5f), vec3(0.007f, 0.011f, 0.03f)));
@@ -657,15 +738,21 @@ Model spinoModel() {
     addEye(m, TH_HEAD, hc + vec3(sd * 0.029f, 0.017f, 0.002f), 0.0115f, vec3(sd * 1.0f, 0.15f, 0.35f));
     m.paint(DM_DARK, ellS(vec3(sd * 0.009f, 0.63f, 0.58f), vec3(0.0035f, 0.003f, 0.007f)), DM_SKIN);
   }
+  // the palate; the lower jaw, trimmed to the mouth line and sculpted agape (openJaw), with its
+  // tongue, gums and teeth
+  const vec3 mouthDir(0, -0.05f, 1);
+  const float G = gape(D_QUEEN);
+  paintMouth(m, j.jaw, mouthDir, 0.27f, G, true, 0.01f, 0.02f, 0.012f);
+  size_t jaw0 = m.parts.size();
   m.add(TH_JAW, DM_SKIN, 0.01f, coneS(vec3(0, 0.597f, 0.46f), vec3(0, 0.585f, 0.68f), 0.022f, 0.012f));
   m.add(TH_JAW, DM_SKIN, 0.01f, ellS(vec3(0, 0.586f, 0.685f), vec3(0.017f, 0.012f, 0.024f)));
-  m.add(TH_JAW, DM_BELLY, 0.01f, ellS(vec3(0, 0.585f, 0.49f), vec3(0.022f, 0.012f, 0.05f)));
-  m.paint(DM_MOUTH, fnS([](const vec3& p) {
-            float y = 0.6035f - 0.06f * (p.z - 0.47f);
-            return std::max(std::fabs(p.y - y) - 0.0035f, std::max(0.48f - p.z, p.z - 0.71f));
-          }, vec3(0, 0.6f, 0.6f), 0.14f), DM_SKIN);
+  addThroat(m, TH_JAW, TH_HEAD, DM_BELLY, 0.01f, ellS(vec3(0, 0.585f, 0.49f), vec3(0.022f, 0.012f, 0.05f)), j.jaw, mouthDir, 0.08f);
+  trimJaw(m, jaw0, j.jaw, mouthDir, 0.004f);
+  m.add(TH_JAW, DM_MOUTH, 0.006f, ellS(vec3(0, 0.598f, 0.53f), vec3(0.011f, 0.006f, 0.07f), rotXm(0.05f)));  // the tongue
+  paintMouth(m, j.jaw, mouthDir, 0.27f, G, false, 0.01f, 0.018f, 0.01f);
+  addTeeth(m, TH_JAW, vec3(0.012f, 0.596f, 0.52f), vec3(0.01f, 0.588f, 0.69f), 7, vec3(0, 1, 0.1f), 0.01f, 0.003f);
+  openJaw(m, jaw0, j.jaw, G);
   addTeeth(m, TH_HEAD, vec3(0.016f, 0.604f, 0.5f), vec3(0.012f, 0.594f, 0.7f), 8, vec3(0, -1, 0.1f), 0.012f, 0.0035f);
-  addTeeth(m, TH_JAW, vec3(0.014f, 0.595f, 0.51f), vec3(0.011f, 0.588f, 0.69f), 7, vec3(0, 1, 0.1f), 0.01f, 0.003f);
   // arms: strong, with hooked thumb claws
   addTheroArms(m, j, 0.022f, 0.016f, 2, 0.022f, DM_SKIN, 0.06f);
   addTheroLegs(m, j, 0.055f, 0.027f, 0.017f, 0.05f, DM_SKIN, false);
@@ -721,12 +808,9 @@ Model rexModel() {
     return smax((r - 1.0f) * std::min(w, h), std::max(z0 - p.z, p.z - z1), 0.02f) * 0.7f;
   };
   m.add(TH_HEAD, DM_SKIN, 0.0f, fnS(skull, vec3(0, 0.72f, 0.53f), 0.16f));
-  m.paint(DM_MOUTH, fnS([](const vec3& p) {
-            float y1 = 0.6645f + 0.01f * (p.z - 0.4f);
-            float hw = glm::mix(0.046f, 0.012f, glm::clamp((p.z - 0.45f) / 0.21f, 0.0f, 1.0f));  // inside the lips
-            float d = std::max(std::max(p.y - y1, (y1 - 0.012f) - p.y), std::max(0.43f - p.z, std::fabs(p.x) - hw));
-            return std::max(d, p.z - 0.64f);  // (short of the rounded nose)
-          }, vec3(0, 0.66f, 0.55f), 0.13f), DM_SKIN);
+  const vec3 mouthDir(0, -0.004f, 1);
+  const float G = gape(D_KING);
+  paintMouth(m, j.jaw, mouthDir, 0.21f, G, true, 0.009f, 0.046f, 0.012f);  // the palate, inside the lips
   for (int sd = -1; sd <= 1; sd += 2) {
     m.add(TH_HEAD, DM_SKIN, 0.02f, ellS(vec3(sd * 0.062f, 0.69f, 0.465f), vec3(0.022f, 0.032f, 0.05f)));  // the cheeks
     m.add(TH_HEAD, DM_SCUTE, 0.012f, ellS(vec3(sd * 0.045f, 0.773f, 0.49f), vec3(0.018f, 0.012f, 0.024f)));  // brow bosses
@@ -746,22 +830,22 @@ Model rexModel() {
     const float z0 = 0.43f, z1 = 0.658f;
     float t = glm::clamp((p.z - z0) / (z1 - z0), 0.0f, 1.0f);
     float e = std::max(0.0f, (t - 0.72f) / 0.28f), round = std::sqrt(std::max(0.0f, 1.0f - e * e));
-    float w = glm::mix(0.058f, 0.031f, t) * glm::mix(0.45f, 1.0f, round), h = glm::mix(0.033f, 0.016f, t);
-    float yc = glm::mix(0.63f, 0.647f, t);
+    float w = glm::mix(0.058f, 0.031f, t) * glm::mix(0.45f, 1.0f, round), h = glm::mix(0.038f, 0.019f, t);
+    float yc = glm::mix(0.625f, 0.644f, t);
     float ax = std::fabs(p.x) / w, ay = std::fabs(p.y - yc) / h;
     float r = std::pow(std::pow(ax, 2.4f) + std::pow(ay, 2.4f), 1.0f / 2.4f);
     return smax((r - 1.0f) * std::min(w, h), std::max(z0 - p.z, p.z - z1), 0.02f) * 0.7f;
   };
-  m.add(TH_JAW, DM_SKIN, 0.01f, fnS(mandible, vec3(0, 0.64f, 0.54f), 0.14f));
-  m.add(TH_JAW, DM_BELLY, 0.02f, ellS(vec3(0, 0.615f, 0.49f), vec3(0.05f, 0.022f, 0.08f)));
-  m.paint(DM_MOUTH, fnS([](const vec3& p) {
-            float y0 = 0.656f + 0.008f * (p.z - 0.43f);
-            float hw = glm::mix(0.044f, 0.01f, glm::clamp((p.z - 0.45f) / 0.2f, 0.0f, 1.0f));  // inside the jaw's rim
-            float d = std::max(std::max(y0 - p.y, p.y - (y0 + 0.012f)), std::max(0.45f - p.z, std::fabs(p.x) - hw));
-            return std::max(d, p.z - 0.63f);  // (short of the chin)
-          }, vec3(0, 0.66f, 0.55f), 0.13f), DM_SKIN);
-  addTeeth(m, TH_HEAD, vec3(0.053f, 0.666f, 0.47f), vec3(0.031f, 0.664f, 0.645f), 8, glm::normalize(vec3(0, -1, 0.12f)), 0.024f, 0.0075f);
-  addTeeth(m, TH_JAW, vec3(0.05f, 0.66f, 0.49f), vec3(0.028f, 0.66f, 0.63f), 7, glm::normalize(vec3(0, 1, 0.1f)), 0.017f, 0.006f);
+  // (sculpted agape: openJaw; the pose closes it)
+  size_t jaw0 = m.parts.size();
+  addThroat(m, TH_JAW, TH_HEAD, DM_SKIN, 0.01f, fnS(mandible, vec3(0, 0.64f, 0.54f), 0.14f), j.jaw, mouthDir, 0.06f);
+  addThroat(m, TH_JAW, TH_HEAD, DM_BELLY, 0.02f, ellS(vec3(0, 0.615f, 0.49f), vec3(0.05f, 0.022f, 0.08f)), j.jaw, mouthDir, 0.1f);
+  trimJaw(m, jaw0, j.jaw, mouthDir, 0.004f);
+  m.add(TH_JAW, DM_MOUTH, 0.006f, ellS(vec3(0, 0.657f, 0.555f), vec3(0.024f, 0.009f, 0.075f)));  // the tongue
+  paintMouth(m, j.jaw, mouthDir, 0.2f, G, false, 0.012f, 0.044f, 0.01f);  // gums, inside the jaw's rim
+  addTeeth(m, TH_JAW, vec3(0.042f, 0.655f, 0.505f), vec3(0.024f, 0.657f, 0.63f), 6, glm::normalize(vec3(0, 1, 0.1f)), 0.017f, 0.006f);
+  openJaw(m, jaw0, j.jaw, G);
+  addTeeth(m, TH_HEAD, vec3(0.053f, 0.666f, 0.47f), vec3(0.031f, 0.664f, 0.645f), 8, glm::normalize(vec3(0, -1, 0.12f)), 0.027f, 0.0075f);
   // arms: tiny, two-fingered
   addTheroArms(m, j, 0.02f, 0.014f, 2, 0.016f, DM_SKIN);
   // legs: huge
@@ -802,7 +886,12 @@ Model pteroModel() {
   // the head: skull, the long beak, the crest
   vec3 hc(0, 0.5f, 0.195f);
   m.add(PT_HEAD, DM_SKIN, 0.0f, ellS(hc, vec3(0.024f, 0.028f, 0.045f)));
+  // the beak: upper and lower halves meeting along the mouth line (the lower sculpted agape: openJaw)
+  const vec3 mouthDir(0, -0.075f, 1);
+  const float G = gape(D_KNIGHT);
+  size_t beak0 = m.parts.size();
   m.add(PT_HEAD, DM_HORN, 0.012f, coneS(hc + vec3(0, -0.004f, 0.03f), vec3(0, 0.466f, 0.5f), 0.019f, 0.0018f));
+  trimJaw(m, beak0, jaw, mouthDir, 0.003f, true);
   m.add(PT_HEAD, DM_CREST, 0.01f, fnS([hc](const vec3& p) {
           // a blade swept up and back: its lower edge along the skull, tapering to a point
           vec3 q = p - (hc + vec3(0, 0.012f, 0.0f));
@@ -813,12 +902,15 @@ Model pteroModel() {
           return std::max(d * 0.6f, std::fabs(q.x) - (0.0065f - 0.0025f * u));
         }, hc + vec3(0, 0.07f, -0.12f), 0.17f));
   for (int sd = -1; sd <= 1; sd += 2) addEye(m, PT_HEAD, hc + vec3(sd * 0.02f, 0.008f, 0.008f), 0.0075f, vec3(sd * 1.0f, 0.1f, 0.4f));
+  paintMouth(m, jaw, mouthDir, 0.09f, G, true, 0.006f, 0.012f, 0.007f, DM_MOUTH, DM_HORN);  // (the rest of the beak is horn)
+  paintMouth(m, jaw, mouthDir, 0.09f, G, true, 0.006f, 0.012f, 0.007f, DM_MOUTH, DM_SKIN);
+  size_t jaw0 = m.parts.size();
   m.add(PT_JAW, DM_HORN, 0.006f, coneS(vec3(0, 0.483f, 0.215f), vec3(0, 0.46f, 0.49f), 0.0135f, 0.0016f));
   m.add(PT_JAW, DM_SKIN, 0.008f, ellS(vec3(0, 0.476f, 0.23f), vec3(0.014f, 0.01f, 0.035f)));  // the throat pouch
-  m.paint(DM_DARK, fnS([](const vec3& p) {
-            float y = 0.486f - 0.075f * (p.z - 0.2f);
-            return std::max(std::fabs(p.y - y) - 0.0018f, std::max(0.22f - p.z, p.z - 0.47f));
-          }, vec3(0, 0.47f, 0.35f), 0.16f), DM_HORN);
+  trimJaw(m, jaw0, jaw, mouthDir, 0.003f);
+  paintMouth(m, jaw, mouthDir, 0.09f, G, false, 0.006f, 0.011f, 0.006f, DM_MOUTH, DM_HORN);
+  paintMouth(m, jaw, mouthDir, 0.09f, G, false, 0.006f, 0.011f, 0.006f, DM_MOUTH, DM_SKIN);
+  openJaw(m, jaw0, jaw, G);
   // the wings: arm, forearm, the long hand and the wing finger; three small clawed fingers
   // at the knuckle, which it walks on
   for (int sd = -1; sd <= 1; sd += 2) {
@@ -947,10 +1039,15 @@ Model trikeModel() {
   addTube(m, DM_SKIN, {vec3(0, 0.33f, 0.16f), vec3(0, 0.33f, 0.23f), vec3(0, 0.325f, 0.3f)}, {0.1f, 0.092f, 0.085f},
           {QD_NECK1, QD_NECK3}, 0.04f);
   addFolds(m, QD_NECK2, vec3(0, 0.33f, 0.16f), vec3(0, 0.325f, 0.3f), 0.1f, 0.085f, {0.3f, 0.55f, 0.8f}, 0.007f);
-  // the head
+  // the head, its underside cut back to the mouth line in front of the hinge (the lower jaw is
+  // sculpted agape: openJaw)
+  const vec3 mouthDir(0, -0.15f, 1);
+  const float G = gape(D_BISHOP);
+  size_t head0 = m.parts.size();
   m.add(QD_HEAD, DM_SKIN, 0.0f, ellS(vec3(0, 0.31f, 0.4f), vec3(0.078f, 0.085f, 0.13f)));
   m.add(QD_HEAD, DM_SKIN, 0.03f, coneS(vec3(0, 0.3f, 0.45f), vec3(0, 0.235f, 0.575f), 0.058f, 0.026f));
   m.add(QD_HEAD, DM_HORN, 0.006f, coneS(vec3(0, 0.245f, 0.565f), vec3(0, 0.195f, 0.62f), 0.026f, 0.005f));  // the beak
+  trimJaw(m, head0, j.jaw, mouthDir, 0.006f, true);
   for (int sd = -1; sd <= 1; sd += 2) {
     addEye(m, QD_HEAD, vec3(sd * 0.063f, 0.352f, 0.432f), 0.0145f, vec3(sd * 1.0f, 0.15f, 0.25f));
     // the cheek horns (epijugals)
@@ -982,12 +1079,15 @@ Model trikeModel() {
       m.add(QD_HEAD, DM_HORN, 0.008f, ellS(p, vec3(0.016f, 0.016f, 0.01f), frameY(up, n)));
     }
   }
-  // the lower jaw and its beak
-  m.add(QD_JAW, DM_SKIN, 0.015f, ellS(vec3(0, 0.235f, 0.46f), vec3(0.058f, 0.034f, 0.11f)));
+  // the palate; the lower jaw and its beak
+  paintMouth(m, j.jaw, mouthDir, 0.2f, G, true, 0.008f, 0.05f, 0.03f);
+  size_t jaw0 = m.parts.size();
+  m.add(QD_JAW, DM_SKIN, 0.015f, ellS(vec3(0, 0.229f, 0.46f), vec3(0.058f, 0.041f, 0.11f)));
   m.add(QD_JAW, DM_HORN, 0.006f, coneS(vec3(0, 0.215f, 0.54f), vec3(0, 0.205f, 0.595f), 0.024f, 0.006f));
-  m.paint(DM_MOUTH, fnS([](const vec3& p) {
-            return std::max(std::fabs(p.y - 0.253f + 0.15f * (p.z - 0.4f)) - 0.003f, std::max(0.37f - p.z, p.z - 0.6f));
-          }, vec3(0, 0.24f, 0.48f), 0.15f), DM_SKIN);
+  trimJaw(m, jaw0, j.jaw, mouthDir, 0.005f);
+  m.add(QD_JAW, DM_MOUTH, 0.008f, ellS(vec3(0, 0.231f, 0.44f), vec3(0.03f, 0.01f, 0.08f), rotXm(0.15f)));  // the tongue
+  paintMouth(m, j.jaw, mouthDir, 0.19f, G, false, 0.01f, 0.046f, 0.03f);
+  openJaw(m, jaw0, j.jaw, G);
   // legs: the front ones half-sprawled (elbows out and back), the hind ones pillars; broad
   // padded feet with blunt hooves
   QuadLegSpec L;
@@ -1030,7 +1130,10 @@ Model brachioModel() {
           }, vec3(0, 0.9f, 0.31f), 0.4f), DM_SKIN);
   // the head: small, with the arched nose of a brachiosaur
   // (a wedge from the braincase to a long, low muzzle, rounded at the end; the arch of the
-  // nose rising over the eyes)
+  // nose rising over the eyes); its underside cut back to the mouth line
+  const vec3 mouthDir(0, -0.02f, 1);
+  const float G = gape(D_ROOK);
+  size_t head0 = m.parts.size();
   m.add(QD_HEAD, DM_SKIN, 0.0f, fnS([](const vec3& p) {
           const float z0 = 0.425f, z1 = 0.562f;
           float t = glm::clamp((p.z - z0) / (z1 - z0), 0.0f, 1.0f);
@@ -1046,11 +1149,16 @@ Model brachioModel() {
     addEye(m, QD_HEAD, vec3(sd * 0.0285f, 1.229f, 0.466f), 0.0105f, vec3(sd * 1.0f, 0.1f, 0.3f));
     m.paint(DM_DARK, ellS(vec3(sd * 0.009f, 1.266f, 0.466f), vec3(0.0055f, 0.005f, 0.008f)), DM_SKIN);  // nostrils high on the arch
   }
-  m.add(QD_JAW, DM_SKIN, 0.01f, ellS(vec3(0, 1.184f, 0.502f), vec3(0.018f, 0.0095f, 0.052f)));
-  m.paint(DM_MOUTH, fnS([](const vec3& p) {
-            return std::max(std::fabs(p.y - 1.186f) - 0.0025f, std::max(0.49f - p.z, p.z - 0.56f));
-          }, vec3(0, 1.186f, 0.52f), 0.06f), DM_SKIN);
-  addTeeth(m, QD_HEAD, vec3(0.013f, 1.188f, 0.5f), vec3(0.008f, 1.188f, 0.538f), 4, vec3(0, -1, 0.3f), 0.007f, 0.0026f);
+  trimJaw(m, head0, j.jaw, mouthDir, 0.004f, true, head0 + 1);
+  // the palate; the lower jaw (sculpted agape: openJaw) and its tongue
+  paintMouth(m, j.jaw, mouthDir, 0.095f, G, true, 0.006f, 0.016f, 0.01f);
+  size_t jaw0 = m.parts.size();
+  m.add(QD_JAW, DM_SKIN, 0.01f, ellS(vec3(0, 1.183f, 0.502f), vec3(0.018f, 0.011f, 0.052f)));
+  trimJaw(m, jaw0, j.jaw, mouthDir, 0.003f);
+  m.add(QD_JAW, DM_MOUTH, 0.004f, ellS(vec3(0, 1.1825f, 0.5f), vec3(0.009f, 0.0045f, 0.035f)));  // the tongue
+  paintMouth(m, j.jaw, mouthDir, 0.09f, G, false, 0.008f, 0.015f, 0.009f);
+  openJaw(m, jaw0, j.jaw, G);
+  addTeeth(m, QD_HEAD, vec3(0.013f, 1.188f, 0.51f), vec3(0.008f, 1.188f, 0.54f), 4, vec3(0, -1, 0.3f), 0.007f, 0.0026f);
   // pillar legs, the front ones taller: columns of muscle, elephantine feet (the forefeet a
   // horseshoe of toes with a single thumb claw, the hind feet with three great claws)
   QuadLegSpec L;
@@ -1114,6 +1222,10 @@ float pieceHeight(int kind) {
 float pieceRadius(int kind) {
   static const float R[6] = {0.19f, 0.22f, 0.24f, 0.28f, 0.22f, 0.25f};
   return R[std::max(0, std::min(5, kind))];
+}
+float gape(int kind) {
+  static const float G[6] = {0.35f, 0.25f, 0.3f, 0.32f, 0.3f, 0.3f};
+  return G[std::max(0, std::min(5, kind))];
 }
 bool theropod(int kind) { return kind == D_PAWN || kind == D_QUEEN || kind == D_KING; }
 bool quadruped(int kind) { return kind == D_BISHOP || kind == D_ROOK; }
