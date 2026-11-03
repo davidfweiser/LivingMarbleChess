@@ -49,6 +49,7 @@ enum Mat {
   DM_ROCK,       // the meteor
   DM_LAVA,       // ... and its glowing cracks
   DM_BELLY,      // pale throat and belly scales
+  DM_FUZZ,       // the pteranodon's coat of fine fur (pycnofibres)
   DM_COUNT
 };
 
@@ -63,21 +64,24 @@ enum TheroBone {
   TH_COUNT
 };
 // The pteranodon: each wing is the arm, the forearm, the long hand (metacarpal) it
-// walks on, and its long fourth finger; the trailing edges of the membrane ride on
-// bones of their own (on the forearm and the finger), drawn in against them as the
-// wing folds.
+// walks on, and its long fourth finger; the trailing edge of the membrane behind each
+// of them rides on a bone of its own (TRAIL: the forearm's, TRAIL2: the finger's, TRAILA:
+// the arm's, TRAILH: the hand's), drawn in against it as the wing folds.
 enum PteroBone {
   PT_BODY = 0, PT_NECK, PT_HEAD, PT_JAW,
   PT_LARM, PT_LFORE, PT_LMETA, PT_LFINGER, PT_RARM, PT_RFORE, PT_RMETA, PT_RFINGER,
   PT_LTHIGH, PT_LSHIN, PT_RTHIGH, PT_RSHIN,
   PT_LTRAIL, PT_RTRAIL, PT_LTRAIL2, PT_RTRAIL2,
+  PT_LTRAILA, PT_RTRAILA, PT_LTRAILH, PT_RTRAILH,
   PT_COUNT
 };
-// Four-legged: the triceratops and the brachiosaurus (legs: upper and lower).
+// Four-legged: the triceratops and the brachiosaurus. Each leg is the upper leg, the
+// lower leg (forearm, shin) and the foot.
 enum QuadBone {
   QD_BODY = 0, QD_NECK1, QD_NECK2, QD_NECK3, QD_HEAD, QD_JAW,
   QD_TAIL1, QD_TAIL2, QD_TAIL3,
   QD_FLU, QD_FLL, QD_FRU, QD_FRL, QD_HLU, QD_HLL, QD_HRU, QD_HRL,
+  QD_FLF, QD_FRF, QD_HLF, QD_HRF,
   QD_COUNT
 };
 

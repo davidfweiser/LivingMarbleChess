@@ -803,8 +803,10 @@ vec3 dinoCell(vec3 x, float size, out float edge, out vec3 toCenter) {
   return bestId;
 }
 
-void dinoSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout float rough, inout float metal,
+// px: the size of a pixel on the figure (model units), ao: the baked occlusion (low in creases)
+void dinoSurface(int id, bool black, vec3 o, vec3 on, float px, float ao, inout vec3 albedo, inout float rough, inout float metal,
                  inout float wrap, inout vec3 sss, inout vec3 N, inout vec3 emissive, inout float specOcc) {
+  px = max(px, 1e-6);
   float n1 = texture(uNoise, o * 3.3 + uTexOffset * 0.13).r;
   float n2 = texture(uNoise, o * 9.0 + uTexOffset * 0.07).g;
   float n3 = texture(uNoise, o * 31.0).b;
@@ -817,10 +819,13 @@ void dinoSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout f
   float top = smoothstep(-0.35, 0.75, on.y);
   if (id == 0 || id == 1 || id == 17 || id == 10 || id == 11) {  // scaly hide, scutes, belly, frill, sail
     float size = id == 1 ? 0.014 : (id == 17 ? 0.0065 : 0.0088);
+    // seen from afar the scales shrink to a pixel or less: they fade into an even tone
+    // instead of glittering
+    float vis = smoothstep(1.2, 4.0, size / px);
     float edge;
     vec3 tc;
     vec3 cid = dinoCell(o, size, edge, tc);
-    float tint = hash13(cid + 3.7);
+    float tint = mix(0.5, hash13(cid + 3.7), vis);
     vec3 base;
     if (id == 17) {
       base = belly;
@@ -849,14 +854,26 @@ void dinoSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout f
       base = mix(base, belly, (1.0 - smoothstep(-0.55, 0.15, on.y)) * 0.85);
       if (id == 1) base = mix(base, black ? vec3(0.09, 0.085, 0.075) : vec3(0.42, 0.32, 0.2), 0.6);
     }
-    float crease = 1.0 - smoothstep(0.0, id == 1 ? 0.2 : 0.24, edge);
-    albedo = base * (0.92 + 0.14 * tint + 0.08 * (n3 - 0.5)) * (1.0 - 0.28 * crease);
-    rough = (id == 11 ? 0.55 : 0.62) + 0.15 * n2 + 0.15 * crease;
+    float crease = (1.0 - smoothstep(0.0, id == 1 ? 0.2 : 0.24, edge)) * vis;
+    albedo = base * (0.92 + 0.14 * tint + 0.08 * (n3 - 0.5)) * (1.0 - 0.28 * crease - 0.06 * (1.0 - vis));
+    rough = (id == 11 ? 0.55 : 0.62) + 0.15 * n2 + 0.15 * crease + 0.04 * (1.0 - vis);
+    // in the creases (behind the knees and elbows, under the jaw, round the neck and where the
+    // legs meet the body) the skin gathers into wrinkles running across the limbs
+    float groove = 0.0, gs = 0.0;
+    if (id == 0 || id == 17) {
+      float s = (o.y + 0.22 * o.z + 0.05 * n2) * 230.0;
+      float fold = (1.0 - smoothstep(0.35, 0.85, ao)) * smoothstep(1.0, 3.0, 0.0273 / px);
+      groove = smoothstep(0.55, 1.0, cos(s)) * fold;
+      gs = sin(s) * fold * smoothstep(0.2, 1.0, cos(s));
+      albedo *= 1.0 - 0.35 * groove;
+      rough += 0.1 * groove;
+    }
     wrap = max(wrap, 0.3);
     if (id != 11 && id != 10) sss = black ? vec3(0.25, 0.08, 0.05) : vec3(0.55, 0.25, 0.12);
     // each scale domed
     float dome = id == 1 ? 1.3 : 0.9;
-    N = normalize(N + (-tc / size) * dome * 0.16 * (1.0 - crease) + (vec3(n1, n2, n3) - 0.5) * 0.08);
+    N = normalize(N + (-tc / size) * dome * 0.16 * (1.0 - crease) * vis + (vec3(n1, n2, n3) - 0.5) * 0.08 +
+                  vec3(0.0, 0.35 * gs, 0.0));
     specOcc = 0.7;
   } else if (id == 2 || id == 3) {  // feathers: fine barbs, barred; glossy black with a sheen of green and purple
     float barb = texture(uNoise, vec3(o.x * 160.0, o.y * 160.0, o.z * 14.0)).r;
@@ -930,6 +947,19 @@ void dinoSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout f
     albedo = vec3(0.1, 0.03, 0.01);
     rough = 0.7;
     emissive += vec3(4.0, 1.3, 0.25) * (0.6 + 0.8 * n3);
+  } else if (id == 18) {  // the pteranodon's coat of fine fur (pycnofibres), soft at the rims
+    float fv = smoothstep(1.0, 3.0, 0.004 / px);
+    float fib = mix(0.5, texture(uNoise, vec3(o.x * 240.0, o.y * 70.0, o.z * 240.0)).r, fv);
+    float tuft = texture(uNoise, vec3(o.x * 80.0, o.y * 26.0, o.z * 80.0) + 3.1).g;
+    vec3 base = black ? vec3(0.085, 0.075, 0.07) : vec3(0.52, 0.38, 0.25);
+    albedo = base * (0.72 + 0.45 * fib) * (0.85 + 0.3 * tuft);
+    albedo = mix(albedo, belly * (black ? 0.75 : 0.95), (1.0 - smoothstep(-0.6, 0.1, on.y)) * 0.5);
+    rough = 0.85;
+    wrap = 0.45;
+    sss = black ? vec3(0.12, 0.05, 0.04) : vec3(0.4, 0.22, 0.12);
+    emissive += albedo * pow(1.0 - NoV, 3.0) * 0.12;
+    N = normalize(N + (vec3(fib, tuft, n3) - 0.5) * 0.3);
+    specOcc = 0.5;
   }
   // fresh wounds: flesh
   if (vAux > 0.0) {
@@ -1050,8 +1080,8 @@ void main() {
       romanSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
                    specOcc);
     else if (uMat == 8)
-      dinoSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
-                  specOcc);
+      dinoSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), length(fwidth(vObj)), vAO, albedo, rough, metal, wrap,
+                  sss, N, emissive, specOcc);
     else
       medievalSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
                       specOcc);

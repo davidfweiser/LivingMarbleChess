@@ -372,31 +372,39 @@ lion and a poisoned cup.
 ## The dinosaurs
 
 The fifth army (*Pieces › Dinosaurs*, or `--pieces dino`) is sculpted the same
-way, also in the background the first time. Their scales, feathers, horns and
-skin are drawn by the shader: each scale domed, with dark creases between them,
-the hides banded, mottled and countershaded (pale bellies). White's army is sand
-and cream with rust markings, Black's slate and charcoal with crimson (its
-raptors' feathers shimmer green and purple).
+way, also in the background the first time: muscled thighs and shoulders, knees,
+elbows and ankles, padded feet, folds of skin round the neck, lips over the
+teeth. Their scales, feathers, fur, horns and skin are drawn by the shader: each
+scale domed, with dark creases between them (fading into an even tone at a
+distance instead of glittering), the skin wrinkled in the creases behind the
+knees and elbows, the hides banded, mottled and countershaded (pale bellies).
+White's army is sand and cream with rust markings, Black's slate and charcoal
+with crimson (its raptors' feathers shimmer green and purple).
 
 - **Pawn** — a velociraptor: feathered, with quills on its arms and a fan of
   feathers on its tail, a long low snout full of teeth, and a sickle claw held up
   off the ground on each foot. It runs
-- **Knight** — a pteranodon with a crest swept back from its skull and a long
-  toothless beak. On the board it walks on its folded wings, which open into
-  wings of skin from its long fourth finger to its legs; it flies its moves
+- **Knight** — a pteranodon with a crest swept back from its skull, a long
+  toothless beak and a furry body. On the board it walks on its folded wings,
+  the long wing finger folded up beside its arm; they open into wings of skin
+  from the finger's tip to its knees, the trailing edge one sweeping curve; it
+  flies its moves
 - **Bishop** — a triceratops: three horns, a great frill with bony knobs round its
-  edge, a parrot's beak
+  edge, a parrot's beak; half-sprawled forelegs and broad, hoofed feet
 - **Rook** — a brachiosaurus, a living tower: pillar legs, the front ones longer,
-  a long neck sloping up to a small head with an arched nose. The board shakes
-  as it walks
+  on elephantine feet with great claws, a long neck sloping up to a small head
+  with an arched nose. The board shakes as it walks
 - **Queen** — the spinosaurus: a sail along her back, a crocodile's snout ending
   in a rosette of teeth, strong arms with great hooked thumb claws, a tall
   paddle of a tail
-- **King** — the tyrannosaurus: the great boxy head with its banana teeth, a row
-  of scutes down its back, massive legs, tiny two-fingered arms
+- **King** — the tyrannosaurus: the great head, broad behind the eyes, its lips
+  closing over the banana teeth, a row of scutes down its back, massive legs,
+  tiny two-fingered arms
 
-They breathe, look about, sniff the air, yawn and swish their tails; tails sway
-and heads bob as they walk, and the lowest foot always stays on the board. The
+They breathe, look about, sniff the air, yawn and swish their tails; at rest a
+tail curls to one side (slowly shifting from side to side), and it straightens
+out behind as they walk. Heads bob as they walk, the feet stay flat on the board
+as they bear the weight, and the lowest foot always stays on the board. The
 dinosaurs fight back: a victim threatens, lunges and snaps at its attacker.
 The fallen don't shatter: they stagger, their legs give way and they fall on
 their sides - or are knocked flying, or flung - and lie in a spreading pool of
