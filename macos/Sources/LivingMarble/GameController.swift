@@ -44,15 +44,16 @@ final class GameController: NSObject, MTKViewDelegate {
   // the other armies (built in the background the first time one is chosen)
   private let mlib = MedievalLibrary()
   private let alib = AlienLibrary()
-  /// Background build of a figure set (index 1 medieval, 2 aliens).
+  private let rlib = RomanLibrary()
+  /// Background build of a figure set (index 1 medieval, 2 aliens, 3 Romans).
   private final class ArmyBuild {
     let progress = BuildProgress()
     var ready = false     // the library is complete (set on the main thread)
     var running = false   // a background build is running
     var uploaded = false  // its meshes are on the GPU
   }
-  private let army = [ArmyBuild(), ArmyBuild(), ArmyBuild()]
-  private(set) var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens
+  private let army = [ArmyBuild(), ArmyBuild(), ArmyBuild(), ArmyBuild()]
+  private(set) var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans
   private var pendingSet = -1    // switch to this set once no move is being animated
   private var boardAlbedo = TexImage(), boardDetail = TexImage()
   private var assetsReady = false
@@ -141,6 +142,7 @@ final class GameController: NSObject, MTKViewDelegate {
     world.lib = lib
     world.mlib = mlib
     world.alib = alib
+    world.rlib = rlib
     world.reset()
     loadAssets()
 #if os(macOS)
@@ -170,7 +172,9 @@ final class GameController: NSObject, MTKViewDelegate {
       let board = Textures.bakeBoard(res: res, half: lib.boardHalf)
       if let buildStart {
         // starting with another army: make it before the game begins
-        progress.stage = start == 1 ? "Raising the medieval army" : "Landing the aliens"
+        progress.stage = start == 1 ? "Raising the medieval army"
+          : start == 2 ? "Landing the aliens"
+          : "Mustering the legions"
         buildStart(nil)
       }
       DispatchQueue.main.async {
@@ -183,7 +187,7 @@ final class GameController: NSObject, MTKViewDelegate {
     }
   }
 
-  /// Builds a figure set's library (1 medieval, 2 aliens; nil for Living Marble), on any thread.
+  /// Builds a figure set's library (1 medieval, 2 aliens, 3 Romans; nil for Living Marble), on any thread.
   private func armyBuilder(_ set: Int) -> (@Sendable (BuildProgress?) -> Void)? {
     let quality = opt.quality
     if set == 1 {
@@ -194,14 +198,20 @@ final class GameController: NSObject, MTKViewDelegate {
       let alib = self.alib
       return { Alien.buildLibrary(alib, quality: quality, progress: $0) }
     }
+    if set == 3 {
+      let rlib = self.rlib
+      return { Roman.buildLibrary(rlib, quality: quality, progress: $0) }
+    }
     return nil
   }
 
   private func uploadArmy(_ set: Int) {
     if set == 1 {
       renderer.uploadMedieval(mlib)
-    } else {
+    } else if set == 2 {
       renderer.uploadAlien(alib)
+    } else {
+      renderer.uploadRoman(rlib)
     }
     army[set].uploaded = true
   }
@@ -223,9 +233,9 @@ final class GameController: NSObject, MTKViewDelegate {
     return min(1, Double(p.done) / Double(max(1, p.total)))
   }
 
-  /// 0 Living Marble, 1 medieval, 2 aliens (the figure sets are built in the background on first use).
+  /// 0 Living Marble, 1 medieval, 2 aliens, 3 Romans (the figure sets are built in the background on first use).
   func setPieceSet(_ which: Int) {
-    let s = (which == 1 || which == 2) ? which : 0
+    let s = (which >= 1 && which <= 3) ? which : 0
     model.pieceSet = s
     if s == pieceSet && pendingSet < 0 { return }
     if s != 0 && !army[s].uploaded { startArmyBuild(s) }
@@ -244,9 +254,13 @@ final class GameController: NSObject, MTKViewDelegate {
       a.resetControls()
       a.dissolve = 1
       a.dissolveVel = -world.fx.rnd(1.1, 1.6)
-      a.dissolveColor = s == 1 ? vec3(1.0, 0.62, 0.25) : (s == 2 ? vec3(0.4, 1.0, 0.5) : vec3(1.0, 0.75, 0.35))
+      a.dissolveColor = s == 1 ? vec3(1.0, 0.62, 0.25)
+        : s == 2 ? vec3(0.4, 1.0, 0.5)
+        : s == 3 ? vec3(1.0, 0.3, 0.15)
+        : vec3(1.0, 0.75, 0.35)
     }
-    world.sound(.chime, 0.6, vec3(0), s == 1 ? 0.75 : (s == 2 ? 1.4 : 1))
+    world.sound(.chime, 0.6, vec3(0), s == 1 ? 0.75 : (s == 2 ? 1.4 : (s == 3 ? 0.6 : 1)))
+    if s == 3 { world.sound(.cornu, 0.5, vec3(0)) }  // the legions answer with a horn call
     audio.setMusicArmy(s)  // and its music
   }
 
@@ -913,7 +927,7 @@ final class GameController: NSObject, MTKViewDelegate {
     }
 
     // an army finished building in the background
-    for s in 1..<3 {
+    for s in 1..<4 {
       let b = army[s]
       if b.running && b.ready {
         b.running = false
@@ -1074,6 +1088,8 @@ final class GameController: NSObject, MTKViewDelegate {
     if army[1].running { set(\.medievalProgress, armyProgress(1)) }
     set(\.alienBuilding, army[2].running)
     if army[2].running { set(\.alienProgress, armyProgress(2)) }
+    set(\.romanBuilding, army[3].running)
+    if army[3].running { set(\.romanProgress, armyProgress(3)) }
   }
 
   private func clear(_ cb: MTLCommandBuffer, _ target: MTLTexture) {
@@ -1136,6 +1152,13 @@ final class GameController: NSObject, MTKViewDelegate {
     if fixedStep {
       print("moves: " + game.san.joined(separator: " "))
       print("result: \(game.result.text) (\(game.plyCount) plies, \(world.actors.count) actors, \(world.chunks.count) chunks)")
+      // still busy, or a piece left off its square: a battle that went wrong
+      var off = 0
+      for a in world.actors where a.alive && a.square >= 0 {
+        let c = squareCenter(a.square)
+        if simd_length(vec2(a.pos.x - c.x, a.pos.z - c.z)) > 0.05 { off += 1 }
+      }
+      print("state: \(anims.count) animations running, \(off) pieces off their squares")
     }
 #if os(macOS)
     NSApp.terminate(nil)
