@@ -11,7 +11,7 @@ let musicScoreText = """
 #   glide: slides into each note from the instrument's last one (s)   bend: semitones,s (each note starts that far off)
 #   wah: rate,octaves (the filter sways)
 #
-# The songs: for each army (marble, medieval, alien) three for each piece
+# The songs: for each army (marble, medieval, alien, roman) three for each piece
 #   song army= piece= bpm= beat=<steps a beat, 4> bar=<steps a bar, 16> bars= swing= echo=<steps> gain= title=
 #   chords: one a bar unless given a length (C:8 G = C for 8 steps, G the rest of the bar)
 #   drum <instrument> [settings]: x hit, X accent, o soft, . rest - one character a step
@@ -931,4 +931,237 @@ mel trumpet: | D5:1 F5 G5 Bb5:3 G5:2 | B5:2 D6:1 F6 r:4 | Eb5:1 G5 Bb5 C6:3 Bb5:
   | D6:1 C6 Bb5 G5:2 F5:3 | F5:1 G5 B5 D6:3 B5:2 | C6:2 Bb5 A5 F5 | Bb5:6 r:2 |
 mel rocksax tr=-12 vol=0.6: same
 mel bleep bars=8,16,32: r:6 F6:1 Bb5:1
+
+# ===========================================================================
+# The Romans: the legions and the arena - cornu and buccina, lyre and kithara,
+# aulos, the water organ, war drums, cymbals and sistrum, and a choir
+# ===========================================================================
+patch cornu     synth saw uni=2 det=5 sub=0.2 a=0.04 d=1 s=0.85 r=0.3 cut=1.5 res=0.15 fenv=1.5 fatk=0.05 fdec=0.3 drive=1.6 vib=4.5,0.08,0.4 scoop=0.5 gain=0.5 rev=0.35
+patch buccina   synth saw a=0.015 d=0.8 s=0.8 r=0.25 cut=2.6 res=0.2 fenv=2.4 fatk=0.03 fdec=0.2 vib=5,0.12,0.3 scoop=0.7 drive=1.4 gain=0.42 rev=0.35
+patch lyre      ks bright=0.6 damp=0.28 decay=1.8 r=0.5 gain=0.6 rev=0.35 del=0.1
+patch kithara   ks bright=0.8 damp=0.18 decay=2.4 r=0.6 gain=0.55 rev=0.4 del=0.12
+patch aulos     synth sqr pw=0.28 uni=2 det=6 a=0.02 d=0.5 s=0.9 r=0.12 cut=3.2 res=0.35 drive=1.7 vib=5.5,0.14,0.2 gain=0.34 rev=0.3
+patch hydraulis synth organ2 a=0.04 d=0.3 s=1 r=0.35 trem=4.5,0.18 gain=0.2 rev=0.45
+patch legion    synth saw uni=3 det=10 filt=vox a=0.05 d=0.8 s=0.8 r=0.3 gain=0.24 rev=0.4
+patch tympanum  drum membrane f=95 pamt=0.35 pdec=0.04 d=0.45 snap=0.5 nf=800 ndec=0.03 gain=0.7 rev=0.25
+patch wardrum   drum membrane f=55 pamt=0.5 pdec=0.06 d=1.2 snap=0.8 nf=420 ndec=0.06 drive=1.4 gain=0.5 rev=0.35
+patch cymbala   drum metal f=520 nf=7500 d=1.4 metal=0.85 gain=0.32 rev=0.3
+patch sistrum   drum shaker nf=7000 a=0.004 d=0.18 gain=0.4 rev=0.15
+patch anvil     drum metal f=900 nf=5000 d=0.3 metal=0.9 gain=0.28 rev=0.2
+
+# ---------------------------------------------------------------- the pawn: the legionary - marching, disciplined, a soldier's song
+song army=roman piece=pawn bpm=108 bars=16 gain=1.02 title=March_of_the_Legion
+chords: Dm | Dm | C | Dm | Bb | C | Dm:8 A:8 | Dm | F | C | Dm | Am | Bb | C | Gm:8 A:8 | Dm
+drum wardrum: X.......x.......
+drum sidedrum: X..x..x.X..x.x.x
+drum tympanum: ....x.......x...
+drum cymbala bars=1,9: x...............
+pat tuba lo=D2 gate=0.6: 1 . . . 5, . . . 1 . . . 5, . . .
+pat strings lo=A3 gate=0.5 vol=0.6 bars=9-16: c . c . c . c . c . c . c . c .
+pat choir lo=A3 gate=1 vol=0.6 bars=9-16: c - - - - - - - c - - - - - - -
+mel cornu bars=1-8: | D4:4 D4:2 E4:2 F4:4 A4:4 | G4:6 F4:2 E4:4 D4:4 | E4:4 G4:4 C5:6 Bb4:2 | A4:12 r:4
+  | Bb4:4 A4:2 G4:2 F4:4 D4:4 | E4:4 F4:2 G4:2 C4:8 | F4:4 E4:4 E4:4 C#4:4 | D4:12 r:4 |
+mel buccina bars=9-16: | A4:4 C5:4 F5:6 E5:2 | D5:4 C5:4 G4:8 | F5:4 E5:2 D5:2 A4:4 D5:4 | E5:12 r:4
+  | D5:4 F5:4 Bb5:6 A5:2 | G5:4 E5:4 C5:8 | D5:4 Bb4:4 C#5:4 E5:4 | D5:12 r:4 |
+mel cornu tr=-12 bars=9-16 vol=0.7: same
+
+song army=roman piece=pawn bpm=84 bars=16 gain=0.84 title=Testudo
+chords: Am | Bb | Am | G:8 Am:8 | Am | Bb | C:8 Bb:8 | Am
+drum wardrum: X...x...X...x...
+drum tympanum: ..x...x...x...xx
+drum anvil bars=9-16: ....x.......x...
+mel drone gate=1: A2+E3:16 | _:16 | _:16 | _:16 |
+pat legion lo=A3 vol=0.9 bars=5-16: c - - - . . . . c - - - . . . .
+mel aulos: | A4:6 Bb4:2 A4:4 G4:4 | F4:4 G4:2 F4:2 E4:8 | A4:4 C5:4 Bb4:4 A4:4 | G4:4 F4:4 E4:8
+  | E5:6 F5:2 E5:4 D5:4 | C5:4 D5:2 C5:2 Bb4:8 | C5:4 E5:4 D5:4 Bb4:4 | A4:16 |
+mel cornu tr=-12 bars=9-16 vol=0.8: same
+
+song army=roman piece=pawn bpm=112 beat=6 bar=12 bars=16 gain=0.93 title=Wine_for_the_Tenth_Legion
+chords: Em | D | Em | Bm | C | D | Em:6 D:6 | Em
+drum tympanum: X.....x.....
+drum sistrum: x.o.o.x.o.o.
+drum cymbala bars=9: x...........
+pat lyre lo=E3: 1 . 5 . 8 . 1 . 5 . 8 .
+mel aulos: | E5:4 G5:2 B5:4 A5:2 | F#5:4 D5:2 A4:4 D5:2 | E5:2 F#5 G5 A5:4 G5:2 | F#5:6 D5:6
+  | E5:4 C5:2 G5:4 E5:2 | D5:4 F#5:2 A5:4 F#5:2 | G5:2 F#5 E5 F#5:4 D5:2 | E5:6 r:6 |
+mel kithara tr=-12 bars=9-16 vol=0.8: same
+
+# ---------------------------------------------------------------- the knight: the chariot - the gallop, the Circus Maximus
+song army=roman piece=knight bpm=150 bars=16 gain=0.88 title=Circus_Maximus
+chords: Gm | Gm | Eb | D | Gm | Cm | D:8 D7:8 | Gm | Bb | F | Gm | D | Eb | Cm | D | Gm
+drum tympanum: X..xx..xX..xx..x
+drum wardrum: X.......X.......
+drum snare vol=0.6: ....x.......x...
+drum cymbala bars=1,9: x...............
+pat spicc lo=G3 vol=0.8: 1 . 1 1 5 . 5 5 1 . 1 1 5 . 5 5
+pat tuba lo=G2 gate=0.6: 1 . . . 5, . . . 1 . . . 5, . . .
+mel buccina bars=1-8: | G4:2 G4 D5:4 G5:4 F5:2 Eb5:2 | D5:8 Bb4:4 G4:4 | Eb5:2 Eb5 G5:4 Bb5:4 Ab5:2 G5:2 | F#5:8 D5:8
+  | G5:2 G5 Bb5:4 D6:4 C6:2 Bb5:2 | C6:4 Bb5:2 A5:2 G5:4 Eb5:4 | D5:4 F#5:4 A5:4 C6:4 | Bb5:4 A5:4 G5:8 |
+mel horn bars=9-16: | F5:8 D5:4 Bb4:4 | C5:8 A4:4 F4:4 | D5:6 Eb5:2 D5:4 Bb4:4 | A4:12 r:4
+  | G5:8 Eb5:4 Bb4:4 | C5:6 D5:2 Eb5:4 G5:4 | F#5:8 A5:8 | G5:12 r:4 |
+
+song army=roman piece=knight bpm=132 beat=6 bar=12 bars=16 gain=0.92 title=The_Charioteer
+chords: D | C | G | D | D | C | G:6 A:6 | D | Bm | G | D | A | Bm | G | A | D
+drum tympanum: X..x..X..x..
+drum cymbala bars=1,9: x...........
+pat strings lo=F#3 gate=0.6 vol=0.7: c . . c . . c . . c . .
+pat lyre lo=D3: 1 . 5 . 8 . 5 . 8 . 5 .
+mel cornu bars=1-8: | D5:6 A4:6 | C5:4 E5:2 G5:6 | B4:4 D5:2 G5:4 F#5:2 | A5:12
+  | D6:6 C6:4 A5:2 | G5:4 E5:2 C5:6 | B4:4 D5:2 E5:4 C#5:2 | D5:12 |
+mel choir bars=9-16: | F#4:6 B4:6 | D5:6 B4:6 | A4:6 F#4:6 | E4:12 | F#4:4 B4:2 D5:6 | G5:6 D5:6 | E5:6 C#5:6 | D5:12 |
+mel buccina tr=12 bars=9-16 vol=0.5: same
+
+song army=roman piece=knight bpm=168 bars=16 gain=0.63 title=Seven_Laps
+chords: Am | Am | F | E | Am | Am | Dm:8 E:8 | Am
+drum wardrum: X...X...X...X...
+drum tympanum: x.xxx.xxx.xxx.xx
+drum cymbala bars=1,5,9,13: x...............
+pat spicc lo=E3 vol=0.8: 1 3 5 3 1 3 5 3 1 3 5 3 1 3 5 3
+pat tuba lo=A1 gate=0.5: 1 . 1 . 1 . 1 . 1 . 1 . 1 . 1 .
+mel aulos bars=1-8: | A5:2 E5 A5 B5 C6:4 B5:2 A5:2 | E6:4 D6:2 C6:2 B5:8 | A5:2 C6 F6:4 E6:2 D6 C6:4 | B5:4 G#5:4 E5:8
+  | A5:2 E5 A5 B5 C6:4 B5:2 A5:2 | E6:4 F6:2 E6:2 D6:4 C6:4 | D6:4 F6:4 E6:4 G#5:4 | A5:12 r:4 |
+mel buccina tr=-12 bars=9-16: same
+
+# ---------------------------------------------------------------- the bishop: the centurion - his oath, his drill, his sword
+song army=roman piece=bishop bpm=92 bars=16 gain=1.02 title=The_Centurion's_Oath
+chords: Cm | Ab | Bb | Cm | Fm | Ab | G | G7 | Cm | Ab | Eb | Bb | Ab | Fm | G | Cm
+drum wardrum: X.......X.......
+drum tympanum: ....x.......x.x.
+pat strings lo=G3 gate=1 vol=0.7: c - - - - - - - c - - - - - - -
+pat tuba lo=C2 gate=1: 1 - - - - - - - 5, - - - - - - -
+mel horn bars=1-8: | C4:6 Eb4:2 G4:8 | Ab4:6 G4:2 F4:4 Eb4:4 | F4:4 D4:4 Bb3:8 | C4:12 r:4
+  | F4:6 G4:2 Ab4:4 C5:4 | Eb5:6 C5:2 Ab4:8 | G4:4 B4:4 D5:4 F5:4 | D5:12 r:4 |
+mel choir bars=9-16: | Eb4:6 G4:2 C5:8 | C5:6 Eb5:2 Ab4:8 | G4:6 Bb4:2 Eb5:8 | D5:12 r:4
+  | C5:6 Ab4:2 Eb5:8 | C5:6 F4:2 Ab4:8 | G4:4 B4:4 D5:8 | C5:16 |
+mel buccina bars=13-16 vol=0.6: | C5:6 Ab4:2 Eb5:8 | C5:6 F4:2 Ab4:8 | G4:4 B4:4 D5:8 | C5:16 |
+drum cymbala bars=9: x...............
+
+song army=roman piece=bishop bpm=120 bars=16 gain=0.89 title=Vine_Staff_Drill
+chords: Bb | F | Bb | Eb:8 F:8 | Bb | Gm | C:8 F:8 | Bb
+drum sidedrum: X.x.x.xxX.x.x.x.
+drum wardrum: x.......x.......
+drum anvil bars=9-16: ..x...x...x...x.
+pat tuba lo=Bb1 gate=0.6: 1 . . . 5, . . . 1 . . . 5, . . .
+pat lyre lo=F3 gate=0.4: . . c . . . c . . . c . . . c .
+mel aulos: | F5:3 Bb5:1 D6:4 C6:2 Bb5:2 A5:4 | C6:4 A5:4 F5:8 | D6:3 C6:1 Bb5:2 D6:2 F6:4 D6:4 | Eb6:4 C6:4 A5:4 C6:4
+  | Bb5:3 A5:1 G5:2 F5:2 D5:4 F5:4 | G5:4 Bb5:4 D6:8 | E6:3 D6:1 C6:2 Bb5:2 A5:4 C6:4 | Bb5:8 r:8 |
+mel buccina tr=-12 bars=9-16 vol=0.8: same
+
+song army=roman piece=bishop bpm=140 bars=16 gain=0.72 title=Blood_on_the_Sand
+chords: Em | C | Am | B | Em | C | Am:8 B:8 | Em
+drum wardrum: X..x..X...X..x..
+drum tympanum: ..x.x...x.x.x.xx
+drum cymbala bars=8,16: ........x.......
+pat spicc lo=E3 vol=0.8: 1 1 1 1 5 5 5 5 8 8 8 8 5 5 5 5
+pat tuba lo=E2 gate=0.5: 1 . . 1 . . 1 . 5, . . 5, . . 5, .
+pat choir lo=B3 gate=1 vol=0.6 bars=9-16: c - - - - - - - c - - - - - - -
+mel aulos: | E5:2 F#5 G5 B5 C6:4 B5:4 | E6:4 D6:2 C6:2 B5:4 G5:4 | A5:2 B5 C6 E6 A6:4 G6:2 F#6:2 | F#6:4 D#6:4 B5:8
+  | G6:4 F#6:2 E6:2 B5:4 E6:4 | C6:4 B5:2 A5:2 G5:4 E5:4 | A5:4 C6:4 B5:4 D#6:4 | E6:12 r:4 |
+mel horn tr=-12 bars=9-16 vol=0.8: same
+
+# ---------------------------------------------------------------- the rook: the siege tower - heavy timber, rams and engines
+song army=roman piece=rook bpm=88 bars=16 gain=0.87 title=The_Siege_of_Alesia
+chords: Dm | Eb | Dm | C | Dm | Eb | Gm:8 A:8 | Dm
+drum wardrum: X.......X.......
+drum tympanum: X..x..x.X..x..x.
+drum anvil: ....x.......x...
+mel bourdon gate=1: D2+A2:16 | _:16 | _:16 | _:16 |
+mel cornu: | D3:8 F3:4 A3:4 | Bb3:8 A3:4 G3:4 | A3:6 G3:2 F3:4 D3:4 | E3:8 C3:8
+  | D4:8 C4:4 A3:4 | Bb3:4 Eb4:4 D4:4 C4:4 | Bb3:4 G3:4 A3:4 C#4:4 | D4:12 r:4 |
+mel legion tr=12 bars=9-16 vol=0.9: same
+
+song army=roman piece=rook bpm=120 bars=16 gain=1.08 title=Ballista
+chords: Am | Am | F | E | Am | Am | Dm | E
+drum anvil: x...x...x...x...
+drum block: ..x...x...x...x.
+drum wardrum bars=5-16: X.......X..x....
+drum cymbala bars=8,16: ............x...
+pat pizz lo=A2: 1 . 1 . 5 . 1 . 8 . 1 . 5 . 1 .
+pat spicc lo=E3 vol=0.7 bars=5-16: c . . c . . c . c . . c . . c .
+mel buccina bars=5-8,13-16: | E5:2 r:2 E5:2 r:2 A5:4 G#5:4 | A5:2 r:2 B5:2 r:2 C6:8 | D6:4 C6:2 B5:2 A5:4 F5:4 | E5:12 r:4 |
+mel aulos bars=9-12: | A5:4 E5:4 C6:4 B5:4 | A5:2 B5 C6 D6 E6:8 | F6:4 E6:4 D6:4 C6:4 | B5:4 G#5:4 E5:8 |
+
+song army=roman piece=rook bpm=104 bars=16 gain=0.85 title=Ram_at_the_Gates
+chords: Cm | Cm | Ab | G | Cm | Cm | Fm:8 G:8 | Cm
+drum wardrum: X...........X...
+drum taiko: X.......X...X...
+drum tympanum: ..x...x...x.x.x.
+drum cymbala bars=4,8,12,16: ............x...
+pat tuba lo=C2 gate=0.6: 1 . . . . . . . 1 . . . 5, . 1 .
+pat strings lo=G3 gate=0.5 vol=0.6: c . . . c . . . c . . . c . c .
+pat choir lo=G3 gate=1 vol=0.6 bars=9-16: c - - - - - - - c - - - - - - -
+mel horn: | C4:4 Eb4:4 G4:4 C5:4 | Bb4:8 G4:8 | Ab4:4 C5:4 Eb5:4 D5:4 | B4:12 r:4
+  | C5:4 Eb5:4 G5:4 F5:4 | Eb5:4 D5:4 C5:8 | Ab4:4 F4:4 D4:4 B3:4 | C4:12 r:4 |
+mel cornu tr=-12 bars=9-16 vol=0.8: same
+
+# ---------------------------------------------------------------- the queen: the empress - grace, intrigue, majesty
+song army=roman piece=queen bpm=132 beat=4 bar=12 bars=16 gain=1.04 title=The_Empress's_Garden
+chords: F | Dm | Bb | C | F | Dm | Gm:8 C:4 | F
+pat kithara lo=F3 vol=0.8: 1 . 5 . 8 . 10 . 8 . 5 .
+pat harp lo=F2: 1 . . . . . . . 5 . . .
+drum sistrum vol=0.6: x...x...x...
+drum tympanum bars=9-16: x.......x...
+mel flute: | C5:4 F5:6 E5:2 | D5:4 F5:4 A5:4 | Bb5:6 A5:2 G5:4 | G5:4 E5:4 C5:4
+  | F5:4 A5:6 C6:2 | D6:6 C6:2 A5:4 | G5:4 Bb5:4 E5:4 | F5:12 |
+mel violin tr=-12 bars=9-16 vol=0.7: same
+
+song army=roman piece=queen bpm=100 bars=16 gain=0.96 title=Livia's_Poison
+chords: E | F | E | Dm:8 E:8 | E | F | G:8 F:8 | E
+drum tympanum: X..x..x.X...x...
+drum sistrum: ..x...x...x...x.
+drum cymbala bars=1,9: x...............
+mel drone gate=1: E2+B2:16 | _:16 | _:16 | _:16 |
+mel aulos: | E5:4 F5:2 G#5:2 A5:4 G#5:4 | F5:6 E5:2 F5:4 A5:4 | G#5:2 A5 B5 C6 B5:4 G#5:4 | A5:4 F5:4 G#5:4 E5:4
+  | B5:4 C6:2 B5:2 A5:4 G#5:4 | A5:4 F5:4 C6:8 | B5:2 A5 G5 F5 E5:4 D5:4 | E5:16 |
+pat kithara lo=E3 bars=9-16: 1 . . 5 . . 8 . 1 . . 5 . . 8 .
+
+song army=roman piece=queen bpm=96 bars=16 gain=1.19 title=Augusta
+chords: Eb | Ab | Eb | Bb | Cm | Ab | F:8 Bb:8 | Eb | Ab | Eb | Fm | Bb | Cm | Ab | Bb | Eb
+pat strings lo=G3 gate=1 vol=0.7: c - - - - - - - c - - - - - - -
+pat harp lo=Eb3 vol=0.5: 1 3 5 8 1 3 5 8 1 3 5 8 1 3 5 8
+drum timp bars=9-16: x.......x.......
+drum cymbala bars=9: x...............
+mel horn bars=1-8: | Bb4:6 Eb5:2 G5:8 | Ab5:6 G5:2 F5:4 Eb5:4 | G5:6 F5:2 Eb5:4 Bb4:4 | D5:12 r:4
+  | Eb5:6 G5:2 C6:8 | C6:6 Bb5:2 Ab5:4 C6:4 | A5:4 C6:4 D6:4 F5:4 | Eb5:12 r:4 |
+mel choir bars=9-16: | C5:6 Eb5:2 Ab5:8 | G5:6 Eb5:2 Bb4:8 | C5:6 F5:2 Ab5:8 | F5:12 r:4
+  | G5:6 Eb5:2 C5:8 | Ab5:6 G5:2 F5:4 Eb5:4 | D5:4 F5:4 Bb5:8 | Eb5:16 |
+mel buccina bars=13-16 vol=0.6: | G5:6 Eb5:2 C5:8 | Ab5:6 G5:2 F5:4 Eb5:4 | D5:4 F5:4 Bb5:8 | Eb5:16 |
+
+# ---------------------------------------------------------------- the king: the emperor - triumph, hail, the games
+song army=roman piece=king bpm=112 bars=16 gain=0.96 title=Triumph_of_Caesar
+chords: C | C | F | G | C | Am | F:8 G:8 | C | F | C | Dm | G | Em | Am | Dm:8 G:8 | C
+drum wardrum: X.......X.......
+drum sidedrum: X.x.x.xxX.x.x.x.
+drum cymbala bars=1,5,9,13,16: x...............
+drum tympanum bars=9-16: x.x.x...x.x.x...
+pat tuba lo=C2 gate=0.6: 1 . . . 5, . . . 1 . . . 5, . . .
+pat strings lo=E3 gate=0.5 vol=0.6: . . c . . . c . . . c . . . c .
+mel buccina bars=1-8: | G4:3 G4:1 C5:4 E5:3 E5:1 G5:4 | C6:8 G5:4 E5:4 | F5:3 F5:1 A5:4 C6:6 A5:2 | G5:12 r:4
+  | E5:3 E5:1 G5:4 C6:3 C6:1 E6:4 | D6:4 C6:4 A5:8 | A5:4 C6:4 B5:4 D6:4 | C6:12 r:4 |
+mel choir bars=9-16: | A4:8 C5:8 | G4:8 E5:8 | F4:8 A4:8 | B4:12 r:4 | G4:8 B4:8 | C5:8 E5:8 | D5:8 B4:8 | C5:16 |
+mel cornu bars=9-16: | F3:8 C4:8 | E3:8 G3:8 | D3:8 A3:8 | G3:12 r:4 | E3:8 B3:8 | A3:8 E3:8 | D3:8 G3:8 | C3:16 |
+mel buccina bars=13-16: | G5:4 B5:4 D6:8 | E6:4 C6:4 A5:8 | F6:4 D6:4 B5:4 G5:4 | C6:16 |
+
+song army=roman piece=king bpm=80 bars=16 gain=0.93 title=Ave_Imperator
+chords: Gm | Eb | Bb | F | Gm | Cm | D | D7 | Gm | Eb | Bb | F | Eb | Cm | D:8 D7:8 | Gm
+pat hydraulis lo=G3 gate=1 vol=0.6: c - - - - - - - c - - - - - - -
+pat tuba lo=G2 gate=1: 1 - - - - - - - 5, - - - - - - -
+drum wardrum: X.......X.......
+drum timp bars=9-16: x...x...x...x.xx
+drum cymbala bars=9,16: x...............
+mel choir: | G4:4 Bb4:4 D5:8 | Eb5:6 D5:2 C5:4 Bb4:4 | D5:6 C5:2 Bb4:4 F4:4 | A4:12 r:4
+  | Bb4:4 D5:4 G5:8 | G5:6 F5:2 Eb5:4 C5:4 | D5:4 F#5:4 A5:8 | D5:12 r:4 |
+mel cornu tr=-12 bars=9-16 vol=0.8: same
+mel buccina bars=9-16 vol=0.55: | D5:4 G5:4 Bb5:8 | Bb5:6 A5:2 G5:4 Eb5:4 | F5:6 Eb5:2 D5:4 C5:4 | C5:12 r:4
+  | Bb5:4 G5:4 Eb5:8 | Eb5:6 D5:2 C5:4 Eb5:4 | F#5:4 A5:4 C6:8 | G5:12 r:4 |
+
+song army=roman piece=king bpm=144 bars=16 gain=0.85 title=Bread_and_Circuses
+chords: F | Eb | F | C | F | Eb | Bb:8 C:8 | F
+drum tympanum: X..x..x.X..x..x.
+drum sistrum: x.x.x.x.x.x.x.x.
+drum cymbala bars=1,9: x...............
+pat lyre lo=C3: 1 . 5 . 8 . 5 . 1 . 5 . 8 . 5 .
+mel aulos: | F5:2 A5 C6:4 A5:2 F5:2 C5:4 | Eb5:2 G5 Bb5:4 G5:2 Eb5:2 Bb4:4 | F5:2 A5 C6 F6 Eb6:4 C6:4 | G5:2 E5 C5 E5 G5:8
+  | A5:2 C6 F6:4 E6:2 C6:2 A5:4 | Bb5:2 G5 Eb5:4 F5:2 G5:2 Bb5:4 | D6:4 Bb5:4 E6:4 C6:4 | F6:8 r:8 |
+mel buccina tr=-12 bars=9-16 vol=0.7: same
 """

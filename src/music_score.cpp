@@ -1,7 +1,6 @@
 // The background music's score: the instruments and, for each army, three songs
 // for each piece (the notation is explained at the top). The Mac and iOS version
-// has the same text in MusicScore.swift; keep the two identical (the Roman army,
-// so far only in this version, is the exception).
+// has the same text in MusicScore.swift; keep the two identical.
 #include "music.h"
 
 namespace music {
