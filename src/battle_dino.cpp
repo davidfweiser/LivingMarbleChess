@@ -2201,13 +2201,13 @@ class DBrachioStomp : public DBattle {
     Actor& v = w.actors[plan.victim];
     switch (phase) {
       case 0:
-        shotExtra = 1.6f;
+        shotExtra = 1.1f;
         shotHeight = 1.0f;
         if (faceOffD(w, 0.6f)) next();
         break;
       case 1:  // up to it; the victim turns side-on and cowers, looking up
         if (first) {
-          walker = Walker(plan.mover, V - dir * (0.17f + halfWidthOf(v) + 0.22f), 0.7f);
+          walker = Walker(plan.mover, V - dir * (0.17f + halfWidthOf(v) + 0.22f), std::max(0.7f, L / 2.6f));
           v.yawTarget = faceAngle(A - V) + (w.fx.rnd() < 0.5f ? 1.0f : -1.0f) * 1.3f;
           v.yawRate = 3.0f;
         }
@@ -2297,7 +2297,7 @@ class DBrachioNeck : public DBattle {
         if (faceOffD(w)) next();
         break;
       case 1:
-        if (first) walker = Walker(plan.mover, V - dir * 0.98f, 0.7f);
+        if (first) walker = Walker(plan.mover, V - dir * 0.98f, std::max(0.7f, L / 2.6f));
         victimGuard(v, seg(pt, 0.0f, 0.8f));
         brace(w, 0.6f);
         if (walker.update(w, dt)) next();
@@ -2383,7 +2383,7 @@ class DBrachioTail : public DBattle {
         if (faceOffD(w)) next();
         break;
       case 1:
-        if (first) walker = Walker(plan.mover, V - dir * 0.78f, 0.7f);
+        if (first) walker = Walker(plan.mover, V - dir * 0.78f, std::max(0.7f, L / 2.6f));
         victimGuard(v, seg(pt, 0.0f, 0.8f));
         brace(w, 0.6f);
         if (walker.update(w, dt)) next();
@@ -3229,27 +3229,29 @@ class DCheckmate : public Staged {
         if (enter()) {
           vec3 side(std::cos(k.yaw), 0, -std::sin(k.yaw));
           impact = clampBoard(flat(k.pos) + side * 1.1f + k.forward() * 0.5f, 3.9f);
-          vec3 away = glm::normalize(flat(impact - vec3(0)) + vec3(0.3f, 0, 0.2f));
-          from = impact + away * 7.0f + vec3(0, 9.0f, 0);
+          // the camera behind the king, from the player's side; the meteor comes in from in
+          // front of it, a little to one side, low over the horizon
+          CamPose p;
+          p.target = glm::mix(k.pos, impact, 0.4f) + vec3(0, 0.9f, 0);
+          vec3 player = glm::normalize(flat(w.cam.orbitPose().pos - k.pos) + vec3(1e-4f));
+          vec3 back = glm::normalize(player * 1.0f - flatDir(k.pos, impact) * 0.35f + vec3(1e-4f));
+          p.pos = p.target + back * 4.6f + vec3(0, 1.0f, 0);
+          p.fov = 40;
+          p.focus = glm::length(p.pos - p.target);
+          p.aperture = 7.0f;
+          vec3 eye = w.cinematic ? p.pos : w.cam.orbitPose().pos;
+          vec3 ahead = flatDir(eye, impact);
+          vec3 away = glm::normalize(ahead + vec3(ahead.z, 0, -ahead.x) * 0.45f);
+          from = impact + away * 6.0f + vec3(0, 2.8f, 0);
           meteor = w.addPuppet(dn::D_METEOR, 0, 4);
-          if (Puppet* p = w.puppet(meteor)) {
-            p->pos = from;
-            p->scale = 0.16f;
-            p->shadow = false;
+          if (Puppet* m = w.puppet(meteor)) {
+            m->pos = from;
+            m->scale = 0.16f;
+            m->shadow = false;
           }
           w.sound(SFX_METEOR, 1.0f, impact);
           w.sound(SFX_MATE, 0.6f, k.pos);
-          if (w.cinematic) {
-            CamPose p;
-            p.target = glm::mix(k.pos, impact, 0.4f) + vec3(0, 0.9f, 0);
-            vec3 player = glm::normalize(flat(w.cam.orbitPose().pos - k.pos) + vec3(1e-4f));
-            vec3 back = glm::normalize(player * 1.0f - flatDir(k.pos, impact) * 0.35f + vec3(1e-4f));
-            p.pos = p.target + back * 4.2f + vec3(0, 1.1f, 0);
-            p.fov = 38;
-            p.focus = glm::length(p.pos - p.target);
-            p.aperture = 7.0f;
-            w.cam.setShot(p, 0.9f);
-          }
+          if (w.cinematic) w.cam.setShot(p, 0.9f);
         }
         k.idleWeight = 0;
         float u = std::min(1.0f, pt / hit);
@@ -3265,7 +3267,7 @@ class DCheckmate : public Staged {
           Particle q;
           q.pos = pos + back * w.fx.rnd(0.0f, 0.25f) + w.fx.rndDir() * 0.06f;
           q.vel = back * w.fx.rnd(0.5f, 1.5f) + w.fx.rndDir() * 0.3f;
-          q.size = w.fx.rnd(0.08f, 0.2f);
+          q.size = w.fx.rnd(0.1f, 0.26f);
           q.grow = 0.4f;
           q.color = vec3(4.0f, 1.6f, 0.4f);
           q.colorEnd = vec3(0.6f, 0.15f, 0.05f);

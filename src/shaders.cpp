@@ -846,7 +846,7 @@ void dinoSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout f
       base = mix(hide, stripe, band * 0.85);
       base = mix(base, stripe, smoothstep(0.6, 0.8, n2) * 0.35);
       base *= mix(0.8, 1.05, 1.0 - top * 0.6);
-      base = mix(base, belly, smoothstep(0.15, -0.55, on.y) * 0.85);
+      base = mix(base, belly, (1.0 - smoothstep(-0.55, 0.15, on.y)) * 0.85);
       if (id == 1) base = mix(base, black ? vec3(0.09, 0.085, 0.075) : vec3(0.42, 0.32, 0.2), 0.6);
     }
     float crease = 1.0 - smoothstep(0.0, id == 1 ? 0.2 : 0.24, edge);
@@ -865,7 +865,7 @@ void dinoSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout f
     vec3 bar = black ? vec3(0.015, 0.016, 0.018) : vec3(0.3, 0.19, 0.1);
     if (id == 3) base = black ? vec3(0.03, 0.03, 0.035) : vec3(0.46, 0.33, 0.2);
     albedo = mix(base, bar, bars * (id == 3 ? 0.8 : 0.5)) * (0.75 + 0.45 * barb);
-    albedo = mix(albedo, belly * (black ? 0.7 : 1.0), smoothstep(0.1, -0.6, on.y) * (id == 2 ? 0.7 : 0.0));
+    albedo = mix(albedo, belly * (black ? 0.7 : 1.0), (1.0 - smoothstep(-0.6, 0.1, on.y)) * (id == 2 ? 0.7 : 0.0));
     if (id == 3 && !black) albedo = mix(albedo, vec3(0.9, 0.86, 0.78), smoothstep(0.75, 0.9, n2) * 0.6);  // pale tips
     rough = black ? 0.32 : 0.62;
     wrap = 0.35;
