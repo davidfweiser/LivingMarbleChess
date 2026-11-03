@@ -1376,7 +1376,10 @@ class PawnVault : public RBattle {
         if (pt > 0.75f) next();
         break;
       case 7:
-        if (first) guard(a.ctl, 1.0f, true);
+        if (first) {
+          guard(a.ctl, 1.0f, true);
+          a.yawRate = 9.0f;  // back to his usual pace of turning
+        }
         if (moveInR(w, dt)) next();
         break;
       case 8:
@@ -1969,7 +1972,7 @@ class CenturionKnife : public RBattle {
       case 1: {  // a flip of the knife into the air, and caught
         float u = seg(pt, 0.0f, 0.7f);
         a.ctl.armL = vec3(0.7f + 0.3f * bump(u, 0.0f, 0.3f), 0.0f, 0.6f);
-        if (knife < 0 && pt > 0.12f) {
+        if (knife < 0 && pt > 0.12f && pt < 0.6f) {  // (once: it is caught at 0.62)
           a.ctl.itemL = 0;
           knife = w.addPuppet(rm::R_KNIFE, a.color, 3);
           kp0 = handOf(a, false);
