@@ -161,6 +161,26 @@ final class Model {
     paint(mat, mirrorX(s), only)
   }
 
+  /// The number of parts so far (marks where a group of them starts).
+  var partCount: Int { parts.count }
+  /// Moves the parts in 'range' rigidly: each shape (and stretch weight) is evaluated at the point 'back'
+  /// carries it to, the centre of its bounds moved by 'fwd' (the inverse of 'back').
+  func moveParts(_ range: Range<Int>, fwd: @escaping (vec3) -> vec3, back: @escaping (vec3) -> vec3) {
+    for i in range {
+      let f = parts[i].f.takeUnretainedValue().f
+      parts[i].f = box { p in f(back(p)) }
+      parts[i].c = fwd(parts[i].c)
+      if let w = parts[i].w?.takeUnretainedValue().f { parts[i].w = box { p in w(back(p)) } }
+    }
+  }
+  /// Reshapes the added parts in 'range': each one's distance d at p becomes g(d, p).
+  func reshapeParts(_ range: Range<Int>, _ g: @escaping (Float, vec3) -> Float) {
+    for i in range where parts[i].op == .add {
+      let f = parts[i].f.takeUnretainedValue().f
+      parts[i].f = box { p in g(f(p), p) }
+    }
+  }
+
   /// Scales the whole model about the origin (its skeleton must be scaled to match).
   func scaleAll(_ s: Float) {
     for i in parts.indices {

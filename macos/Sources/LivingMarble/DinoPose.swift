@@ -77,8 +77,9 @@ extension Dino {
     b.R[THB.neck] = aa(c.headYaw * 0.45 + c.twist * 0.3, Y) * aa(-neckUp + 0.012 * breath, X)
     let headPitch: Float = c.headPitch + c.neck * 0.25 + dead * 0.3
     b.R[THB.head] = aa(c.headYaw * 0.55, Y) * aa(headPitch, X) * aa(dead * 0.2, Z)
-    let jawMax: Float = asset == DAsset.king ? 0.75 : (asset == DAsset.queen ? 0.7 : 0.8)
-    b.R[THB.jaw] = aa(jawMax * clamp(c.jaw + 0.25 * dead, 0, 1), X)
+    // (the mouth is sculpted agape: closed, the jaw turns up by the gape)
+    let jawMax: Float = asset == DAsset.king ? 0.9 : (asset == DAsset.queen ? 0.8 : 0.9)
+    b.R[THB.jaw] = aa(jawMax * clamp(c.jaw + 0.25 * dead, 0, 1) - gape(asset), X)
     // --- the tail: a gentle curl at rest, the stride's sway, a lash to one side ('itemYaw'),
     // raised ('itemPitch'); limp when dead
     let curlAmount: Float = asset == DAsset.pawn ? 0.06 : (asset == DAsset.king ? 0.13 : 0.15)
@@ -166,8 +167,8 @@ extension Dino {
     let headNeck: Float = brachio ? 0.25 : 0.1, headDead: Float = brachio ? -0.3 : 0.2
     let headPitch: Float = c.headPitch + headNeck * c.neck - pitch * 0.5 + headDead * dead
     b.R[QDB.head] = aa(headYaw, Y) * aa(headPitch, X)
-    let jawMax: Float = brachio ? 0.5 : 0.45
-    b.R[QDB.jaw] = aa(jawMax * clamp(c.jaw + 0.2 * dead, 0, 1), X)
+    let jawMax: Float = brachio ? 0.55 : 0.5
+    b.R[QDB.jaw] = aa(jawMax * clamp(c.jaw + 0.2 * dead, 0, 1) - gape(asset), X)
     // --- the tail: curled to one side at rest (slowly shifting from side to side), drawn
     // straight behind as it walks or swings it
     let tb = [QDB.tail1, QDB.tail2, QDB.tail3]
@@ -239,7 +240,7 @@ extension Dino {
     b.R[PTB.neck] = aa(c.headYaw * 0.4, Y) * aa(neckPitch, X)
     let headPitch: Float = c.headPitch + c.neck * 0.25 - 0.15 * air + 0.25 * dead
     b.R[PTB.head] = aa(c.headYaw * 0.6, Y) * aa(headPitch, X)
-    b.R[PTB.jaw] = aa(0.55 * clamp(c.jaw + 0.2 * dead, 0, 1), X)
+    b.R[PTB.jaw] = aa(0.6 * clamp(c.jaw + 0.2 * dead, 0, 1) - gape(DAsset.knight), X)
     // the wings
     for side in 0..<2 {
       let s: Float = side == 0 ? 1 : -1

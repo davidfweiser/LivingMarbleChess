@@ -22,7 +22,7 @@ enum DAsset {
 }
 
 /// Per-vertex materials (integer part of Vertex.mat). Colours depend on the army:
-/// the white army is sand and cream with rust markings, the black army slate and
+/// the white army is sand and tan with dark brown markings, the black army slate and
 /// charcoal with crimson.
 enum DMat {
   static let skin = 0       // scaly hide (countershaded, banded)
@@ -378,6 +378,12 @@ enum Dino {
   static func pieceRadius(_ kind: Int) -> Float {
     let R: [Float] = [0.19, 0.22, 0.24, 0.28, 0.22, 0.25]
     return R[max(0, min(5, kind))]
+  }
+  /// The mouths are sculpted agape, the lower jaw turned down about its hinge by this much
+  /// (radians), so that the jaws are separate surfaces; the pose closes them.
+  static func gape(_ kind: Int) -> Float {
+    let G: [Float] = [0.35, 0.25, 0.3, 0.32, 0.3, 0.3]
+    return G[max(0, min(5, kind))]
   }
   /// Raptor, spinosaurus, tyrannosaurus.
   static func theropod(_ kind: Int) -> Bool { kind == DAsset.pawn || kind == DAsset.queen || kind == DAsset.king }

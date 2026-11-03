@@ -58,6 +58,7 @@ extension Dino {
   }
 
   /// A row of teeth along the jaw from a to b (both sides of the mouth: x and -x), pointing 'dir'.
+  /// Each tooth is rigid on its jaw: it never bends towards the other one.
   private static func addTeeth(_ m: Model, _ bone: Int, _ a: vec3, _ b: vec3, _ n: Int, _ dir: vec3, _ len: Float,
                                _ r: Float) {
     for i in 0..<n {
@@ -66,9 +67,73 @@ extension Dino {
       let s: Float = 1 - 0.35 * abs(u - 0.35)
       for sd in stride(from: -1, through: 1, by: 2) {
         let q = vec3(p.x * Float(sd), p.y, p.z)
-        m.add(bone, DMat.teeth, 0, coneS(q, q + dir * len * s, r * s, r * 0.15))
+        // (curved a little along their length, like a real tooth)
+        let tip = q + dir * len * s
+        let mid = romanMix(q, tip, 0.55) + vec3(0, 0, len * s * 0.08)
+        m.addR(bone, DMat.teeth, 0, coneS(q, mid, r * s, r * s * 0.62))
+        m.addR(bone, DMat.teeth, 0, coneS(mid, tip, r * s * 0.62, r * 0.12))
       }
     }
+  }
+
+  /// The mouth. Every animal is sculpted with its mouth agape: the lower jaw's parts (and the
+  /// paint on them), from 'from' on, are turned down about the hinge by gape(), so that the jaws,
+  /// their teeth, the palate and the tongue are surfaces of their own that come apart cleanly as
+  /// the mouth opens (blended into one, they would stretch a sheet of skin between them). The pose
+  /// closes the mouth again.
+  private static func openJaw(_ m: Model, _ from: Int, _ hinge: vec3, _ angle: Float) {
+    let R = rotXm(angle), Rt = R.transpose
+    m.moveParts(from..<m.partCount, fwd: { p in R * (p - hinge) + hinge }, back: { p in Rt * (p - hinge) + hinge })
+  }
+
+  /// Trims the lower jaw's parts (from 'from' to 'to', before openJaw) to the mouth line from the
+  /// hinge along 'dir', a little rounded at the rim, so that they don't reach up into the upper
+  /// jaw; or (upper) the upper jaw's parts, in front of the hinge, so that they don't hang down
+  /// over the lower one.
+  private static func trimJaw(_ m: Model, _ from: Int, _ hinge: vec3, _ dir0: vec3, _ k: Float, upper: Bool = false,
+                              to: Int? = nil) {
+    let dir = normalize(vec3(0, dir0.y, dir0.z))
+    let up = vec3(0, dir.z, -dir.y)
+    if upper {
+      m.reshapeParts(from..<(to ?? m.partCount)) { f, p in
+        let d = p - hinge
+        return SDF.smax(f, min(-dot(d, up), dot(d, dir)), k)
+      }
+    } else {
+      m.reshapeParts(from..<(to ?? m.partCount)) { f, p in SDF.smax(f, dot(p - hinge, up), k) }
+    }
+  }
+
+  /// The throat under the lower jaw: skin that goes with the jaw at the front, but towards the
+  /// back (where it runs into the neck) more and more with the head, so that it stretches smoothly
+  /// as the jaw moves.
+  private static func addThroat(_ m: Model, _ jawBone: Int, _ headBone: Int, _ mat: Int, _ k: Float, _ s: Shape,
+                                _ hinge: vec3, _ dir0: vec3, _ len: Float) {
+    let dir = normalize(vec3(0, dir0.y, dir0.z))
+    m.addStretch(jawBone, headBone, mat, k, s) { p in smoothstep(-0.15 * len, len, dot(p - hinge, dir)) }
+  }
+
+  /// The inside of the mouth, painted over the skin: the palate under the upper jaw, or (upper =
+  /// false, painted with the lower jaw's parts so that it turns with them) the tongue and gums on
+  /// the lower jaw. The mouth line (where the jaws meet when closed) runs from the hinge forward
+  /// along 'dir' (in the yz plane) to 'len' from it. The palate is the upper jaw's surface over
+  /// the line bisecting the gape and no more than 'depth' above the mouth line; the tongue the
+  /// lower jaw's under that line (its own, before it is turned) and no more than 'depth' below it;
+  /// both inside the half-width hw0 (at the hinge) .. hw1 (at the front), short of the lips.
+  private static func paintMouth(_ m: Model, _ hinge: vec3, _ dir0: vec3, _ len: Float, _ gapeAngle: Float,
+                                 _ upper: Bool, _ depth: Float, _ hw0: Float, _ hw1: Float,
+                                 _ mat: Int = DMat.mouth, _ only: Int = DMat.skin) {
+    let dir = normalize(vec3(0, dir0.y, dir0.z))
+    let up = vec3(0, dir.z, -dir.y)
+    let bis = rotXm(upper ? gapeAngle * 0.5 : -gapeAngle * 0.5) * up  // the bisector's normal
+    let sg: Float = upper ? 1 : -1
+    m.paint(mat, fnS({ p in
+      let q = p - hinge
+      let t = dot(q, dir), h = dot(q, up) * sg, b = dot(q, bis) * sg
+      let hw = romanMix(hw0, hw1, clamp(t / len, 0, 1))
+      let d = max(max(h - depth, -b), abs(p.x) - hw)
+      return max(d, max(-t, t - len))
+    }, hinge + dir * len * 0.5, len * 0.75 + max(hw0, hw1) + depth), only)
   }
 
   /// A tube through a polyline: tapering cones, each bound to its bone.
@@ -321,15 +386,19 @@ extension Dino {
       addEye(m, THB.head, hc + vec3(s * 0.021, 0.009, -0.004), 0.0102, vec3(s * 1.0, 0.1, 0.5))
       m.paint(DMat.dark, ellS(vec3(s * 0.008, 0.428, 0.322), vec3(0.0035, 0.0025, 0.005)), DMat.skin)  // nostril
     }
-    // the lower jaw
-    m.add(THB.jaw, DMat.skin, 0.008, coneS(vec3(0, 0.407, 0.222), vec3(0, 0.403, 0.327), 0.017, 0.0075))
-    m.add(THB.jaw, DMat.belly, 0.01, ellS(vec3(0, 0.398, 0.235), vec3(0.014, 0.01, 0.03)))  // the throat
-    m.paint(DMat.mouth, fnS({ p in
-      let d: Float = abs(p.y - 0.413) - 0.003
-      return max(d, max(0.235 - p.z, p.z - 0.335))
-    }, vec3(0, 0.413, 0.28), 0.08), DMat.skin)
-    addTeeth(m, THB.head, vec3(0.012, 0.416, 0.255), vec3(0.007, 0.415, 0.326), 6, vec3(0, -1, 0.15), 0.008, 0.0042)
-    addTeeth(m, THB.jaw, vec3(0.011, 0.41, 0.26), vec3(0.006, 0.408, 0.318), 5, vec3(0, 1, 0.1), 0.0065, 0.0024)
+    // the palate; the lower jaw, sculpted agape (openJaw) with its tongue, gums and teeth
+    let mouthDir = vec3(0, -0.02, 1)
+    let G = gape(DAsset.pawn)
+    paintMouth(m, j.jaw, mouthDir, 0.125, G, true, 0.008, 0.012, 0.006)
+    let jaw0 = m.partCount
+    m.add(THB.jaw, DMat.skin, 0.008, coneS(vec3(0, 0.405, 0.222), vec3(0, 0.403, 0.327), 0.015, 0.0072))
+    addThroat(m, THB.jaw, THB.head, DMat.belly, 0.01, ellS(vec3(0, 0.396, 0.235), vec3(0.013, 0.01, 0.03)), j.jaw, mouthDir, 0.05)
+    trimJaw(m, jaw0, j.jaw, mouthDir, 0.003)
+    m.add(THB.jaw, DMat.mouth, 0.004, ellS(vec3(0, 0.407, 0.265), vec3(0.0075, 0.004, 0.04)))  // the tongue
+    paintMouth(m, j.jaw, mouthDir, 0.125, G, false, 0.008, 0.011, 0.005)
+    addTeeth(m, THB.jaw, vec3(0.008, 0.41, 0.262), vec3(0.005, 0.408, 0.318), 5, vec3(0, 1, 0.1), 0.0065, 0.0024)
+    openJaw(m, jaw0, j.jaw, G)
+    addTeeth(m, THB.head, vec3(0.0125, 0.416, 0.255), vec3(0.0075, 0.415, 0.326), 6, vec3(0, -1, 0.15), 0.008, 0.0042)
     // arms folded at the sides, a fan of quills on each forearm
     addTheroArms(m, j, 0.0135, 0.0095, 3, 0.013, DMat.feather)
     for sd in stride(from: -1, through: 1, by: 2) {
@@ -395,7 +464,7 @@ extension Dino {
     m.add(THB.chest, DMat.skin, 0.04, ellS(vec3(0, 0.39, 0.08), vec3(0.06, 0.055, 0.12)))  // the belly
     // the head: a long, narrow snout ending in a rosette of teeth, a small crest
     let hc = vec3(0, 0.635, 0.465)
-    m.add(THB.head, DMat.skin, 0, ellS(hc, vec3(0.034, 0.038, 0.055)))
+    m.add(THB.head, DMat.skin, 0, ellS(hc + vec3(0, 0.003, 0), vec3(0.034, 0.034, 0.055)))
     m.add(THB.head, DMat.skin, 0.02, coneS(hc + vec3(0, -0.004, 0.03), vec3(0, 0.607, 0.69), 0.026, 0.015))
     m.add(THB.head, DMat.skin, 0.012, ellS(vec3(0, 0.605, 0.69), vec3(0.02, 0.018, 0.03)))
     m.add(THB.head, DMat.scute, 0.008, ellS(vec3(0, 0.663, 0.5), vec3(0.007, 0.011, 0.03)))
@@ -404,15 +473,21 @@ extension Dino {
       addEye(m, THB.head, hc + vec3(s * 0.029, 0.017, 0.002), 0.0115, vec3(s * 1.0, 0.15, 0.35))
       m.paint(DMat.dark, ellS(vec3(s * 0.009, 0.63, 0.58), vec3(0.0035, 0.003, 0.007)), DMat.skin)
     }
+    // the palate; the lower jaw, trimmed to the mouth line and sculpted agape (openJaw), with its
+    // tongue, gums and teeth
+    let mouthDir = vec3(0, -0.05, 1)
+    let G = gape(DAsset.queen)
+    paintMouth(m, j.jaw, mouthDir, 0.27, G, true, 0.01, 0.02, 0.012)
+    let jaw0 = m.partCount
     m.add(THB.jaw, DMat.skin, 0.01, coneS(vec3(0, 0.597, 0.46), vec3(0, 0.585, 0.68), 0.022, 0.012))
     m.add(THB.jaw, DMat.skin, 0.01, ellS(vec3(0, 0.586, 0.685), vec3(0.017, 0.012, 0.024)))
-    m.add(THB.jaw, DMat.belly, 0.01, ellS(vec3(0, 0.585, 0.49), vec3(0.022, 0.012, 0.05)))
-    m.paint(DMat.mouth, fnS({ p in
-      let y: Float = 0.6035 - 0.06 * (p.z - 0.47)
-      return max(abs(p.y - y) - 0.0035, max(0.48 - p.z, p.z - 0.71))
-    }, vec3(0, 0.6, 0.6), 0.14), DMat.skin)
+    addThroat(m, THB.jaw, THB.head, DMat.belly, 0.01, ellS(vec3(0, 0.585, 0.49), vec3(0.022, 0.012, 0.05)), j.jaw, mouthDir, 0.08)
+    trimJaw(m, jaw0, j.jaw, mouthDir, 0.004)
+    m.add(THB.jaw, DMat.mouth, 0.006, ellS(vec3(0, 0.598, 0.53), vec3(0.011, 0.006, 0.07), rotXm(0.05)))  // the tongue
+    paintMouth(m, j.jaw, mouthDir, 0.27, G, false, 0.01, 0.018, 0.01)
+    addTeeth(m, THB.jaw, vec3(0.012, 0.596, 0.52), vec3(0.01, 0.588, 0.69), 7, vec3(0, 1, 0.1), 0.01, 0.003)
+    openJaw(m, jaw0, j.jaw, G)
     addTeeth(m, THB.head, vec3(0.016, 0.604, 0.5), vec3(0.012, 0.594, 0.7), 8, vec3(0, -1, 0.1), 0.012, 0.0035)
-    addTeeth(m, THB.jaw, vec3(0.014, 0.595, 0.51), vec3(0.011, 0.588, 0.69), 7, vec3(0, 1, 0.1), 0.01, 0.003)
     // arms: strong, with hooked thumb claws
     addTheroArms(m, j, 0.022, 0.016, 2, 0.022, DMat.skin, 0.06)
     addTheroLegs(m, j, 0.055, 0.027, 0.017, 0.05, DMat.skin, false)
@@ -474,12 +549,9 @@ extension Dino {
       return SDF.smax((r - 1) * min(w, h), max(z0 - p.z, p.z - z1), 0.02) * 0.7
     }
     m.add(THB.head, DMat.skin, 0, fnS(skull, vec3(0, 0.72, 0.53), 0.16))
-    m.paint(DMat.mouth, fnS({ p in
-      let y1: Float = 0.6645 + 0.01 * (p.z - 0.4)
-      let hw: Float = romanMix(0.046, 0.012, clamp((p.z - 0.45) / 0.21, 0, 1))  // inside the lips
-      let d: Float = max(max(p.y - y1, (y1 - 0.012) - p.y), max(0.43 - p.z, abs(p.x) - hw))
-      return max(d, p.z - 0.64)  // (short of the rounded nose)
-    }, vec3(0, 0.66, 0.55), 0.13), DMat.skin)
+    let mouthDir = vec3(0, -0.004, 1)
+    let G = gape(DAsset.king)
+    paintMouth(m, j.jaw, mouthDir, 0.21, G, true, 0.009, 0.046, 0.012)  // the palate, inside the lips
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
       m.add(THB.head, DMat.skin, 0.02, ellS(vec3(s * 0.062, 0.69, 0.465), vec3(0.022, 0.032, 0.05)))  // the cheeks
@@ -503,24 +575,24 @@ extension Dino {
       let e2: Float = max(0, 1 - e * e)
       let rnd: Float = e2.squareRoot()
       let w: Float = romanMix(0.058, 0.031, t) * romanMix(0.45, 1.0, rnd)
-      let h: Float = romanMix(0.033, 0.016, t)
-      let yc: Float = romanMix(0.63, 0.647, t)
+      let h: Float = romanMix(0.038, 0.019, t)
+      let yc: Float = romanMix(0.625, 0.644, t)
       let ax = abs(p.x) / w, ay = abs(p.y - yc) / h
       let sp: Float = pow(ax, 2.4) + pow(ay, 2.4)
       let r: Float = pow(sp, 1 / 2.4)
       return SDF.smax((r - 1) * min(w, h), max(z0 - p.z, p.z - z1), 0.02) * 0.7
     }
-    m.add(THB.jaw, DMat.skin, 0.01, fnS(mandible, vec3(0, 0.64, 0.54), 0.14))
-    m.add(THB.jaw, DMat.belly, 0.02, ellS(vec3(0, 0.615, 0.49), vec3(0.05, 0.022, 0.08)))
-    m.paint(DMat.mouth, fnS({ p in
-      let y0: Float = 0.656 + 0.008 * (p.z - 0.43)
-      let hw: Float = romanMix(0.044, 0.01, clamp((p.z - 0.45) / 0.2, 0, 1))  // inside the jaw's rim
-      let d: Float = max(max(y0 - p.y, p.y - (y0 + 0.012)), max(0.45 - p.z, abs(p.x) - hw))
-      return max(d, p.z - 0.63)  // (short of the chin)
-    }, vec3(0, 0.66, 0.55), 0.13), DMat.skin)
-    addTeeth(m, THB.head, vec3(0.053, 0.666, 0.47), vec3(0.031, 0.664, 0.645), 8, normalize(vec3(0, -1, 0.12)), 0.024,
+    // (sculpted agape: openJaw; the pose closes it)
+    let jaw0 = m.partCount
+    addThroat(m, THB.jaw, THB.head, DMat.skin, 0.01, fnS(mandible, vec3(0, 0.64, 0.54), 0.14), j.jaw, mouthDir, 0.06)
+    addThroat(m, THB.jaw, THB.head, DMat.belly, 0.02, ellS(vec3(0, 0.615, 0.49), vec3(0.05, 0.022, 0.08)), j.jaw, mouthDir, 0.1)
+    trimJaw(m, jaw0, j.jaw, mouthDir, 0.004)
+    m.add(THB.jaw, DMat.mouth, 0.006, ellS(vec3(0, 0.657, 0.555), vec3(0.024, 0.009, 0.075)))  // the tongue
+    paintMouth(m, j.jaw, mouthDir, 0.2, G, false, 0.012, 0.044, 0.01)  // gums, inside the jaw's rim
+    addTeeth(m, THB.jaw, vec3(0.042, 0.655, 0.505), vec3(0.024, 0.657, 0.63), 6, normalize(vec3(0, 1, 0.1)), 0.017, 0.006)
+    openJaw(m, jaw0, j.jaw, G)
+    addTeeth(m, THB.head, vec3(0.053, 0.666, 0.47), vec3(0.031, 0.664, 0.645), 8, normalize(vec3(0, -1, 0.12)), 0.027,
              0.0075)
-    addTeeth(m, THB.jaw, vec3(0.05, 0.66, 0.49), vec3(0.028, 0.66, 0.63), 7, normalize(vec3(0, 1, 0.1)), 0.017, 0.006)
     // arms: tiny, two-fingered
     addTheroArms(m, j, 0.02, 0.014, 2, 0.016, DMat.skin)
     // legs: huge
@@ -561,7 +633,13 @@ extension Dino {
     // the head: skull, the long beak, the crest
     let hc = vec3(0, 0.5, 0.195)
     m.add(PTB.head, DMat.skin, 0, ellS(hc, vec3(0.024, 0.028, 0.045)))
+    // the beak: upper and lower halves meeting along the mouth line (the lower sculpted agape: openJaw)
+    let jaw = DinoPJ.jaw
+    let mouthDir = vec3(0, -0.075, 1)
+    let G = gape(DAsset.knight)
+    let beak0 = m.partCount
     m.add(PTB.head, DMat.horn, 0.012, coneS(hc + vec3(0, -0.004, 0.03), vec3(0, 0.466, 0.5), 0.019, 0.0018))
+    trimJaw(m, beak0, jaw, mouthDir, 0.003, upper: true)
     m.add(PTB.head, DMat.crest, 0.01, fnS({ p in
       // a blade swept up and back: its lower edge along the skull, tapering to a point
       let q = p - (hc + vec3(0, 0.012, 0.0))
@@ -577,12 +655,15 @@ extension Dino {
       let s = Float(sd)
       addEye(m, PTB.head, hc + vec3(s * 0.02, 0.008, 0.008), 0.0075, vec3(s * 1.0, 0.1, 0.4))
     }
+    paintMouth(m, jaw, mouthDir, 0.09, G, true, 0.006, 0.012, 0.007, DMat.mouth, DMat.horn)  // (the rest of the beak is horn)
+    paintMouth(m, jaw, mouthDir, 0.09, G, true, 0.006, 0.012, 0.007, DMat.mouth, DMat.skin)
+    let jaw0 = m.partCount
     m.add(PTB.jaw, DMat.horn, 0.006, coneS(vec3(0, 0.483, 0.215), vec3(0, 0.46, 0.49), 0.0135, 0.0016))
     m.add(PTB.jaw, DMat.skin, 0.008, ellS(vec3(0, 0.476, 0.23), vec3(0.014, 0.01, 0.035)))  // the throat pouch
-    m.paint(DMat.dark, fnS({ p in
-      let y: Float = 0.486 - 0.075 * (p.z - 0.2)
-      return max(abs(p.y - y) - 0.0018, max(0.22 - p.z, p.z - 0.47))
-    }, vec3(0, 0.47, 0.35), 0.16), DMat.horn)
+    trimJaw(m, jaw0, jaw, mouthDir, 0.003)
+    paintMouth(m, jaw, mouthDir, 0.09, G, false, 0.006, 0.011, 0.006, DMat.mouth, DMat.horn)
+    paintMouth(m, jaw, mouthDir, 0.09, G, false, 0.006, 0.011, 0.006, DMat.mouth, DMat.skin)
+    openJaw(m, jaw0, jaw, G)
     // the wings: arm, forearm, the long hand and the wing finger; three small clawed fingers
     // at the knuckle, which it walks on
     for sd in stride(from: -1, through: 1, by: 2) {
@@ -725,10 +806,15 @@ extension Dino {
     addTube(m, DMat.skin, [vec3(0, 0.33, 0.16), vec3(0, 0.33, 0.23), vec3(0, 0.325, 0.3)], [0.1, 0.092, 0.085],
             [QDB.neck1, QDB.neck3], 0.04)
     addFolds(m, QDB.neck2, vec3(0, 0.33, 0.16), vec3(0, 0.325, 0.3), 0.1, 0.085, [0.3, 0.55, 0.8], 0.007)
-    // the head
+    // the head, its underside cut back to the mouth line in front of the hinge (the lower jaw is
+    // sculpted agape: openJaw)
+    let mouthDir = vec3(0, -0.15, 1)
+    let G = gape(DAsset.bishop)
+    let head0 = m.partCount
     m.add(QDB.head, DMat.skin, 0, ellS(vec3(0, 0.31, 0.4), vec3(0.078, 0.085, 0.13)))
     m.add(QDB.head, DMat.skin, 0.03, coneS(vec3(0, 0.3, 0.45), vec3(0, 0.235, 0.575), 0.058, 0.026))
     m.add(QDB.head, DMat.horn, 0.006, coneS(vec3(0, 0.245, 0.565), vec3(0, 0.195, 0.62), 0.026, 0.005))  // the beak
+    trimJaw(m, head0, j.jaw, mouthDir, 0.006, upper: true)
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
       addEye(m, QDB.head, vec3(s * 0.063, 0.352, 0.432), 0.0145, vec3(s * 1.0, 0.15, 0.25))
@@ -765,13 +851,15 @@ extension Dino {
         m.add(QDB.head, DMat.horn, 0.008, ellS(p, vec3(0.016, 0.016, 0.01), frameY(up, n)))
       }
     }
-    // the lower jaw and its beak
-    m.add(QDB.jaw, DMat.skin, 0.015, ellS(vec3(0, 0.235, 0.46), vec3(0.058, 0.034, 0.11)))
+    // the palate; the lower jaw and its beak
+    paintMouth(m, j.jaw, mouthDir, 0.2, G, true, 0.008, 0.05, 0.03)
+    let jaw0 = m.partCount
+    m.add(QDB.jaw, DMat.skin, 0.015, ellS(vec3(0, 0.229, 0.46), vec3(0.058, 0.041, 0.11)))
     m.add(QDB.jaw, DMat.horn, 0.006, coneS(vec3(0, 0.215, 0.54), vec3(0, 0.205, 0.595), 0.024, 0.006))
-    m.paint(DMat.mouth, fnS({ p in
-      let d: Float = abs(p.y - 0.253 + 0.15 * (p.z - 0.4)) - 0.003
-      return max(d, max(0.37 - p.z, p.z - 0.6))
-    }, vec3(0, 0.24, 0.48), 0.15), DMat.skin)
+    trimJaw(m, jaw0, j.jaw, mouthDir, 0.005)
+    m.add(QDB.jaw, DMat.mouth, 0.008, ellS(vec3(0, 0.231, 0.44), vec3(0.03, 0.01, 0.08), rotXm(0.15)))  // the tongue
+    paintMouth(m, j.jaw, mouthDir, 0.19, G, false, 0.01, 0.046, 0.03)
+    openJaw(m, jaw0, j.jaw, G)
     // legs: the front ones half-sprawled (elbows out and back), the hind ones pillars; broad
     // padded feet with blunt hooves
     var L = DinoQuadLegSpec()
@@ -814,7 +902,10 @@ extension Dino {
     }, vec3(0, 0.9, 0.31), 0.4), DMat.skin)
     // the head: small, with the arched nose of a brachiosaur
     // (a wedge from the braincase to a long, low muzzle, rounded at the end; the arch of the
-    // nose rising over the eyes)
+    // nose rising over the eyes); its underside cut back to the mouth line
+    let mouthDir = vec3(0, -0.02, 1)
+    let G = gape(DAsset.rook)
+    let head0 = m.partCount
     m.add(QDB.head, DMat.skin, 0, fnS({ p in
       let z0: Float = 0.425, z1: Float = 0.562
       let t = clamp((p.z - z0) / (z1 - z0), 0, 1)
@@ -835,11 +926,16 @@ extension Dino {
       addEye(m, QDB.head, vec3(s * 0.0285, 1.229, 0.466), 0.0105, vec3(s * 1.0, 0.1, 0.3))
       m.paint(DMat.dark, ellS(vec3(s * 0.009, 1.266, 0.466), vec3(0.0055, 0.005, 0.008)), DMat.skin)  // nostrils high on the arch
     }
-    m.add(QDB.jaw, DMat.skin, 0.01, ellS(vec3(0, 1.184, 0.502), vec3(0.018, 0.0095, 0.052)))
-    m.paint(DMat.mouth, fnS({ p in
-      max(abs(p.y - 1.186) - 0.0025, max(0.49 - p.z, p.z - 0.56))
-    }, vec3(0, 1.186, 0.52), 0.06), DMat.skin)
-    addTeeth(m, QDB.head, vec3(0.013, 1.188, 0.5), vec3(0.008, 1.188, 0.538), 4, vec3(0, -1, 0.3), 0.007, 0.0026)
+    trimJaw(m, head0, j.jaw, mouthDir, 0.004, upper: true, to: head0 + 1)
+    // the palate; the lower jaw (sculpted agape: openJaw) and its tongue
+    paintMouth(m, j.jaw, mouthDir, 0.095, G, true, 0.006, 0.016, 0.01)
+    let jaw0 = m.partCount
+    m.add(QDB.jaw, DMat.skin, 0.01, ellS(vec3(0, 1.183, 0.502), vec3(0.018, 0.011, 0.052)))
+    trimJaw(m, jaw0, j.jaw, mouthDir, 0.003)
+    m.add(QDB.jaw, DMat.mouth, 0.004, ellS(vec3(0, 1.1825, 0.5), vec3(0.009, 0.0045, 0.035)))  // the tongue
+    paintMouth(m, j.jaw, mouthDir, 0.09, G, false, 0.008, 0.015, 0.009)
+    openJaw(m, jaw0, j.jaw, G)
+    addTeeth(m, QDB.head, vec3(0.013, 1.188, 0.51), vec3(0.008, 1.188, 0.54), 4, vec3(0, -1, 0.3), 0.007, 0.0026)
     // pillar legs, the front ones taller: columns of muscle, elephantine feet (the forefeet a
     // horseshoe of toes with a single thumb claw, the hind feet with three great claws)
     var L = DinoQuadLegSpec()
