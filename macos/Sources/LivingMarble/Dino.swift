@@ -43,7 +43,8 @@ enum DMat {
   static let rock = 15      // the meteor
   static let lava = 16      // ... and its glowing cracks
   static let belly = 17     // pale throat and belly scales
-  static let count = 18
+  static let fuzz = 18      // the pteranodon's coat of fine fur (pycnofibres)
+  static let count = 19
 }
 
 /// Theropods (raptor, spinosaurus, tyrannosaurus). "Left" is the animal's own left
@@ -57,22 +58,25 @@ enum THB {
   static let count = 18
 }
 /// The pteranodon: each wing is the arm, the forearm, the long hand (metacarpal) it
-/// walks on, and its long fourth finger; the trailing edges of the membrane ride on
-/// bones of their own (on the forearm and the finger), drawn in against them as the
-/// wing folds.
+/// walks on, and its long fourth finger; the trailing edge of the membrane behind each
+/// of them rides on a bone of its own (trail: the forearm's, trail2: the finger's, trailA:
+/// the arm's, trailH: the hand's), drawn in against it as the wing folds.
 enum PTB {
   static let body = 0, neck = 1, head = 2, jaw = 3
   static let larm = 4, lfore = 5, lmeta = 6, lfinger = 7, rarm = 8, rfore = 9, rmeta = 10, rfinger = 11
   static let lthigh = 12, lshin = 13, rthigh = 14, rshin = 15
   static let ltrail = 16, rtrail = 17, ltrail2 = 18, rtrail2 = 19
-  static let count = 20
+  static let ltrailA = 20, rtrailA = 21, ltrailH = 22, rtrailH = 23
+  static let count = 24
 }
-/// Four-legged: the triceratops and the brachiosaurus (legs: upper and lower).
+/// Four-legged: the triceratops and the brachiosaurus. Each leg is the upper leg, the
+/// lower leg (forearm, shin) and the foot.
 enum QDB {
   static let body = 0, neck1 = 1, neck2 = 2, neck3 = 3, head = 4, jaw = 5
   static let tail1 = 6, tail2 = 7, tail3 = 8
   static let flu = 9, fll = 10, fru = 11, frl = 12, hlu = 13, hll = 14, hru = 15, hrl = 16
-  static let count = 17
+  static let flf = 17, frf = 18, hlf = 19, hrf = 20
+  static let count = 21
 }
 
 final class DinoLibrary: @unchecked Sendable {  // filled on a loader thread, read after it finishes
@@ -105,7 +109,9 @@ enum DinoPJ {
 struct DinoQuadJ {
   var body = vec3(0), neck1 = vec3(0), neck2 = vec3(0), neck3 = vec3(0), head = vec3(0), jaw = vec3(0)
   var tail1 = vec3(0), tail2 = vec3(0), tail3 = vec3(0), tip = vec3(0)
-  var flu = vec3(0), fll = vec3(0), ffoot = vec3(0), hlu = vec3(0), hll = vec3(0), hfoot = vec3(0)
+  // shoulder, elbow, wrist, foot; hip, knee, ankle, foot
+  var flu = vec3(0), fll = vec3(0), fwrist = vec3(0), ffoot = vec3(0)
+  var hlu = vec3(0), hll = vec3(0), hankle = vec3(0), hfoot = vec3(0)
 }
 
 enum Dino {
@@ -162,9 +168,9 @@ enum Dino {
       j.head = vec3(0, 0.62, 0.43)
       j.jaw = vec3(0, 0.605, 0.45)
       j.tail1 = vec3(0, 0.46, -0.15)
-      j.tail2 = vec3(0, 0.44, -0.34)
-      j.tail3 = vec3(0, 0.41, -0.52)
-      j.tip = vec3(0, 0.37, -0.7)
+      j.tail2 = vec3(0, 0.44, -0.35)
+      j.tail3 = vec3(0, 0.41, -0.55)
+      j.tip = vec3(0, 0.37, -0.77)
       j.hipL = vec3(0.058, 0.43, 0)
       j.kneeL = vec3(0.066, 0.29, 0.07)
       j.ankleL = vec3(0.066, 0.13, -0.02)
@@ -179,9 +185,9 @@ enum Dino {
       j.head = vec3(0, 0.69, 0.4)
       j.jaw = vec3(0, 0.665, 0.43)
       j.tail1 = vec3(0, 0.52, -0.16)
-      j.tail2 = vec3(0, 0.5, -0.36)
-      j.tail3 = vec3(0, 0.46, -0.53)
-      j.tip = vec3(0, 0.41, -0.68)
+      j.tail2 = vec3(0, 0.5, -0.37)
+      j.tail3 = vec3(0, 0.465, -0.56)
+      j.tip = vec3(0, 0.42, -0.76)
       j.hipL = vec3(0.075, 0.48, -0.01)
       j.kneeL = vec3(0.085, 0.31, 0.075)
       j.ankleL = vec3(0.085, 0.14, -0.045)
@@ -240,15 +246,17 @@ enum Dino {
       j.head = vec3(0, 0.33, 0.28)
       j.jaw = vec3(0, 0.25, 0.36)
       j.tail1 = vec3(0, 0.36, -0.3)
-      j.tail2 = vec3(0, 0.33, -0.45)
-      j.tail3 = vec3(0, 0.27, -0.56)
-      j.tip = vec3(0, 0.19, -0.65)
+      j.tail2 = vec3(0, 0.32, -0.48)
+      j.tail3 = vec3(0, 0.26, -0.63)
+      j.tip = vec3(0, 0.18, -0.78)
       j.flu = vec3(0.1, 0.3, 0.15)
-      j.fll = vec3(0.12, 0.16, 0.16)
-      j.ffoot = vec3(0.115, 0.0, 0.17)
+      j.fll = vec3(0.13, 0.17, 0.165)
+      j.fwrist = vec3(0.122, 0.06, 0.18)
+      j.ffoot = vec3(0.12, 0.0, 0.195)
       j.hlu = vec3(0.1, 0.36, -0.2)
-      j.hll = vec3(0.105, 0.18, -0.15)
-      j.hfoot = vec3(0.105, 0.0, -0.18)
+      j.hll = vec3(0.11, 0.2, -0.13)
+      j.hankle = vec3(0.11, 0.075, -0.2)
+      j.hfoot = vec3(0.11, 0.0, -0.165)
     } else {
       j.body = vec3(0, 0.52, 0)
       j.neck1 = vec3(0, 0.66, 0.22)
@@ -257,15 +265,17 @@ enum Dino {
       j.head = vec3(0, 1.19, 0.43)
       j.jaw = vec3(0, 1.185, 0.47)
       j.tail1 = vec3(0, 0.55, -0.24)
-      j.tail2 = vec3(0, 0.47, -0.42)
-      j.tail3 = vec3(0, 0.37, -0.56)
-      j.tip = vec3(0, 0.25, -0.7)
+      j.tail2 = vec3(0, 0.47, -0.45)
+      j.tail3 = vec3(0, 0.36, -0.63)
+      j.tip = vec3(0, 0.22, -0.82)
       j.flu = vec3(0.1, 0.58, 0.16)
-      j.fll = vec3(0.105, 0.3, 0.16)
-      j.ffoot = vec3(0.105, 0.0, 0.17)
+      j.fll = vec3(0.105, 0.33, 0.14)
+      j.fwrist = vec3(0.105, 0.09, 0.17)
+      j.ffoot = vec3(0.105, 0.0, 0.172)
       j.hlu = vec3(0.1, 0.53, -0.16)
-      j.hll = vec3(0.105, 0.26, -0.14)
-      j.hfoot = vec3(0.105, 0.0, -0.17)
+      j.hll = vec3(0.105, 0.28, -0.11)
+      j.hankle = vec3(0.105, 0.08, -0.17)
+      j.hfoot = vec3(0.105, 0.0, -0.15)
     }
     return j
   }
@@ -277,8 +287,8 @@ enum Dino {
     j.neck3 = toModel(kind, j.neck3); j.head = toModel(kind, j.head); j.jaw = toModel(kind, j.jaw)
     j.tail1 = toModel(kind, j.tail1); j.tail2 = toModel(kind, j.tail2); j.tail3 = toModel(kind, j.tail3)
     j.tip = toModel(kind, j.tip); j.flu = toModel(kind, j.flu); j.fll = toModel(kind, j.fll)
-    j.ffoot = toModel(kind, j.ffoot); j.hlu = toModel(kind, j.hlu); j.hll = toModel(kind, j.hll)
-    j.hfoot = toModel(kind, j.hfoot)
+    j.fwrist = toModel(kind, j.fwrist); j.ffoot = toModel(kind, j.ffoot); j.hlu = toModel(kind, j.hlu)
+    j.hll = toModel(kind, j.hll); j.hankle = toModel(kind, j.hankle); j.hfoot = toModel(kind, j.hfoot)
     return j
   }
 
@@ -301,6 +311,10 @@ enum Dino {
       (QDB.hlu, j.hll, false),
       (QDB.body, mirrorXv(j.hlu), false),   // HRU
       (QDB.hru, mirrorXv(j.hll), false),
+      (QDB.fll, j.fwrist, false),           // FLF: the forefoot (hand)
+      (QDB.frl, mirrorXv(j.fwrist), false),
+      (QDB.hll, j.hankle, false),           // HLF: the hind foot
+      (QDB.hrl, mirrorXv(j.hankle), false),
     ])
   }
 
@@ -335,6 +349,10 @@ enum Dino {
       (PTB.rfore, P(mirrorXv(DinoPJ.elL)), false),
       (PTB.lfinger, P(DinoPJ.knL), false),              // LTRAIL2: the outer membrane's
       (PTB.rfinger, P(mirrorXv(DinoPJ.knL)), false),
+      (PTB.larm, P(DinoPJ.shL), false),                 // LTRAILA: behind the arm
+      (PTB.rarm, P(mirrorXv(DinoPJ.shL)), false),
+      (PTB.lmeta, P(DinoPJ.wrL), false),                // LTRAILH: behind the hand
+      (PTB.rmeta, P(mirrorXv(DinoPJ.wrL)), false),
     ])
   }()
   private static let noSkel = MSkeleton()
@@ -447,7 +465,7 @@ enum Dino {
   static func wingTip() -> vec3 { toModel(DAsset.knight, DinoPJ.tipL) }
   /// Half the width of the body (how far a flank is from the middle).
   static func bodyHalfWidth(_ kind: Int) -> Float {
-    let W: [Float] = [0.05, 0.05, 0.13, 0.13, 0.06, 0.088]
+    let W: [Float] = [0.05, 0.05, 0.13, 0.15, 0.06, 0.09]
     return W[max(0, min(5, kind))]
   }
 
@@ -470,7 +488,7 @@ enum Dino {
       let j = quadJ(asset)
       let p0 = vec3(j.ffoot.x, 0.0, j.ffoot.z)
       let p2 = vec3(j.hfoot.x, 0.0, j.hfoot.z)
-      return [(p0, QDB.fll), (mirrorXv(p0), QDB.frl), (p2, QDB.hll), (mirrorXv(p2), QDB.hrl)]
+      return [(p0, QDB.flf), (mirrorXv(p0), QDB.frf), (p2, QDB.hlf), (mirrorXv(p2), QDB.hrf)]
     }
   }
 }

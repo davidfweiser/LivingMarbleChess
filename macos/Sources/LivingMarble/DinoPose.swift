@@ -17,6 +17,17 @@ extension Dino {
   @inline(__always) private static func rotationBetween(_ a: vec3, _ b: vec3) -> quat { PoseKit.rotationBetween(a, b) }
   private typealias Builder = PoseKit.Builder
 
+  /// The tail's resting curl to one side (radians per bone): it drifts slowly from side to
+  /// side over a couple of minutes (each animal has its own idle phase), lessens as the animal
+  /// walks, and gives way to a swing of the tail ('itemYaw').
+  private static func restCurl(_ c: MControls, _ amount: Float) -> Float {
+    var side: Float = sin(c.idle * 0.045 + 1.3)
+    side = clamp(side * 1.6, -1, 1)
+    let use: Float = 1 - clamp(abs(c.itemYaw) * 2.5 + abs(c.itemPitch) * 1.5, 0, 1)
+    let walking: Float = 1 - 0.7 * clamp(c.stride, 0, 1)
+    return amount * side * walking * use
+  }
+
   /// Moves the root so that the lowest of the ground points rests on the board
   /// ('weight' 0..1: how much; off in the air or when lying dead).
   private static func groundFit(_ asset: Int, _ b: inout Builder, _ root: Int, _ out: inout MPose, _ weight: Float) {
@@ -70,7 +81,8 @@ extension Dino {
     b.R[THB.jaw] = aa(jawMax * clamp(c.jaw + 0.25 * dead, 0, 1), X)
     // --- the tail: a gentle curl at rest, the stride's sway, a lash to one side ('itemYaw'),
     // raised ('itemPitch'); limp when dead
-    let curl: Float = (asset == DAsset.pawn ? 0.04 : 0.11) * alive
+    let curlAmount: Float = asset == DAsset.pawn ? 0.06 : (asset == DAsset.king ? 0.13 : 0.15)
+    let curl: Float = restCurl(c, curlAmount) * alive
     let sway0: Float = 0.1 * sin(c.idle * 0.8 + c.tail) * (asset == DAsset.pawn ? 0.6 : 1.0)
     let sway: Float = (sway0 + 0.12 * st * sin(g)) * alive
     let tb = [THB.tail1, THB.tail2, THB.tail3]
@@ -78,7 +90,8 @@ extension Dino {
     for i in 0..<3 {
       let fi = Float(i)
       let first: Float = i == 0 ? 1 : 0
-      let yaw: Float = curl + sway * (0.6 + 0.4 * fi) - c.twist * 0.25 * first + c.itemYaw * share[i]
+      let yaw0: Float = curl * (0.7 + 0.3 * fi) + sway * (0.6 + 0.4 * fi)
+      let yaw: Float = yaw0 - c.twist * 0.25 * first + c.itemYaw * share[i]
       let up0: Float = i == 0 ? -c.lean * 0.5 + 0.1 * run * st + 0.3 * tuck : 0
       let up: Float = c.itemPitch * share[i] + up0 - 0.12 * dead + 0.03 * sin(c.idle * 0.7 + fi) * alive
       b.R[tb[i]] = aa(yaw, Y) * aa(up, X)
@@ -98,8 +111,11 @@ extension Dino {
 
   /// Four-legged: the triceratops and the brachiosaurus.
   private struct Quad {
-    var upper: [Int], lower: [Int]  // FL FR HL HR
+    var upper: [Int], lower: [Int], foot: [Int]  // FL FR HL HR
   }
+  /// The legs walking: each foot is kept level on the board while it bears weight, and
+  /// flexes (the sole turning back) as it is lifted. A front leg's elbow points back, a
+  /// hind leg's knee forward; a crouch folds them that way.
   private static func quadLegs(_ b: inout Builder, _ q: Quad, _ c: MControls, _ pitch: Float) {
     let walk: [Float] = [0, PI, PI * 1.5, PI * 0.5]  // a lateral-sequence walk
     let trot: [Float] = [0, PI, PI, 0]
@@ -110,12 +126,17 @@ extension Dino {
       let s = sin(ph), lift = max(0, cos(ph))
       let front = i < 2
       let amp: Float = (0.32 + 0.18 * run) * st
-      let deadSw: Float = front ? 0.3 : -0.35, crouchSw: Float = front ? 0.45 : -0.5
-      let sw: Float = amp * s + deadSw * dead - crouchSw * c.crouch
+      let deadSw: Float = front ? 0.3 : -0.35, crouchSw: Float = front ? -0.4 : 0.5
+      let sw: Float = amp * s + deadSw * dead + crouchSw * c.crouch
+      // the elbow / knee: (+ folds the lower leg back)
+      let bendFront: Float = (0.3 + 0.25 * run) * lift * st - 0.8 * c.crouch - 0.15 * dead
+      let bendHind: Float = (0.7 + 0.3 * run) * lift * lift * st + 0.9 * c.crouch - 0.1 * dead
+      let bend: Float = front ? bendFront : bendHind
+      let flexAmount: Float = front ? 0.9 : 0.6
+      let flex: Float = flexAmount * lift * st + 0.5 * dead
       b.R[q.upper[i]] = aa(-pitch, X) * swing(sw)
-      let crouchKn: Float = front ? 0.85 : 0.9
-      let kn: Float = (0.8 + 0.3 * run) * lift * lift * st + crouchKn * c.crouch - 0.1 * dead
-      b.R[q.lower[i]] = knee(kn)
+      b.R[q.lower[i]] = knee(bend)
+      b.R[q.foot[i]] = aa(sw - bend + flex, X)  // level: undo the leg's swing and bend
     }
   }
 
@@ -126,7 +147,8 @@ extension Dino {
     let st = c.stride, g = c.gait
     let dead = clamp(c.dead, 0, 1), alive = 1 - dead
     let breath = sin(c.idle * (brachio ? 0.9 : 1.3)) * alive
-    let q = Quad(upper: [QDB.flu, QDB.fru, QDB.hlu, QDB.hru], lower: [QDB.fll, QDB.frl, QDB.hll, QDB.hrl])
+    let q = Quad(upper: [QDB.flu, QDB.fru, QDB.hlu, QDB.hru], lower: [QDB.fll, QDB.frl, QDB.hll, QDB.hrl],
+                 foot: [QDB.flf, QDB.frf, QDB.hlf, QDB.hrf])
     let pitch: Float = c.lean + 0.02 * st * sin(g * 2)
     let roll: Float = 0.035 * st * sin(g) + 0.008 * breath
     b.R[QDB.body] = aa(c.twist * 0.4 + 0.04 * st * sin(g), Y) * aa(pitch, X) * aa(roll, Z)
@@ -146,32 +168,49 @@ extension Dino {
     b.R[QDB.head] = aa(headYaw, Y) * aa(headPitch, X)
     let jawMax: Float = brachio ? 0.5 : 0.45
     b.R[QDB.jaw] = aa(jawMax * clamp(c.jaw + 0.2 * dead, 0, 1), X)
-    // --- the tail
+    // --- the tail: curled to one side at rest (slowly shifting from side to side), drawn
+    // straight behind as it walks or swings it
     let tb = [QDB.tail1, QDB.tail2, QDB.tail3]
     let share: [Float] = [0.4, 0.35, 0.25]
-    let curl: Float = (brachio ? 0.14 : 0.06) * alive
+    let curlAmount: Float = brachio ? 0.24 : 0.2
+    let curl: Float = restCurl(c, curlAmount) * alive
     let tsway: Float = (0.08 * sin(c.idle * 0.6 + c.tail) + 0.1 * st * sin(g)) * alive
     for i in 0..<3 {
+      let fi = Float(i)
       let first: Float = i == 0 ? 1 : 0
-      let yaw: Float = curl + tsway * (0.6 + 0.4 * Float(i)) + c.itemYaw * share[i] - c.twist * 0.2 * first
+      let yaw0: Float = curl * (0.8 + 0.2 * fi) + tsway * (0.6 + 0.4 * fi)
+      let yaw: Float = yaw0 + c.itemYaw * share[i] - c.twist * 0.2 * first
       let up0: Float = i == 0 ? -pitch * 0.5 : 0
       let up: Float = c.itemPitch * share[i] + up0 - 0.1 * dead
       b.R[tb[i]] = aa(yaw, Y) * aa(up, X)
     }
-    // --- rearing up on the hind legs: the body pivots about the hips, the forefeet paw the air
+    // --- rearing up on the hind legs: the body pivots about the hips, the knees give a little
+    // under the weight; the forelegs are drawn up, elbows back, the forefeet hanging and pawing
     if c.rear > 0.001 {
       let r = smooth(c.rear)
       let a: Float = (brachio ? 1.05 : 0.45) * r
       let h = sk.joint[QDB.hlu]
       let pivot = vec3(0, h.y, h.z)
       b.rotateAbout(QDB.body, aa(-a, X), pivot)
-      b.R[QDB.hlu] = aa(a, X) * b.R[QDB.hlu]
-      b.R[QDB.hru] = aa(a, X) * b.R[QDB.hru]
-      let paw: Float = sin(c.idle * 6) * 0.25
-      b.R[QDB.flu] = swing(0.9 * r + paw) * b.R[QDB.flu]
-      b.R[QDB.fru] = swing(0.9 * r - paw) * b.R[QDB.fru]
-      b.R[QDB.fll] = knee(0.9 * r) * b.R[QDB.fll]
-      b.R[QDB.frl] = knee(0.9 * r) * b.R[QDB.frl]
+      let kneeGive: Float = 0.35 * r, thighFwd: Float = 0.2 * r
+      for i in 2..<4 {
+        b.R[q.upper[i]] = aa(a, X) * swing(thighFwd) * b.R[q.upper[i]]
+        b.R[q.lower[i]] = knee(kneeGive) * b.R[q.lower[i]]
+        b.R[q.foot[i]] = aa(thighFwd - kneeGive, X) * b.R[q.foot[i]]
+      }
+      let paw: Float = sin(c.idle * 6) * 0.25 * r
+      let armUp: Float = brachio ? 0.35 : 0.2
+      let elbowBack: Float = brachio ? 0.55 : 0.45
+      let footHang: Float = brachio ? 0.7 : 0.5
+      for i in 0..<2 {
+        // (the body is pitched up by a: an upper arm that stays put in the body swings forward with it)
+        let pawSide: Float = i == 0 ? paw : -paw
+        let upper: Float = armUp * r - a + pawSide
+        b.R[q.upper[i]] = swing(upper) * b.R[q.upper[i]]
+        let elbow: Float = -elbowBack * r + 0.5 * paw
+        b.R[q.lower[i]] = knee(elbow) * b.R[q.lower[i]]
+        b.R[q.foot[i]] = aa(footHang * r, X) * b.R[q.foot[i]]
+      }
       for i in 0..<3 {  // the tail props it up
         let tailUp: Float = i == 0 ? 0.7 : 0.15
         b.R[tb[i]] = aa(a * tailUp, X) * b.R[tb[i]]
@@ -210,13 +249,14 @@ extension Dino {
       var T = wingTip()
       T.x *= s
       // folded: the arm out and back, the forearm forward and down, the hand straight down to
-      // the board, the finger folded up and back along the flank; stepping as it walks
+      // the board, the finger folded up and back from the knuckle beside the arm, its tip over the
+      // hips; stepping as it walks
       let ph: Float = g + (side == 0 ? 0 : PI)
       let step: Float = 0.35 * st * sin(ph), lift: Float = max(0, cos(ph)) * st
       let dA = normalize(vec3(s * 0.3, -0.6, -0.55 + step * 0.6))
       let dF = normalize(vec3(s * 0.05, -0.75 + 0.25 * lift, 0.66 + step))
       let dM = normalize(vec3(s * 0.03, -1.0, 0.05 + 0.6 * lift + step * 0.4))
-      let dT = normalize(vec3(s * 0.12, 0.35, -0.93))
+      let dT = normalize(vec3(s * 0.2, 0.62, -0.76))
       let fA = rotationBetween(E - S, dA)
       let fF = rotationBetween(W - E, fA.inverse * dF)
       let fM = rotationBetween(N - W, (fA * fF).inverse * dM)
@@ -235,9 +275,29 @@ extension Dino {
       b.R[mc] = simd_slerp(fM, sM, u)
       b.R[fg] = simd_slerp(fT, sT, u)
     }
-    // the membranes' trailing edges: drawn in against the arm and the finger as the wings fold
-    let k: Float = romanMix(0.08, 1.0, spread)
-    for t in [PTB.ltrail, PTB.rtrail, PTB.ltrail2, PTB.rtrail2] { b.st[t] = vec3(1.0, k, k) }
+    // the membranes: drawn in against the bones of the wing as it folds. Each trailing-edge
+    // bone squeezes the membrane towards a line through its joint (along x at rest), turned onto
+    // its wing bone as it folds.
+    let k: Float = romanMix(0.12, 1.0, spread)
+    let fold: Float = (1 - k) / 0.88
+    for side in 0..<2 {
+      let L = side == 0
+      var T = wingTip()
+      if !L { T.x = -T.x }
+      let trail: [Int] = [L ? PTB.ltrailA : PTB.rtrailA, L ? PTB.ltrail : PTB.rtrail,
+                          L ? PTB.ltrailH : PTB.rtrailH, L ? PTB.ltrail2 : PTB.rtrail2]
+      let lead: [Int] = [L ? PTB.larm : PTB.rarm, L ? PTB.lfore : PTB.rfore,
+                         L ? PTB.lmeta : PTB.rmeta, L ? PTB.lfinger : PTB.rfinger, -1]
+      for i in 0..<4 {
+        let a = sk.joint[lead[i]]
+        let e = lead[i + 1] >= 0 ? sk.joint[lead[i + 1]] : T
+        let f = normalize(e - a)
+        let fx: Float = f.x < 0 ? -1 : 1
+        b.st[trail[i]] = vec3(1.0, k, k)
+        // (glm::slerp from the identity quat(1, 0, 0, 0))
+        b.R[trail[i]] = simd_slerp(quat.identity, rotationBetween(vec3(fx, 0, 0), f), fold)
+      }
+    }
     // the legs: walking; trailed behind in flight; thrust forward, talons first ('tuck')
     for side in 0..<2 {
       let th = side == 0 ? PTB.lthigh : PTB.rthigh, sh = side == 0 ? PTB.lshin : PTB.rshin
