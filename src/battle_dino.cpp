@@ -417,11 +417,16 @@ struct DFall {
 };
 
 // A body knocked flying: it tumbles through the air, crashes down and comes to rest on
-// its side (then fades).
+// its side (then fades). It turns over about a level axis across its flight, so it always
+// goes over the way it was struck: spin > 0 the top first (struck high, it is bowled over
+// backwards or sideways, away from the blow), spin < 0 the feet first (swept off its feet).
 struct DTumble {
   int actor = -1, corpse = -1;
   vec3 vel{0};
-  float spin = 0, angle = 0, target = 0, t = 0, settle = 0, hmid = 0.25f;
+  vec3 axis{1, 0, 0};  // the level axis it turns about (in its own, yawed, frame)
+  float spin = 0, angle = 0, t = 0, settle = 0, hmid = 0.25f;
+  quat start{1, 0, 0, 0};  // its attitude when it was struck (or let go)
+  quat rest{1, 0, 0, 0};   // lying on its side, where it settles once down
   bool landed = false, done = false;
   float life = 1.8f, bleed = 1.0f;
   bool active() const { return actor >= 0 && !done; }
@@ -435,9 +440,36 @@ struct DTumble {
     v.tremble = 0;
     v.ctl.wings = 0;
     v.ctl.hover = 0;
+    v.yawTarget = v.yaw;  // (it no longer turns itself)
     hmid = v.height() / std::max(v.scale, 1e-3f) * 0.4f;
+    // it turns about its middle, going on from however it was held: the pivot moves there
+    // without moving the body
+    start = v.tilt;
+    vec3 p0 = v.tiltPivot * v.scale, p1 = vec3(0, hmid, 0) * v.scale;
+    v.pos += glm::angleAxis(v.yaw, vec3(0, 1, 0)) * ((p0 - start * p0) - (p1 - start * p1));
     v.tiltPivot = vec3(0, hmid, 0);
+    // turning about up x d carries the top towards d; into the frame the tilt works in
+    vec3 d = flat(velocity);
+    if (glm::length(d) < 1e-3f) d = -v.forward();
+    vec3 across = glm::normalize(glm::cross(vec3(0, 1, 0), glm::normalize(d)));
+    axis = glm::angleAxis(-v.yaw, vec3(0, 1, 0)) * across;
     w.sound(SFX_DINODEATH, 0.8f, headOf(v), deathPitch(v.kind) * w.fx.rnd(1.0f, 1.12f));
+  }
+  // how far the lowest point of the body (a box round its middle) is above the board
+  float lowest(const Actor& v) const {
+    float s = v.scale;
+    vec3 X = v.tilt * vec3(1, 0, 0), Y = v.tilt * vec3(0, 1, 0), Z = v.tilt * vec3(0, 0, 1);
+    float reach = std::fabs(X.y) * dn::bodyHalfWidth(v.kind) + std::fabs(Y.y) * hmid + std::fabs(Z.y) * dn::bodyLength(v.kind) * 0.22f;
+    return v.pos.y + (hmid - reach) * s;
+  }
+  // lying on whichever flank is lower, its length along the board
+  static quat onItsSide(const quat& q) {
+    vec3 X = q * vec3(1, 0, 0), Y = q * vec3(0, 1, 0), Z = q * vec3(0, 0, 1);
+    vec3 Xt(0, X.y <= 0.0f ? -1.0f : 1.0f, 0);
+    vec3 Zt = flat(Z);
+    if (glm::length(Zt) < 0.2f) Zt = flat(Y) * (Z.y > 0.0f ? 1.0f : -1.0f);  // on end: it topples over
+    Zt = glm::length(Zt) > 1e-4f ? glm::normalize(Zt) : vec3(0, 0, 1);
+    return glm::normalize(glm::quat_cast(glm::mat3(Xt, glm::cross(Zt, Xt), Zt)));
   }
   bool update(World& w, float dt) {
     if (done || actor < 0) return true;
@@ -455,14 +487,11 @@ struct DTumble {
       vel.y -= 14.0f * dt;
       v.pos += vel * dt;
       angle += spin * dt;
-      v.tilt = glm::angleAxis(-angle, vec3(0, 0, 1)) * glm::angleAxis(0.15f * std::sin(t * 7.0f), vec3(1, 0, 0));
+      v.tilt = glm::normalize(glm::angleAxis(angle, axis) * start * glm::angleAxis(0.15f * std::sin(t * 7.0f), vec3(0, 0, 1)));
       c.dead = std::min(1.0f, 0.5f + t);
-      float h = hmid * v.scale;
-      float low = v.pos.y + h - (std::fabs(std::cos(angle)) * h + std::fabs(std::sin(angle)) * hw * v.scale);
-      if (overBoard(v.pos) && low <= 0.0f && vel.y < 0.0f && t > 0.15f) {
+      if (overBoard(v.pos) && lowest(v) <= 0.0f && vel.y < 0.0f && t > 0.15f) {
         landed = true;
-        float k = std::round((angle - kPI * 0.5f) / kPI);  // whichever side is nearer
-        target = kPI * 0.5f + k * kPI;
+        rest = onItsSide(v.tilt);
         vec3 p = flat(v.pos);
         float big = std::min(1.0f, v.height());
         w.sound(SFX_BODYFALL, 0.7f + 0.3f * big, p, 1.3f - 0.4f * big);
@@ -484,9 +513,8 @@ struct DTumble {
     vel.z *= k;
     v.pos.x += vel.x * dt;
     v.pos.z += vel.z * dt;
-    angle += (target - angle) * (1.0f - std::exp(-dt * 16.0f));
+    v.tilt = glm::normalize(glm::slerp(v.tilt, rest, 1.0f - std::exp(-dt * 16.0f)));
     v.pos.y += ((hw - hmid) * v.scale - v.pos.y) * (1.0f - std::exp(-dt * 18.0f));
-    v.tilt = glm::angleAxis(-angle, vec3(0, 0, 1));
     c.dead = 1.0f;
     if (settle > 0.45f) {
       corpse = makeCorpse(w, v, life);
@@ -866,7 +894,20 @@ class DBattle : public BattleBase {
     return a && b;
   }
   bool victimDying() const { return fall.active() || tumble.active(); }
-  // knocked flying (the small ones), or bowled over (the heavy)
+  // a tail (or a neck) swung across the victim along 'sweep', from 'root' out to 'tip' (both
+  // on the board): true once it points the victim's way and the part of it nearest the
+  // victim has reached its near flank
+  bool sweptInto(const Actor& v, const vec3& root, const vec3& tip, const vec3& sweep) const {
+    vec3 c = flat(v.pos), s = tip - root;
+    float l2 = glm::dot(s, s);
+    if (l2 < 1e-6f) return false;
+    float k = glm::dot(c - root, s) / l2;  // how far along it the victim lies
+    if (k < 0.25f) return false;           // (pointing away)
+    return glm::dot(root + s * std::min(k, 1.0f) - c, sweep) >= -halfWidthOf(v) * 1.3f;
+  }
+  // knocked flying (the small ones), or bowled over (the heavy), along 'vel'. spin > 0: struck
+  // high, it goes over away from the blow; spin < 0: its legs swept from under it, it goes
+  // down the other way (towards the side the blow came from)
   void knockFlying(World& w, const vec3& vel, float spin) {
     Actor& v = w.actors[plan.victim];
     if (isSmall(v) || v.kind == K_BISHOP) {
@@ -874,7 +915,8 @@ class DBattle : public BattleBase {
       tumble.launch(w, v, vec3(vel.x * k, vel.y * k, vel.z * k), spin * k);
     } else {
       vec3 left(std::cos(v.yaw), 0, -std::sin(v.yaw));
-      kill(w, glm::dot(flat(vel), left) >= 0 ? 1.0f : -1.0f, flat(vel) * 0.3f, 0.12f);
+      float side = glm::dot(flat(vel), left) >= 0 ? 1.0f : -1.0f;
+      kill(w, spin < 0 ? -side : side, flat(vel) * (spin < 0 ? 0.12f : 0.3f), 0.12f);
     }
   }
   // struck down: it falls on the flank the blow drives it to (or a random one)
@@ -1818,7 +1860,7 @@ class DPteroTalons : public DBattle {
           wound(w, hitAt, flightDir + vec3(0, 0.3f, 0), 0.8f, W_CLAW);
           feathers(w, v, hitAt, flightDir, 12);
           w.sound(SFX_THUD, 0.9f, hitAt, 1.2f);
-          knockFlying(w, flightDir * 2.0f + vec3(0, 1.6f, 0), w.fx.rnd() < 0.5f ? 8.0f : -8.0f);
+          knockFlying(w, flightDir * 2.0f + vec3(0, 1.6f, 0), 8.0f);
           w.slowmo(0.35f, 0.5f);
           w.shake(0.25f);
           next();
@@ -1936,7 +1978,7 @@ class DTrikeCharge : public DBattle {
           vec3 c = chestOf(v) * 0.5f + neckOf(v) * 0.5f;
           wound(w, c, dir + vec3(0, 0.5f, 0), 1.2f, W_GORE);
           feathers(w, v, c, dir, 14);
-          knockFlying(w, dir * 2.2f + vec3(0, 3.0f, 0), w.fx.rnd() < 0.5f ? 9.0f : -9.0f);
+          knockFlying(w, dir * 2.2f + vec3(0, 3.0f, 0), 9.0f);
           w.slowmo(0.3f, 0.5f);
           w.shake(0.35f);
           skid = walker.v;
@@ -2047,10 +2089,10 @@ class DTrikeLock : public DBattle {
         a.ctl.headPitch = kf(u, {{0.0f, 0.42f}, {0.6f, 0.2f}, {1.0f, -0.3f}});
         if (!gored && u > 0.5f) {
           gored = true;
-          vec3 side(-dir.z, 0, dir.x);
-          wound(w, chestOf(v), dir + side * 0.5f + vec3(0, 0.4f, 0), 1.2f, W_GORE);
+          vec3 hook(dir.z, 0, -dir.x);  // its left: the way the twist of its head carries the horns
+          wound(w, chestOf(v), dir + hook * 0.5f + vec3(0, 0.4f, 0), 1.2f, W_GORE);
           feathers(w, v, chestOf(v), dir, 12);
-          kill(w, 0.0f, dir * 0.3f + side * 0.4f, 0.25f);
+          kill(w, 0.0f, dir * 0.3f + hook * 0.4f, 0.25f);
           w.slowmo(0.35f, 0.5f);
           w.shake(0.25f);
         }
@@ -2126,7 +2168,7 @@ class DTrikeBash : public DBattle {
           w.sound(SFX_THUD, 1.0f, headOf(v), 0.9f);
           wound(w, neckOf(v), sweep + vec3(0, 0.3f, 0), 0.6f, W_GORE);
           feathers(w, v, neckOf(v), sweep, 10);
-          knockFlying(w, sweep * 1.7f + dir * 0.4f + vec3(0, 1.6f, 0), swingSide * 7.0f);
+          knockFlying(w, sweep * 1.7f + dir * 0.4f + vec3(0, 1.6f, 0), 7.0f);
           w.shake(0.3f);
           w.slowmo(0.35f, 0.4f);
         }
@@ -2325,15 +2367,15 @@ class DBrachioNeck : public DBattle {
         a.ctl.headYaw = glm::mix(-1.35f, 1.15f, easeIn(u)) * swingSide;
         a.ctl.twist = glm::mix(-0.15f, 0.2f, u) * swingSide;
         a.ctl.neck = -1.25f;
-        if (!hit && u > 0.56f) {
+        vec3 left(std::cos(a.yaw), 0, -std::sin(a.yaw));
+        vec3 sweep = left * swingSide;  // (+headYaw carries the head to the animal's left)
+        if (!hit && (u > 0.95f || (u > 0.25f && sweptInto(v, flat(chestOf(a)), flat(headOf(a)), sweep)))) {
           hit = true;
-          vec3 left(std::cos(a.yaw), 0, -std::sin(a.yaw));
-          vec3 sweep = left * swingSide;
           vec3 at = headOf(a);
           w.sound(SFX_THUD, 1.0f, at, 0.7f);
           wound(w, chestOf(v) * 0.5f + neckOf(v) * 0.5f, sweep + vec3(0, 0.3f, 0), 0.7f, W_CRUSH);
           feathers(w, v, at, sweep, 14);
-          knockFlying(w, sweep * 2.4f + vec3(0, 2.0f, 0), swingSide * 9.0f);
+          knockFlying(w, sweep * 2.4f + vec3(0, 2.0f, 0), 9.0f);
           w.shake(0.4f);
           w.slowmo(0.3f, 0.5f);
         }
@@ -2421,13 +2463,15 @@ class DBrachioTail : public DBattle {
         float u = std::min(1.0f, pt / dur);
         a.ctl.itemYaw = glm::mix(1.15f, -1.25f, easeIn(u)) * swingSide;
         a.ctl.twist = glm::mix(-0.15f, 0.15f, u) * swingSide;
-        if (!hit && u > 0.62f) {
+        // (+itemYaw draws the tail to the animal's right, so the lash carries it across to
+        // its left: that is the way the victim goes)
+        vec3 left(std::cos(a.yaw), 0, -std::sin(a.yaw));
+        vec3 sweep = left * swingSide;
+        if (!hit && (u > 0.95f || (u > 0.3f && sweptInto(v, flat(a.pos), flat(tailOf(a)), sweep)))) {
           hit = true;
-          vec3 left(std::cos(a.yaw), 0, -std::sin(a.yaw));
-          vec3 sweep = -left * swingSide;
           wound(w, chestOf(v), sweep + vec3(0, 0.4f, 0), 0.8f, W_CLAW);
           feathers(w, v, chestOf(v), sweep, 14);
-          knockFlying(w, sweep * 2.3f + vec3(0, 1.8f, 0), -swingSide * 8.0f);
+          knockFlying(w, sweep * 2.3f + vec3(0, 1.8f, 0), 8.0f);
           w.shake(0.3f);
           w.slowmo(0.3f, 0.45f);
         }
@@ -2607,6 +2651,30 @@ struct Held {
   }
 };
 
+// The fling of something held in the jaws: the head drawn back to one side, then swung hard
+// across to the other; it is let go halfway through the swing and flies on the way the head
+// was going (towards the side with more of the board to land on).
+struct Fling {
+  float side = 1, h0 = 0;
+  vec3 out{0};  // the way it flies
+  void begin(World& w, const Actor& a, const Actor& v, const vec3& dir) {
+    vec3 left(std::cos(a.yaw), 0, -std::sin(a.yaw));  // (+headYaw turns the head to the left)
+    auto room = [&](float s) {
+      vec3 p = flat(v.pos) + left * s * 1.1f + dir * 0.3f;
+      return 3.6f - std::max(std::fabs(p.x), std::fabs(p.z));
+    };
+    float r1 = room(1.0f), r2 = room(-1.0f);
+    side = std::fabs(r1 - r2) > 0.3f ? (r1 > r2 ? 1.0f : -1.0f) : (w.fx.rnd() < 0.5f ? 1.0f : -1.0f);
+    h0 = a.ctl.headYaw;
+    out = left * side;
+  }
+  // the head's swing; true while it still holds on
+  bool swing(Actor& a, float t) {
+    a.ctl.headYaw = kf(t, {{0.0f, h0}, {0.2f, -0.55f * side}, {0.36f, 0.85f * side}, {0.9f, 0.0f}});
+    return t < 0.3f;
+  }
+};
+
 // Snatch: she stalks in low like a crocodile, seizes the victim in her long jaws, shakes
 // it and flings it away.
 class DSpinoSnatch : public DBattle {
@@ -2615,7 +2683,8 @@ class DSpinoSnatch : public DBattle {
 
  protected:
   Held held;
-  bool bit = false;
+  Fling fling;
+  bool bit = false, released = false;
   vec3 lunge0{0};
   bool step(World& w, float dt) override {
     Actor& a = w.actors[plan.mover];
@@ -2668,26 +2737,28 @@ class DSpinoSnatch : public DBattle {
         if (pt > 1.25f) next();
         break;
       }
-      case 4: {  // the fling
+      case 4: {  // the fling: the head drawn back, then swung across, and she lets go
         if (first) {
-          float s = a.ctl.headYaw >= 0 ? 1.0f : -1.0f;
-          vec3 left(std::cos(a.yaw), 0, -std::sin(a.yaw));
-          vec3 out = left * s;
+          fling.begin(w, a, v, dir);
           w.sound(SFX_WHOOSH, 0.7f, mouthOf(a), 0.8f);
-          v.tilt = quat(1, 0, 0, 0);
-          v.tiltPivot = vec3(0);
+        }
+        if (fling.swing(a, pt)) {
+          held.update(a, v, pt + 1.25f, dt, 0.06f);
+        } else if (!released) {
+          released = true;
           if (held.lifted) {
-            tumble.launch(w, v, out * 2.4f + dir * 0.5f + vec3(0, 2.2f, 0), s * 10.0f);
+            tumble.launch(w, v, fling.out * 2.4f + dir * 0.5f + vec3(0, 2.2f, 0), 10.0f);
           } else {
-            wound(w, neckOf(v), out + vec3(0, 0.4f, 0), 1.0f, W_CLAW);
-            kill(w, 0.0f, out * 0.5f, 0.12f);
+            v.tilt = quat(1, 0, 0, 0);
+            v.tiltPivot = vec3(0);
+            wound(w, neckOf(v), fling.out + vec3(0, 0.4f, 0), 1.0f, W_CLAW);
+            kill(w, 0.0f, fling.out * 0.5f, 0.12f);
           }
           w.slowmo(0.35f, 0.5f);
           w.shake(0.2f);
         }
-        a.ctl.headYaw = approach(a.ctl.headYaw, 0.0f, dt * 2.0f);
-        a.ctl.jaw = 0.5f;
-        if (victimDown(w, dt) && pt > 0.3f) next();
+        a.ctl.jaw = released ? 0.5f : 0.12f;
+        if (released && victimDown(w, dt) && pt > 0.6f) next();
         break;
       }
       case 5:
@@ -2759,13 +2830,15 @@ class DSpinoTail : public DBattle {
           whooshed = true;
           w.sound(SFX_TAILWHIP, 0.8f, a.pos, 1.15f);
         }
-        if (!hit && u > 0.5f) {  // the tail comes round behind her, through the victim
+        // the tail comes round behind her, through the victim's legs (turning her to her left,
+        // +spinDir, carries her tail across to her right: along 'tang' as it passes the victim)
+        vec3 tang = vec3(dir.z, 0, -dir.x) * spinDir;
+        if (!hit && (u > 0.62f || (u > 0.3f && sweptInto(v, flat(a.pos), flat(tailOf(a)), tang)))) {
           hit = true;
-          vec3 tang = vec3(dir.z, 0, -dir.x) * spinDir;
           w.sound(SFX_THUD, 0.9f, chestOf(v), 1.0f);
           wound(w, chestOf(v) - vec3(0, 0.1f, 0), tang + vec3(0, 0.3f, 0), 0.5f, W_CLAW);
           feathers(w, v, chestOf(v), tang, 10);
-          knockFlying(w, tang * 1.6f + dir * 0.4f + vec3(0, 1.4f, 0), -spinDir * 7.0f);
+          knockFlying(w, tang * 1.2f + dir * 0.3f + vec3(0, 1.5f, 0), -7.0f);  // (swept off its feet: they go first)
           w.shake(0.25f);
           w.slowmo(0.35f, 0.4f);
         }
@@ -2836,7 +2909,8 @@ class DRexCrush : public DBattle {
 
  protected:
   Held held;
-  bool bit = false;
+  Fling fling;
+  bool bit = false, released = false;
   vec3 lunge0{0};
   bool step(World& w, float dt) override {
     Actor& a = w.actors[plan.mover];
@@ -2896,26 +2970,32 @@ class DRexCrush : public DBattle {
         if (pt > 1.35f) next();
         break;
       }
-      case 4: {  // the throw
+      case 4: {  // the throw: the head drawn back, then swung across, and he lets go
         if (first) {
-          float s = a.ctl.headYaw >= 0 ? 1.0f : -1.0f;
-          vec3 left(std::cos(a.yaw), 0, -std::sin(a.yaw));
-          vec3 out = left * s;
+          fling.begin(w, a, v, dir);
           w.sound(SFX_WHOOSH, 0.8f, mouthOf(a), 0.6f);
-          v.tilt = quat(1, 0, 0, 0);
-          v.tiltPivot = vec3(0);
+        }
+        if (fling.swing(a, pt)) {
+          held.update(a, v, pt + 1.35f, dt, 0.1f);
+          if (!held.lifted) {  // (a big one: its front still hauled up)
+            v.tiltPivot = vec3(0, 0, -0.3f);
+            v.tilt = glm::angleAxis(-0.22f, vec3(1, 0, 0)) * glm::angleAxis(0.1f * std::sin(pt * 12.0f), vec3(0, 0, 1));
+          }
+        } else if (!released) {
+          released = true;
           if (held.lifted) {
-            tumble.launch(w, v, out * 2.8f + dir * 0.8f + vec3(0, 2.4f, 0), s * 10.0f);
+            tumble.launch(w, v, fling.out * 2.8f + dir * 0.8f + vec3(0, 2.4f, 0), 10.0f);
           } else {
-            wound(w, neckOf(v), out + vec3(0, 0.4f, 0), 1.0f, W_CLAW);
-            kill(w, 0.0f, out * 0.8f, 0.08f);
+            v.tilt = quat(1, 0, 0, 0);
+            v.tiltPivot = vec3(0);
+            wound(w, neckOf(v), fling.out + vec3(0, 0.4f, 0), 1.0f, W_CLAW);
+            kill(w, 0.0f, fling.out * 0.8f, 0.08f);
           }
           w.slowmo(0.35f, 0.5f);
           w.shake(0.3f);
         }
-        a.ctl.headYaw = approach(a.ctl.headYaw, 0.0f, dt * 2.0f);
-        a.ctl.jaw = 0.5f;
-        if (victimDown(w, dt) && pt > 0.4f) next();
+        a.ctl.jaw = released ? 0.5f : 0.15f;
+        if (released && victimDown(w, dt) && pt > 0.7f) next();
         break;
       }
       case 5:  // the roar over its kill
@@ -3099,7 +3179,7 @@ class DRexStomp : public DBattle {
           w.sound(SFX_CRUNCH, 0.7f, headOf(a), 0.85f);
           wound(w, neckOf(v), dir + vec3(0, 0.3f, 0), 0.5f, W_CRUSH);
           feathers(w, v, neckOf(v), dir, 12);
-          knockFlying(w, dir * 2.0f + vec3(0, 1.8f, 0), w.fx.rnd() < 0.5f ? 8.0f : -8.0f);
+          knockFlying(w, dir * 2.0f + vec3(0, 1.8f, 0), 8.0f);
           w.shake(0.4f);
           w.slowmo(0.35f, 0.4f);
         }

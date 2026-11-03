@@ -807,8 +807,7 @@ final class DPteroTalons: DBattle {
         dWound(w, hitAt, flightDir + vec3(0, 0.3, 0), 0.8, DWound.claw)
         dFeathers(w, v, hitAt, flightDir, 12)
         w.sound(.thud, 0.9, hitAt, 1.2)
-        let spin: Float = w.fx.rnd() < 0.5 ? 8.0 : -8.0
-        knockFlying(w, flightDir * 2.0 + vec3(0, 1.6, 0), spin)
+        knockFlying(w, flightDir * 2.0 + vec3(0, 1.6, 0), 8.0)
         w.slowmo(0.35, 0.5)
         w.shake(0.25)
         next()
@@ -916,8 +915,7 @@ final class DTrikeCharge: DBattle {
         let c: vec3 = dChestOf(v) * 0.5 + dNeckOf(v) * 0.5
         dWound(w, c, dir + vec3(0, 0.5, 0), 1.2, DWound.gore)
         dFeathers(w, v, c, dir, 14)
-        let spin: Float = w.fx.rnd() < 0.5 ? 9.0 : -9.0
-        knockFlying(w, dir * 2.2 + vec3(0, 3.0, 0), spin)
+        knockFlying(w, dir * 2.2 + vec3(0, 3.0, 0), 9.0)
         w.slowmo(0.3, 0.5)
         w.shake(0.35)
         skid = walker.v
@@ -1020,11 +1018,11 @@ final class DTrikeLock: DBattle {
       a.ctl.headPitch = dKf(u, [vec2(0.0, 0.42), vec2(0.6, 0.2), vec2(1.0, -0.3)])
       if !gored && u > 0.5 {
         gored = true
-        let side = vec3(-dir.z, 0, dir.x)
-        let gore: vec3 = dir + side * 0.5 + vec3(0, 0.4, 0)
+        let hook = vec3(dir.z, 0, -dir.x)  // its left: the way the twist of its head carries the horns
+        let gore: vec3 = dir + hook * 0.5 + vec3(0, 0.4, 0)
         dWound(w, dChestOf(v), gore, 1.2, DWound.gore)
         dFeathers(w, v, dChestOf(v), dir, 12)
-        let push: vec3 = dir * 0.3 + side * 0.4
+        let push: vec3 = dir * 0.3 + hook * 0.4
         kill(w, 0.0, push, 0.25)
         w.slowmo(0.35, 0.5)
         w.shake(0.25)
@@ -1095,7 +1093,7 @@ final class DTrikeBash: DBattle {
         dWound(w, dNeckOf(v), sweep + vec3(0, 0.3, 0), 0.6, DWound.gore)
         dFeathers(w, v, dNeckOf(v), sweep, 10)
         let fly: vec3 = sweep * 1.7 + dir * 0.4 + vec3(0, 1.6, 0)
-        knockFlying(w, fly, swingSide * 7.0)
+        knockFlying(w, fly, 7.0)
         w.shake(0.3)
         w.slowmo(0.35, 0.4)
       }

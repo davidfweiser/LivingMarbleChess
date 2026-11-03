@@ -133,17 +133,17 @@ final class DBrachioNeck: DBattle {
       a.ctl.headYaw = mix(-1.35, 1.15, easeIn(u)) * swingSide
       a.ctl.twist = mix(-0.15, 0.2, u) * swingSide
       a.ctl.neck = -1.25
-      if !hit && u > 0.56 {
+      let left = vec3(cos(a.yaw), 0, -sin(a.yaw))
+      let sweep = left * swingSide  // (+headYaw carries the head to the animal's left)
+      if !hit && (u > 0.95 || (u > 0.25 && sweptInto(v, flat(dChestOf(a)), flat(dHeadOf(a)), sweep))) {
         hit = true
-        let left = vec3(cos(a.yaw), 0, -sin(a.yaw))
-        let sweep = left * swingSide
         let at = dHeadOf(a)
         w.sound(.thud, 1.0, at, 0.7)
         let struck: vec3 = dChestOf(v) * 0.5 + dNeckOf(v) * 0.5
         dWound(w, struck, sweep + vec3(0, 0.3, 0), 0.7, DWound.crush)
         dFeathers(w, v, at, sweep, 14)
         let fly: vec3 = sweep * 2.4 + vec3(0, 2.0, 0)
-        knockFlying(w, fly, swingSide * 9.0)
+        knockFlying(w, fly, 9.0)
         w.shake(0.4)
         w.slowmo(0.3, 0.5)
       }
@@ -218,14 +218,16 @@ final class DBrachioTail: DBattle {
       let u = min(1.0, pt / dur)
       a.ctl.itemYaw = mix(1.15, -1.25, easeIn(u)) * swingSide
       a.ctl.twist = mix(-0.15, 0.15, u) * swingSide
-      if !hit && u > 0.62 {
+      // (+itemYaw draws the tail to the animal's right, so the lash carries it across to
+      // its left: that is the way the victim goes)
+      let left = vec3(cos(a.yaw), 0, -sin(a.yaw))
+      let sweep = left * swingSide
+      if !hit && (u > 0.95 || (u > 0.3 && sweptInto(v, flat(a.pos), flat(dTailOf(a)), sweep))) {
         hit = true
-        let left = vec3(cos(a.yaw), 0, -sin(a.yaw))
-        let sweep = -left * swingSide
         dWound(w, dChestOf(v), sweep + vec3(0, 0.4, 0), 0.8, DWound.claw)
         dFeathers(w, v, dChestOf(v), sweep, 14)
         let fly: vec3 = sweep * 2.3 + vec3(0, 1.8, 0)
-        knockFlying(w, fly, -swingSide * 8.0)
+        knockFlying(w, fly, 8.0)
         w.shake(0.3)
         w.slowmo(0.3, 0.45)
       }
@@ -366,7 +368,8 @@ final class DSpinoClaws: DBattle {
 /// it and flings it away.
 final class DSpinoSnatch: DBattle {
   private var held = DHeld()
-  private var bit = false
+  private var fling = DFling()
+  private var bit = false, released = false
   private var lunge0 = vec3(0)
 
   override func step(_ w: World, _ dt: Float) -> Bool {
@@ -416,27 +419,30 @@ final class DSpinoSnatch: DBattle {
         w.sound(.tear, 0.4, dMouthOf(a), w.fx.rnd(1.0, 1.2))
       }
       if pt > 1.25 { next() }
-    case 4:  // the fling
+    case 4:  // the fling: the head drawn back, then swung across, and she lets go
       if first {
-        let s: Float = a.ctl.headYaw >= 0 ? 1.0 : -1.0
-        let left = vec3(cos(a.yaw), 0, -sin(a.yaw))
-        let out = left * s
+        fling.begin(w, a, v, dir)
         w.sound(.whoosh, 0.7, dMouthOf(a), 0.8)
-        v.tilt = quat.identity
-        v.tiltPivot = vec3(0)
+      }
+      if fling.swing(a, pt) {
+        held.update(a, v, pt + 1.25, dt, 0.06)
+      } else if !released {
+        released = true
+        let out = fling.out
         if held.lifted {
           let vel: vec3 = out * 2.4 + dir * 0.5 + vec3(0, 2.2, 0)
-          tumble.launch(w, v, vel, s * 10.0)
+          tumble.launch(w, v, vel, 10.0)
         } else {
+          v.tilt = quat.identity
+          v.tiltPivot = vec3(0)
           dWound(w, dNeckOf(v), out + vec3(0, 0.4, 0), 1.0, DWound.claw)
           kill(w, 0.0, out * 0.5, 0.12)
         }
         w.slowmo(0.35, 0.5)
         w.shake(0.2)
       }
-      a.ctl.headYaw = approach(a.ctl.headYaw, 0.0, dt * 2.0)
-      a.ctl.jaw = 0.5
-      if victimDown(w, dt) && pt > 0.3 { next() }
+      a.ctl.jaw = released ? 0.5 : 0.12
+      if released && victimDown(w, dt) && pt > 0.6 { next() }
     case 5:
       if first { dCallOf(w, a) }
       triumph(w, pt / 1.2)
@@ -502,14 +508,16 @@ final class DSpinoTail: DBattle {
         whooshed = true
         w.sound(.tailwhip, 0.8, a.pos, 1.15)
       }
-      if !hit && u > 0.5 {  // the tail comes round behind her, through the victim
+      // the tail comes round behind her, through the victim's legs (turning her to her left,
+      // +spinDir, carries her tail across to her right: along 'tang' as it passes the victim)
+      let tang = vec3(dir.z, 0, -dir.x) * spinDir
+      if !hit && (u > 0.62 || (u > 0.3 && sweptInto(v, flat(a.pos), flat(dTailOf(a)), tang))) {
         hit = true
-        let tang = vec3(dir.z, 0, -dir.x) * spinDir
         w.sound(.thud, 0.9, dChestOf(v), 1.0)
         dWound(w, dChestOf(v) - vec3(0, 0.1, 0), tang + vec3(0, 0.3, 0), 0.5, DWound.claw)
         dFeathers(w, v, dChestOf(v), tang, 10)
-        let fly: vec3 = tang * 1.6 + dir * 0.4 + vec3(0, 1.4, 0)
-        knockFlying(w, fly, -spinDir * 7.0)
+        let fly: vec3 = tang * 1.2 + dir * 0.3 + vec3(0, 1.5, 0)
+        knockFlying(w, fly, -7.0)  // (swept off its feet: they go first)
         w.shake(0.25)
         w.slowmo(0.35, 0.4)
       }
@@ -569,7 +577,8 @@ final class DSpinoTail: DBattle {
 /// throws it aside.
 final class DRexCrush: DBattle {
   private var held = DHeld()
-  private var bit = false
+  private var fling = DFling()
+  private var bit = false, released = false
   private var lunge0 = vec3(0)
 
   override func step(_ w: World, _ dt: Float) -> Bool {
@@ -628,27 +637,34 @@ final class DRexCrush: DBattle {
         w.sound(.crunch, 0.4, dMouthOf(a), w.fx.rnd(1.0, 1.25))
       }
       if pt > 1.35 { next() }
-    case 4:  // the throw
+    case 4:  // the throw: the head drawn back, then swung across, and he lets go
       if first {
-        let s: Float = a.ctl.headYaw >= 0 ? 1.0 : -1.0
-        let left = vec3(cos(a.yaw), 0, -sin(a.yaw))
-        let out = left * s
+        fling.begin(w, a, v, dir)
         w.sound(.whoosh, 0.8, dMouthOf(a), 0.6)
-        v.tilt = quat.identity
-        v.tiltPivot = vec3(0)
+      }
+      if fling.swing(a, pt) {
+        held.update(a, v, pt + 1.35, dt, 0.1)
+        if !held.lifted {  // (a big one: its front still hauled up)
+          v.tiltPivot = vec3(0, 0, -0.3)
+          v.tilt = angleAxis(-0.22, vec3(1, 0, 0)) * angleAxis(0.1 * sin(pt * 12), vec3(0, 0, 1))
+        }
+      } else if !released {
+        released = true
+        let out = fling.out
         if held.lifted {
           let vel: vec3 = out * 2.8 + dir * 0.8 + vec3(0, 2.4, 0)
-          tumble.launch(w, v, vel, s * 10.0)
+          tumble.launch(w, v, vel, 10.0)
         } else {
+          v.tilt = quat.identity
+          v.tiltPivot = vec3(0)
           dWound(w, dNeckOf(v), out + vec3(0, 0.4, 0), 1.0, DWound.claw)
           kill(w, 0.0, out * 0.8, 0.08)
         }
         w.slowmo(0.35, 0.5)
         w.shake(0.3)
       }
-      a.ctl.headYaw = approach(a.ctl.headYaw, 0.0, dt * 2.0)
-      a.ctl.jaw = 0.5
-      if victimDown(w, dt) && pt > 0.4 { next() }
+      a.ctl.jaw = released ? 0.5 : 0.15
+      if released && victimDown(w, dt) && pt > 0.7 { next() }
     case 5:  // the roar over its kill
       if first {
         dCallOf(w, a)
@@ -821,8 +837,7 @@ final class DRexStomp: DBattle {
         dWound(w, dNeckOf(v), dir + vec3(0, 0.3, 0), 0.5, DWound.crush)
         dFeathers(w, v, dNeckOf(v), dir, 12)
         let fly: vec3 = dir * 2.0 + vec3(0, 1.8, 0)
-        let spin: Float = w.fx.rnd() < 0.5 ? 8.0 : -8.0
-        knockFlying(w, fly, spin)
+        knockFlying(w, fly, 8.0)
         w.shake(0.4)
         w.slowmo(0.35, 0.4)
       }

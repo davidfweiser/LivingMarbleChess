@@ -415,7 +415,11 @@ as they bear the weight, and the lowest foot always stays on the board. The
 dinosaurs fight back: a victim threatens, lunges and snaps at its attacker.
 The fallen don't shatter: they stagger, their legs give way and they fall on
 their sides - or are knocked flying, or flung - and lie in a spreading pool of
-blood for a moment before they fade away.
+blood for a moment before they fade away. A body always goes the way the blow
+drives it: struck high (by a head, a neck or a tail swung across it) it is
+bowled over away from the blow, swept through the legs its feet go first, and
+a victim shaken in the jaws flies off the way the head was swinging when it
+let go.
 
 | Attacker | Attacks |
 |---|---|

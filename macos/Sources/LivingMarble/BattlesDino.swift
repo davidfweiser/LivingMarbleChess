@@ -432,11 +432,16 @@ struct DFall {
 }
 
 /// A body knocked flying: it tumbles through the air, crashes down and comes to rest on
-/// its side (then fades).
+/// its side (then fades). It turns over about a level axis across its flight, so it always
+/// goes over the way it was struck: spin > 0 the top first (struck high, it is bowled over
+/// backwards or sideways, away from the blow), spin < 0 the feet first (swept off its feet).
 struct DTumble {
   var actor = -1, corpse = -1
   var vel = vec3(0)
-  var spin: Float = 0, angle: Float = 0, target: Float = 0, t: Float = 0, settle: Float = 0, hmid: Float = 0.25
+  var axis = vec3(1, 0, 0)  // the level axis it turns about (in its own, yawed, frame)
+  var spin: Float = 0, angle: Float = 0, t: Float = 0, settle: Float = 0, hmid: Float = 0.25
+  var start = quat.identity  // its attitude when it was struck (or let go)
+  var rest = quat.identity   // lying on its side, where it settles once down
   var landed = false, done = false
   var life: Float = 1.8, bleed: Float = 1
   func active() -> Bool { actor >= 0 && !done }
@@ -454,9 +459,37 @@ struct DTumble {
     v.tremble = 0
     v.ctl.wings = 0
     v.ctl.hover = 0
+    v.yawTarget = v.yaw  // (it no longer turns itself)
     hmid = v.height() / max(v.scale, 1e-3) * 0.4
+    // it turns about its middle, going on from however it was held: the pivot moves there
+    // without moving the body
+    start = v.tilt
+    let p0 = v.tiltPivot * v.scale, p1 = vec3(0, hmid, 0) * v.scale
+    v.pos += angleAxis(v.yaw, vec3(0, 1, 0)) * ((p0 - start * p0) - (p1 - start * p1))
     v.tiltPivot = vec3(0, hmid, 0)
+    // turning about up x d carries the top towards d; into the frame the tilt works in
+    var d = flat(velocity)
+    if length(d) < 1e-3 { d = -v.forward() }
+    let across = normalize(cross(vec3(0, 1, 0), normalize(d)))
+    axis = angleAxis(-v.yaw, vec3(0, 1, 0)) * across
     w.sound(.dinodeath, 0.8, dHeadOf(v), dDeathPitch(v.kind) * w.fx.rnd(1.0, 1.12))
+  }
+
+  /// How far the lowest point of the body (a box round its middle) is above the board.
+  func lowest(_ v: Actor) -> Float {
+    let X = v.tilt * vec3(1, 0, 0), Y = v.tilt * vec3(0, 1, 0), Z = v.tilt * vec3(0, 0, 1)
+    let reach = abs(X.y) * Dino.bodyHalfWidth(v.kind) + abs(Y.y) * hmid + abs(Z.y) * Dino.bodyLength(v.kind) * 0.22
+    return v.pos.y + (hmid - reach) * v.scale
+  }
+
+  /// Lying on whichever flank is lower, its length along the board.
+  static func onItsSide(_ q: quat) -> quat {
+    let X = q * vec3(1, 0, 0), Y = q * vec3(0, 1, 0), Z = q * vec3(0, 0, 1)
+    let Xt = vec3(0, X.y <= 0 ? -1 : 1, 0)
+    var Zt = flat(Z)
+    if length(Zt) < 0.2 { Zt = flat(Y) * (Z.y > 0 ? 1 : -1) }  // on end: it topples over
+    Zt = length(Zt) > 1e-4 ? normalize(Zt) : vec3(0, 0, 1)
+    return quat_cast(mat3(Xt, cross(Zt, Xt), Zt)).normalized
   }
 
   /// True once the body lies still (and has become a corpse), or has fallen off the board.
@@ -476,15 +509,11 @@ struct DTumble {
       vel.y -= 14 * dt
       v.pos += vel * dt
       angle += spin * dt
-      v.tilt = angleAxis(-angle, vec3(0, 0, 1)) * angleAxis(0.15 * sin(t * 7), vec3(1, 0, 0))
+      v.tilt = (angleAxis(angle, axis) * start * angleAxis(0.15 * sin(t * 7), vec3(0, 0, 1))).normalized
       v.ctl.dead = min(1, 0.5 + t)
-      let h = hmid * v.scale
-      let reach = abs(cos(angle)) * h + abs(sin(angle)) * hw * v.scale
-      let low = v.pos.y + h - reach
-      if overBoard(v.pos) && low <= 0 && vel.y < 0 && t > 0.15 {
+      if overBoard(v.pos) && lowest(v) <= 0 && vel.y < 0 && t > 0.15 {
         landed = true
-        let k = ((angle - kPI * 0.5) / kPI).rounded()  // whichever side is nearer
-        target = kPI * 0.5 + k * kPI
+        rest = DTumble.onItsSide(v.tilt)
         let p = flat(v.pos)
         let big = min(1, v.height())
         w.sound(.bodyfall, 0.7 + 0.3 * big, p, 1.3 - 0.4 * big)
@@ -506,10 +535,9 @@ struct DTumble {
     vel.z *= slow
     v.pos.x += vel.x * dt
     v.pos.z += vel.z * dt
-    angle += (target - angle) * (1 - exp(-dt * 16))
+    v.tilt = simd_slerp(v.tilt, rest, 1 - exp(-dt * 16)).normalized
     let restY = (hw - hmid) * v.scale
     v.pos.y += (restY - v.pos.y) * (1 - exp(-dt * 18))
-    v.tilt = angleAxis(-angle, vec3(0, 0, 1))
     v.ctl.dead = 1
     if settle > 0.45 {
       corpse = dMakeCorpse(w, v, life)
@@ -929,7 +957,20 @@ class DBattle: BattleBase {
     return a && b
   }
   func victimDying() -> Bool { fall.active() || tumble.active() }
-  /// Knocked flying (the small ones), or bowled over (the heavy).
+  /// A tail (or a neck) swung across the victim along 'sweep', from 'root' out to 'tip' (both
+  /// on the board): true once it points the victim's way and the part of it nearest the
+  /// victim has reached its near flank.
+  func sweptInto(_ v: Actor, _ root: vec3, _ tip: vec3, _ sweep: vec3) -> Bool {
+    let c = flat(v.pos), s = tip - root
+    let l2 = dot(s, s)
+    if l2 < 1e-6 { return false }
+    let k = dot(c - root, s) / l2  // how far along it the victim lies
+    if k < 0.25 { return false }   // (pointing away)
+    return dot(root + s * min(k, 1) - c, sweep) >= -dHalfWidthOf(v) * 1.3
+  }
+  /// Knocked flying (the small ones), or bowled over (the heavy), along 'vel'. spin > 0: struck
+  /// high, it goes over away from the blow; spin < 0: its legs swept from under it, it goes
+  /// down the other way (towards the side the blow came from).
   func knockFlying(_ w: World, _ vel: vec3, _ spin: Float) {
     let v = w.actors[plan.victim]
     if dIsSmall(v) || v.kind == Kind.bishop {
@@ -938,7 +979,7 @@ class DBattle: BattleBase {
     } else {
       let left = vec3(cos(v.yaw), 0, -sin(v.yaw))
       let side: Float = dot(flat(vel), left) >= 0 ? 1 : -1
-      kill(w, side, flat(vel) * 0.3, 0.12)
+      kill(w, spin < 0 ? -side : side, flat(vel) * (spin < 0 ? 0.12 : 0.3), 0.12)
     }
   }
   /// Struck down: it falls on the flank the blow drives it to (or a random one).
@@ -1092,6 +1133,30 @@ struct DHeld {
     v.ctl.jaw = 0.7
     v.tremble = 0.5
     v.idleWeight = 0
+  }
+}
+
+/// The fling of something held in the jaws: the head drawn back to one side, then swung hard
+/// across to the other; it is let go halfway through the swing and flies on the way the head
+/// was going (towards the side with more of the board to land on).
+struct DFling {
+  var side: Float = 1, h0: Float = 0
+  var out = vec3(0)  // the way it flies
+  mutating func begin(_ w: World, _ a: Actor, _ v: Actor, _ dir: vec3) {
+    let left = vec3(cos(a.yaw), 0, -sin(a.yaw))  // (+headYaw turns the head to the left)
+    func room(_ s: Float) -> Float {
+      let p = flat(v.pos) + left * s * 1.1 + dir * 0.3
+      return 3.6 - max(abs(p.x), abs(p.z))
+    }
+    let r1 = room(1), r2 = room(-1)
+    side = abs(r1 - r2) > 0.3 ? (r1 > r2 ? 1 : -1) : (w.fx.rnd() < 0.5 ? 1 : -1)
+    h0 = a.ctl.headYaw
+    out = left * side
+  }
+  /// The head's swing; true while it still holds on.
+  func swing(_ a: Actor, _ t: Float) -> Bool {
+    a.ctl.headYaw = dKf(t, [vec2(0, h0), vec2(0.2, -0.55 * side), vec2(0.36, 0.85 * side), vec2(0.9, 0)])
+    return t < 0.3
   }
 }
 
