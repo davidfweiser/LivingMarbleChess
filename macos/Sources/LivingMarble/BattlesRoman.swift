@@ -945,6 +945,16 @@ class RBattle: BattleBase {
 
   override init(_ p: MovePlan) { super.init(p) }
 
+  /// Staged clears 'first' after every step (so on its own it only holds for the very
+  /// first frame); the Romans' phases set themselves up with it, so it is raised
+  /// again for the first frame of each new phase.
+  override func update(_ w: World, _ dt: Float) -> Bool {
+    let before = phase
+    let done = super.update(w, dt)
+    if phase != before { first = true }
+    return done
+  }
+
   /// The face-off, with the fight camera. True when it is over.
   @discardableResult
   func faceOffR(_ w: World, _ duration: Float = 0.45) -> Bool {
