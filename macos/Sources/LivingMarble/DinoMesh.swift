@@ -13,6 +13,16 @@
 import Foundation
 import simd
 
+/// The legs of a four-legged animal (Dino.addQuadLegs).
+struct DinoQuadLegSpec {
+  // front: the upper arm's radius, the elbow's, the forearm's, the wrist's
+  var upperR: Float = 0, elbowR: Float = 0, foreR: Float = 0, wristR: Float = 0
+  var thighR: Float = 0, kneeR: Float = 0, shinR: Float = 0, ankleR: Float = 0  // hind
+  var fPad = vec3(0), hPad = vec3(0)  // the pads' half-sizes
+  var thigh = vec3(0)                 // the thigh muscle's half-size
+  var hooves = false
+}
+
 extension Dino {
   // ---------------------------------------------------------------------------
   // Shared parts
@@ -43,8 +53,8 @@ extension Dino {
     m.add(bone, DMat.eye, r * 0.15, sphereS(c, r))
     let F = frameY(vec3(0, 1, 0), out)
     m.add(bone, DMat.dark, 0, ellS(c + out * r * 0.82, vec3(r * 0.22, r * 0.62, r * 0.24), F))
-    let brow = c + vec3(0, r * 0.95, 0) - out * r * 0.1
-    m.add(bone, DMat.skin, r * 0.5, ellS(brow, vec3(r * 1.25, r * 0.45, r * 1.2), F))
+    let brow = c + vec3(0, r * 0.88, 0) - out * r * 0.3
+    m.add(bone, DMat.skin, r * 0.5, ellS(brow, vec3(r * 1.1, r * 0.38, r * 1.05), F))
   }
 
   /// A row of teeth along the jaw from a to b (both sides of the mouth: x and -x), pointing 'dir'.
@@ -76,6 +86,30 @@ extension Dino {
       let d: Float = abs(p.y - level) - 0.004
       return max(max(d, abs(p.x) - halfW), max(z0 - p.z, p.z - z1))
     }, vec3(0, level, (z0 + z1) * 0.5), (z1 - z0) * 0.6 + halfW), DMat.skin)
+  }
+
+  /// Folds of skin round a neck: soft rings about the axis a->b (radius ra at a, rb at b) at the
+  /// fractions given, sunk into the surface so that only a ridge shows.
+  private static func addFolds(_ m: Model, _ bone: Int, _ a: vec3, _ b: vec3, _ ra: Float, _ rb: Float, _ at: [Float],
+                               _ r: Float) {
+    let F = frameY(b - a)
+    for t in at {
+      let R: Float = romanMix(ra, rb, t) * 0.97 - r * 0.35
+      m.add(bone, DMat.skin, r * 0.9, torusS(romanMix(a, b, t), R, r, F))
+    }
+  }
+
+  /// A tail: a tube through points along the midline, each segment bound to its bone; thick
+  /// with muscle at the root, then tapering quickly into a long, thin end.
+  private static func addTail(_ m: Model, _ mat: Int, _ pts: [vec3], _ r0: Float, _ r1: Float, _ bones: [Int],
+                              _ k: Float) {
+    let n = pts.count
+    func rad(_ i: Int) -> Float {
+      let t = Float(i) / Float(n - 1)
+      let s: Float = pow(1 - t, 1.35)
+      return romanMix(r1, r0, s)
+    }
+    for i in 0..<max(0, n - 1) { m.add(bones[i], mat, k, coneS(pts[i], pts[i + 1], rad(i), rad(i + 1))) }
   }
 
   /// A row of knobbly scutes along the back (y on the midline, from z0 to z1).
@@ -161,6 +195,95 @@ extension Dino {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Four-legged legs: the upper leg under its muscles, the elbow (pointing back) or the
+  // knee (forward), the forearm or shin with its calf, the wrist or ankle, and the foot: a
+  // broad pad that spreads on the board, with hooves (triceratops) or claws (brachiosaurus).
+  // ---------------------------------------------------------------------------
+  private static func addQuadLegs(_ m: Model, _ j: DinoQuadJ, _ L: DinoQuadLegSpec) {
+    for sd in stride(from: -1, through: 1, by: 2) {
+      let x = Float(sd)
+      let fu = sd > 0 ? QDB.flu : QDB.fru, fl = sd > 0 ? QDB.fll : QDB.frl, ff = sd > 0 ? QDB.flf : QDB.frf
+      let hu = sd > 0 ? QDB.hlu : QDB.hru, hl = sd > 0 ? QDB.hll : QDB.hrl, hf = sd > 0 ? QDB.hlf : QDB.hrf
+      func S(_ v: vec3) -> vec3 { vec3(v.x * x, v.y, v.z) }
+      let FU = S(j.flu), FE = S(j.fll), FW = S(j.fwrist), FF = S(j.ffoot)
+      let HU = S(j.hlu), HK = S(j.hll), HA = S(j.hankle), HF = S(j.hfoot)
+      // --- the foreleg: the upper arm under the shoulder muscles (deltoid in front, triceps
+      // behind, bulging out over the elbow)
+      m.add(fu, DMat.skin, 0.04, coneS(FU + vec3(0, 0.035, -0.005), FE, L.upperR, L.elbowR * 1.05))
+      let upperLen: Float = length(FE - FU)
+      let triC: vec3 = romanMix(FU, FE, 0.42) + vec3(x * 0.012, 0, -0.014)
+      let triRad = vec3(L.upperR * 0.8, upperLen * 0.42, L.upperR * 0.86)
+      m.add(fu, DMat.skin, 0.03, ellS(triC, triRad, frameY(FU - FE)))
+      let delC: vec3 = romanMix(FU, FE, 0.3) + vec3(x * 0.006, 0, L.upperR * 0.45)
+      let delRad = vec3(L.upperR * 0.6, upperLen * 0.3, L.upperR * 0.5)
+      m.add(fu, DMat.skin, 0.02, ellS(delC, delRad, frameY(FU - FE)))
+      // the point of the elbow, the forearm with its muscles thick below the elbow, the wrist
+      m.add(fl, DMat.skin, 0.014, sphereS(FE + vec3(x * 0.004, 0.004, -L.elbowR * 0.35), L.elbowR * 0.95))
+      m.add(fl, DMat.skin, 0.018, coneS(FE, FW, L.foreR, L.wristR))
+      let foreC: vec3 = romanMix(FE, FW, 0.3) + vec3(x * L.foreR * 0.2, 0, L.foreR * 0.15)
+      let foreRad = vec3(L.foreR * 0.95, length(FW - FE) * 0.3, L.foreR)
+      m.add(fl, DMat.skin, 0.02, ellS(foreC, foreRad, frameY(FE - FW)))
+      m.add(ff, DMat.skin, 0.012, sphereS(FW, L.wristR * 1.02))
+      // the forefoot: a column down to a broad pad spreading under the weight
+      let fp = vec3(FW.x + x * 0.004, L.fPad.y, FF.z + 0.004)
+      m.add(ff, DMat.skin, 0.02, coneS(FW, fp + vec3(0, L.fPad.y * 0.4, 0), L.wristR, L.fPad.x * 0.85))
+      m.add(ff, DMat.skin, 0.022, ellS(fp, L.fPad))
+      // --- the hind leg: the drumstick of thigh muscle, the kneecap, the shin and its calf
+      let thighC: vec3 = romanMix(HU, HK, 0.42) + vec3(x * 0.012, 0, -0.01)
+      m.add(hu, DMat.skin, 0.05, ellS(thighC, L.thigh, frameY(HU - HK)))
+      m.add(hu, DMat.skin, 0.03, coneS(HU, HK, L.thighR, L.kneeR * 1.05))
+      m.add(hl, DMat.skin, 0.014, sphereS(HK + vec3(x * 0.004, 0, L.kneeR * 0.25), L.kneeR))
+      m.add(hl, DMat.skin, 0.02, coneS(HK, HA, L.shinR, L.ankleR))
+      let calfC: vec3 = romanMix(HK, HA, 0.33) + vec3(0, 0, -L.shinR * 0.45)
+      let calfRad = vec3(L.shinR * 0.85, length(HA - HK) * 0.32, L.shinR * 0.9)
+      m.add(hl, DMat.skin, 0.025, ellS(calfC, calfRad, frameY(HK - HA)))
+      m.add(hf, DMat.skin, 0.012, sphereS(HA + vec3(0, 0, -L.ankleR * 0.2), L.ankleR * 1.05))  // the heel
+      // the hind foot: the metatarsus down and forward to the pad
+      let hp = vec3(HA.x + x * 0.004, L.hPad.y, HF.z + 0.006)
+      m.add(hf, DMat.skin, 0.02, coneS(HA, hp + vec3(0, L.hPad.y * 0.4, 0.01), L.ankleR, L.hPad.x * 0.85))
+      m.add(hf, DMat.skin, 0.022, ellS(hp, L.hPad))
+      // toes: hooves on short, thick toes; or a sauropod's claws
+      if L.hooves {
+        for k in -1...1 {
+          let a: Float = 0.38 * Float(k) + 0.1 * x
+          let d = vec3(sin(a), 0, cos(a))
+          let toeF = frameY(vec3(0, 1, 0), d)
+          let f0: vec3 = fp + vec3(0, -0.002, 0) + d * L.fPad.z * 0.55
+          let f1: vec3 = fp + d * (L.fPad.z * 1.02) + vec3(0, -0.009, 0)
+          m.add(ff, DMat.skin, 0.008, coneS(f0, f1, 0.0135, 0.012))
+          let fh: vec3 = f1 + d * 0.006 + vec3(0, -0.002, 0)
+          m.add(ff, DMat.claw, 0.004, ellS(fh, vec3(0.0115, 0.0105, 0.011), toeF))
+          let g0: vec3 = hp + vec3(0, -0.002, 0) + d * L.hPad.z * 0.55
+          let g1: vec3 = hp + d * (L.hPad.z * 1.02) + vec3(0, -0.009, 0)
+          m.add(hf, DMat.skin, 0.008, coneS(g0, g1, 0.0145, 0.0125))
+          let gh: vec3 = g1 + d * 0.006 + vec3(0, -0.002, 0)
+          m.add(hf, DMat.claw, 0.004, ellS(gh, vec3(0.012, 0.011, 0.0115), toeF))
+        }
+      } else {
+        // forefoot: a ring of blunt nails round the front of the pad and the thumb claw, turned in
+        for k in -1...1 {
+          let a: Float = 0.42 * Float(k) - 0.15 * x
+          let d = vec3(sin(a), 0, cos(a))
+          let nail: vec3 = fp + d * (L.fPad.z + 0.002) + vec3(0, -0.004, 0)
+          m.add(ff, DMat.claw, 0.004, ellS(nail, vec3(0.012, 0.011, 0.008), frameY(vec3(0, 1, 0), d)))
+        }
+        let thumb: vec3 = fp + vec3(-x * L.fPad.x * 0.7, 0.004, L.fPad.z * 0.55)
+        addClaw(m, ff, thumb, vec3(-x * 0.35, 0.25, 1.0), vec3(0, -1, 0), 0.032, 0.0105, 0.9)
+        // hind foot: three big sickle-shaped claws turned outward, a smaller fourth
+        for k in 0..<4 {
+          let fk = Float(k)
+          let a: Float = -0.45 * x + 0.32 * x * fk
+          let d = vec3(sin(a), 0, cos(a))
+          let base: vec3 = hp + d * L.hPad.z * 0.8 + vec3(0, 0.002, 0)
+          let len: Float = k < 3 ? 0.03 - 0.004 * fk : 0.014
+          let cr: Float = k < 3 ? 0.0095 : 0.007
+          addClaw(m, hf, base, normalize(d + vec3(x * 0.4, 0.2, 0)), vec3(0, -1, 0), len, cr, 1.0)
+        }
+      }
+    }
+  }
+
   /// Moves a built animal by d (its skeleton is placed by toModel to match). The C++
   /// version moves every part of the model (shape, bounding sphere, weight) before it
   /// is meshed; the Swift Model keeps its parts to itself, so the model is meshed where
@@ -195,7 +318,7 @@ extension Dino {
     m.add(THB.head, DMat.feather, 0.012, ellS(hc + vec3(0, 0.012, -0.028), vec3(0.022, 0.017, 0.03)))  // feathers on the nape
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
-      addEye(m, THB.head, hc + vec3(s * 0.022, 0.008, -0.006), 0.0085, vec3(s * 1.0, 0.1, 0.5))
+      addEye(m, THB.head, hc + vec3(s * 0.021, 0.009, -0.004), 0.0102, vec3(s * 1.0, 0.1, 0.5))
       m.paint(DMat.dark, ellS(vec3(s * 0.008, 0.428, 0.322), vec3(0.0035, 0.0025, 0.005)), DMat.skin)  // nostril
     }
     // the lower jaw
@@ -222,8 +345,10 @@ extension Dino {
     // legs: feathered thighs, scaly shins and feet, the sickle claws
     addTheroLegs(m, j, 0.03, 0.0145, 0.009, 0.036, DMat.feather, true)
     // the tail: stiff and straight, a fan of feathers at its end
-    addTube(m, DMat.feather, [vec3(0, 0.282, -0.08), vec3(0, 0.284, -0.22), vec3(0, 0.282, -0.33), vec3(0, 0.277, -0.44)],
-            [0.038, 0.022, 0.013, 0.006], [THB.tail1, THB.tail2, THB.tail3], 0.014)
+    addTail(m, DMat.feather,
+            [vec3(0, 0.282, -0.08), vec3(0, 0.284, -0.15), vec3(0, 0.284, -0.22), vec3(0, 0.283, -0.28),
+             vec3(0, 0.282, -0.33), vec3(0, 0.28, -0.39), vec3(0, 0.277, -0.445)],
+            0.038, 0.006, [THB.tail1, THB.tail1, THB.tail2, THB.tail2, THB.tail3, THB.tail3], 0.014)
     for sd in stride(from: -1, through: 1, by: 2) {
       let a = vec3(0, 0.283, -0.27), b = vec3(Float(sd) * 0.04, 0.28, -0.38), c = vec3(0, 0.277, -0.48)
       m.add(THB.tail3, DMat.quill, 0.005, sheetS(a, b, c, 0.0036))
@@ -266,6 +391,8 @@ extension Dino {
             [THB.neck, THB.neck], 0.025)
     m.paint(DMat.belly, ellS(vec3(0, 0.5, 0.38), vec3(0.03, 0.03, 0.08), rotXm(0.7)), DMat.skin)
     addScutes(m, THB.neck, vec3(0, 0.55, 0.32), vec3(0, 0.635, 0.41), 4, 0.01)
+    addFolds(m, THB.neck, vec3(0, 0.49, 0.27), vec3(0, 0.605, 0.42), 0.05, 0.035, [0.3, 0.48, 0.66], 0.0045)
+    m.add(THB.chest, DMat.skin, 0.04, ellS(vec3(0, 0.39, 0.08), vec3(0.06, 0.055, 0.12)))  // the belly
     // the head: a long, narrow snout ending in a rosette of teeth, a small crest
     let hc = vec3(0, 0.635, 0.465)
     m.add(THB.head, DMat.skin, 0, ellS(hc, vec3(0.034, 0.038, 0.055)))
@@ -274,7 +401,7 @@ extension Dino {
     m.add(THB.head, DMat.scute, 0.008, ellS(vec3(0, 0.663, 0.5), vec3(0.007, 0.011, 0.03)))
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
-      addEye(m, THB.head, hc + vec3(s * 0.03, 0.016, 0.0), 0.0095, vec3(s * 1.0, 0.15, 0.35))
+      addEye(m, THB.head, hc + vec3(s * 0.029, 0.017, 0.002), 0.0115, vec3(s * 1.0, 0.15, 0.35))
       m.paint(DMat.dark, ellS(vec3(s * 0.009, 0.63, 0.58), vec3(0.0035, 0.003, 0.007)), DMat.skin)
     }
     m.add(THB.jaw, DMat.skin, 0.01, coneS(vec3(0, 0.597, 0.46), vec3(0, 0.585, 0.68), 0.022, 0.012))
@@ -288,11 +415,17 @@ extension Dino {
     addTeeth(m, THB.jaw, vec3(0.014, 0.595, 0.51), vec3(0.011, 0.588, 0.69), 7, vec3(0, 1, 0.1), 0.01, 0.003)
     // arms: strong, with hooked thumb claws
     addTheroArms(m, j, 0.022, 0.016, 2, 0.022, DMat.skin, 0.06)
-    addTheroLegs(m, j, 0.05, 0.026, 0.017, 0.05, DMat.skin, false)
+    addTheroLegs(m, j, 0.055, 0.027, 0.017, 0.05, DMat.skin, false)
+    // the root of the tail: the great muscle that pulls the thighs back
+    for sd in stride(from: -1, through: 1, by: 2) {
+      m.add(THB.root, DMat.skin, 0.04, ellS(vec3(Float(sd) * 0.03, 0.43, -0.11), vec3(0.04, 0.05, 0.11)))
+    }
     // the tail: deep, with a fin above and below, like a paddle
-    addTube(m, DMat.skin, [vec3(0, 0.465, -0.12), vec3(0, 0.44, -0.34), vec3(0, 0.41, -0.52), vec3(0, 0.37, -0.7)],
-            [0.058, 0.042, 0.028, 0.01], [THB.tail1, THB.tail2, THB.tail3], 0.02)
-    let tp = [vec3(0, 0.465, -0.18), vec3(0, 0.44, -0.34), vec3(0, 0.41, -0.52), vec3(0, 0.37, -0.71)]
+    addTail(m, DMat.skin,
+            [vec3(0, 0.465, -0.12), vec3(0, 0.455, -0.24), vec3(0, 0.44, -0.35), vec3(0, 0.427, -0.45),
+             vec3(0, 0.41, -0.55), vec3(0, 0.39, -0.66), vec3(0, 0.37, -0.77)],
+            0.06, 0.008, [THB.tail1, THB.tail1, THB.tail2, THB.tail2, THB.tail3, THB.tail3], 0.02)
+    let tp = [vec3(0, 0.465, -0.18), vec3(0, 0.44, -0.35), vec3(0, 0.41, -0.55), vec3(0, 0.37, -0.78)]
     let up: [Float] = [0.03, 0.075, 0.085, 0.02], dn: [Float] = [0.0, 0.04, 0.05, 0.012]
     let tb = [THB.tail1, THB.tail2, THB.tail3]
     for i in 0..<3 {
@@ -312,50 +445,76 @@ extension Dino {
     m.setSkeleton(skeleton(DAsset.king))
     m.add(THB.root, DMat.skin, 0, ellS(vec3(0, 0.505, -0.04), vec3(0.09, 0.1, 0.15)))
     m.add(THB.chest, DMat.skin, 0.05, ellS(vec3(0, 0.47, 0.16), vec3(0.102, 0.13, 0.15), rotXm(-0.12)))
+    m.add(THB.root, DMat.skin, 0.05, ellS(vec3(0, 0.43, 0.03), vec3(0.085, 0.07, 0.13)))  // the belly, sagging
     m.paint(DMat.belly, ellS(vec3(0, 0.36, 0.12), vec3(0.08, 0.06, 0.2)), DMat.skin)
-    // a deep, muscled neck
+    // a deep, muscled neck, folds of skin round the throat
     addTube(m, DMat.skin, [vec3(0, 0.53, 0.25), vec3(0, 0.6, 0.33), vec3(0, 0.66, 0.39)], [0.088, 0.074, 0.066],
             [THB.neck, THB.neck], 0.04)
+    addFolds(m, THB.neck, vec3(0, 0.53, 0.25), vec3(0, 0.66, 0.39), 0.088, 0.066, [0.25, 0.45, 0.65, 0.83], 0.0065)
     m.paint(DMat.belly, ellS(vec3(0, 0.55, 0.37), vec3(0.05, 0.04, 0.08), rotXm(0.6)), DMat.skin)
-    // the skull: long, deep and boxy, wide at the back, the snout sloping down; bosses over
-    // the eyes, a knobbly ridge down the nose. Its underside is the palate.
+    // the shoulders and the chest muscles over the little arms
+    for sd in stride(from: -1, through: 1, by: 2) {
+      m.add(THB.chest, DMat.skin, 0.03, ellS(vec3(Float(sd) * 0.075, 0.47, 0.25), vec3(0.035, 0.055, 0.05)))
+    }
+    // the skull: long, deep and boxy, broad at the back, the snout sloping down and rounding
+    // off at the nose; bosses over the eyes, a knobbly ridge down the nose. Its underside is the
+    // palate.
     let skull: SDFFn = { p in
-      let z0: Float = 0.4, z1: Float = 0.665
+      let z0: Float = 0.4, z1: Float = 0.675
       let t = clamp((p.z - z0) / (z1 - z0), 0, 1)
-      let w = romanMix(0.074, 0.04, t), h = romanMix(0.07, 0.036, t), yc = romanMix(0.73, 0.697, t)
+      let e: Float = max(0, (t - 0.74) / 0.26)
+      let e2: Float = max(0, 1 - e * e)
+      let rnd: Float = e2.squareRoot()
+      let w: Float = romanMix(0.076, 0.04, t) * romanMix(0.4, 1.0, rnd)
+      let h: Float = romanMix(0.07, 0.036, t) * romanMix(0.6, 1.0, rnd)
+      let yc: Float = romanMix(0.73, 0.697, t) - 0.008 * e
       let ax = abs(p.x) / w, ay = abs(p.y - yc) / h
-      let e: Float = pow(ax, 2.6) + pow(ay, 2.6)
-      let r: Float = pow(e, 1 / 2.6)
-      return SDF.smax((r - 1) * min(w, h), max(z0 - p.z, p.z - z1), 0.03) * 0.85
+      let sp: Float = pow(ax, 2.6) + pow(ay, 2.6)
+      let r: Float = pow(sp, 1 / 2.6)
+      return SDF.smax((r - 1) * min(w, h), max(z0 - p.z, p.z - z1), 0.02) * 0.7
     }
     m.add(THB.head, DMat.skin, 0, fnS(skull, vec3(0, 0.72, 0.53), 0.16))
     m.paint(DMat.mouth, fnS({ p in
       let y1: Float = 0.6645 + 0.01 * (p.z - 0.4)
-      return max(max(p.y - y1, (y1 - 0.012) - p.y), max(0.43 - p.z, abs(p.x) - 0.06))
+      let hw: Float = romanMix(0.046, 0.026, clamp((p.z - 0.45) / 0.2, 0, 1))  // inside the lips
+      return max(max(p.y - y1, (y1 - 0.012) - p.y), max(0.43 - p.z, abs(p.x) - hw))
     }, vec3(0, 0.66, 0.55), 0.13), DMat.skin)
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
       m.add(THB.head, DMat.skin, 0.02, ellS(vec3(s * 0.062, 0.69, 0.465), vec3(0.022, 0.032, 0.05)))  // the cheeks
       m.add(THB.head, DMat.scute, 0.012, ellS(vec3(s * 0.045, 0.773, 0.49), vec3(0.018, 0.012, 0.024)))  // brow bosses
-      addEye(m, THB.head, vec3(s * 0.056, 0.745, 0.497), 0.011, vec3(s * 0.75, 0.1, 0.7))
+      m.add(THB.head, DMat.scute, 0.01, ellS(vec3(s * 0.04, 0.769, 0.533), vec3(0.011, 0.011, 0.016)))  // the lacrimal horns
+      // the jaw muscles bulging at the back of the skull, which is broad behind the eyes
+      m.add(THB.head, DMat.skin, 0.025, ellS(vec3(s * 0.056, 0.735, 0.425), vec3(0.03, 0.045, 0.042)))
+      addEye(m, THB.head, vec3(s * 0.057, 0.746, 0.497), 0.0135, vec3(s * 0.75, 0.1, 0.7))
+      // lips: a ridge of scaly skin along the upper jaw, over the roots of the teeth
+      addTube(m, DMat.skin, [vec3(s * 0.059, 0.666, 0.455), vec3(s * 0.05, 0.664, 0.555), vec3(s * 0.037, 0.663, 0.648)],
+              [0.0075, 0.007, 0.0055], [THB.head, THB.head], 0.01)
       m.paint(DMat.dark, ellS(vec3(s * 0.022, 0.72, 0.655), vec3(0.008, 0.005, 0.01)), DMat.skin)
     }
     addScutes(m, THB.head, vec3(0, 0.762, 0.53), vec3(0, 0.733, 0.63), 5, 0.009)
-    // the lower jaw: deep at the back, tapering to the chin; its top is the tongue and gums
+    // the lower jaw: deep at the back, tapering to a rounded chin, narrower than the skull (the
+    // upper teeth close over it on the outside); its top is the tongue and gums
     let mandible: SDFFn = { p in
-      let z0: Float = 0.43, z1: Float = 0.652
+      let z0: Float = 0.43, z1: Float = 0.658
       let t = clamp((p.z - z0) / (z1 - z0), 0, 1)
-      let w = romanMix(0.066, 0.036, t), h = romanMix(0.033, 0.016, t), yc = romanMix(0.63, 0.647, t)
+      let e: Float = max(0, (t - 0.72) / 0.28)
+      let e2: Float = max(0, 1 - e * e)
+      let rnd: Float = e2.squareRoot()
+      let w: Float = romanMix(0.058, 0.031, t) * romanMix(0.45, 1.0, rnd)
+      let h: Float = romanMix(0.033, 0.016, t)
+      let yc: Float = romanMix(0.63, 0.647, t)
       let ax = abs(p.x) / w, ay = abs(p.y - yc) / h
-      let e: Float = pow(ax, 2.4) + pow(ay, 2.4)
-      let r: Float = pow(e, 1 / 2.4)
-      return SDF.smax((r - 1) * min(w, h), max(z0 - p.z, p.z - z1), 0.02) * 0.85
+      let sp: Float = pow(ax, 2.4) + pow(ay, 2.4)
+      let r: Float = pow(sp, 1 / 2.4)
+      return SDF.smax((r - 1) * min(w, h), max(z0 - p.z, p.z - z1), 0.02) * 0.7
     }
     m.add(THB.jaw, DMat.skin, 0.01, fnS(mandible, vec3(0, 0.64, 0.54), 0.14))
     m.add(THB.jaw, DMat.belly, 0.02, ellS(vec3(0, 0.615, 0.49), vec3(0.05, 0.022, 0.08)))
     m.paint(DMat.mouth, fnS({ p in
       let y0: Float = 0.656 + 0.008 * (p.z - 0.43)
-      return max(max(y0 - p.y, p.y - (y0 + 0.012)), max(0.45 - p.z, abs(p.x) - 0.05))
+      let hw: Float = romanMix(0.044, 0.02, clamp((p.z - 0.45) / 0.19, 0, 1))  // inside the jaw's rim
+      return max(max(y0 - p.y, p.y - (y0 + 0.012)), max(0.45 - p.z, abs(p.x) - hw))
     }, vec3(0, 0.66, 0.55), 0.13), DMat.skin)
     addTeeth(m, THB.head, vec3(0.053, 0.666, 0.47), vec3(0.031, 0.664, 0.645), 8, normalize(vec3(0, -1, 0.12)), 0.024,
              0.0075)
@@ -363,16 +522,22 @@ extension Dino {
     // arms: tiny, two-fingered
     addTheroArms(m, j, 0.02, 0.014, 2, 0.016, DMat.skin)
     // legs: huge
-    addTheroLegs(m, j, 0.075, 0.042, 0.028, 0.07, DMat.skin, false)
+    addTheroLegs(m, j, 0.084, 0.044, 0.028, 0.07, DMat.skin, false)
+    // the root of the tail: the great muscle that pulls the thighs back
+    for sd in stride(from: -1, through: 1, by: 2) {
+      m.add(THB.root, DMat.skin, 0.05, ellS(vec3(Float(sd) * 0.04, 0.47, -0.13), vec3(0.055, 0.07, 0.14)))
+    }
     // the tail
-    addTube(m, DMat.skin, [vec3(0, 0.52, -0.12), vec3(0, 0.5, -0.36), vec3(0, 0.46, -0.53), vec3(0, 0.41, -0.68)],
-            [0.085, 0.06, 0.036, 0.008], [THB.tail1, THB.tail2, THB.tail3], 0.03)
+    addTail(m, DMat.skin,
+            [vec3(0, 0.52, -0.12), vec3(0, 0.515, -0.26), vec3(0, 0.5, -0.37), vec3(0, 0.485, -0.47),
+             vec3(0, 0.465, -0.56), vec3(0, 0.445, -0.66), vec3(0, 0.42, -0.765)],
+            0.09, 0.008, [THB.tail1, THB.tail1, THB.tail2, THB.tail2, THB.tail3, THB.tail3], 0.03)
     // scutes along the back, from the neck to the tail
     addScutes(m, THB.neck, vec3(0, 0.62, 0.32), vec3(0, 0.67, 0.38), 3, 0.012)
     addScutes(m, THB.chest, vec3(0, 0.6, 0.06), vec3(0, 0.6, 0.22), 4, 0.013)
     addScutes(m, THB.root, vec3(0, 0.605, -0.16), vec3(0, 0.605, 0.0), 4, 0.013)
     addScutes(m, THB.tail1, vec3(0, 0.6, -0.2), vec3(0, 0.56, -0.34), 3, 0.011)
-    addScutes(m, THB.tail2, vec3(0, 0.55, -0.38), vec3(0, 0.5, -0.5), 3, 0.009)
+    addScutes(m, THB.tail2, vec3(0, 0.552, -0.39), vec3(0, 0.525, -0.52), 3, 0.009)
     return m
   }
 
@@ -382,12 +547,15 @@ extension Dino {
   private static func pteroModel() -> Model {
     let m = Model()
     m.setSkeleton(skeleton(DAsset.knight))
-    // the body, tilted up at the shoulders
-    m.add(PTB.body, DMat.skin, 0, ellS(vec3(0, 0.3, 0.0), vec3(0.042, 0.048, 0.095), rotXm(-0.6)))
-    m.add(PTB.body, DMat.skin, 0.02, ellS(vec3(0, 0.34, 0.055), vec3(0.05, 0.038, 0.04)))  // the shoulders
-    // the neck
-    addTube(m, DMat.skin, [vec3(0, 0.35, 0.07), vec3(0, 0.43, 0.125), vec3(0, 0.485, 0.158)], [0.024, 0.019, 0.017],
+    // the body, tilted up at the shoulders, in its coat of fine fur; the breast muscles that
+    // drive the wings
+    m.add(PTB.body, DMat.fuzz, 0, ellS(vec3(0, 0.298, -0.008), vec3(0.054, 0.06, 0.112), rotXm(-0.6)))
+    m.add(PTB.body, DMat.fuzz, 0.025, ellS(vec3(0, 0.34, 0.055), vec3(0.064, 0.047, 0.048)))  // the shoulders
+    m.add(PTB.body, DMat.fuzz, 0.025, ellS(vec3(0, 0.3, 0.07), vec3(0.046, 0.045, 0.036)))  // the breast
+    // the neck, furred at its base
+    addTube(m, DMat.skin, [vec3(0, 0.35, 0.07), vec3(0, 0.43, 0.125), vec3(0, 0.485, 0.158)], [0.026, 0.02, 0.017],
             [PTB.neck, PTB.neck], 0.012)
+    m.add(PTB.neck, DMat.fuzz, 0.015, ellS(vec3(0, 0.37, 0.085), vec3(0.03, 0.036, 0.03), rotXm(-0.6)))
     // the head: skull, the long beak, the crest
     let hc = vec3(0, 0.5, 0.195)
     m.add(PTB.head, DMat.skin, 0, ellS(hc, vec3(0.024, 0.028, 0.045)))
@@ -426,41 +594,98 @@ extension Dino {
       let H = vec3(DinoPJ.hipL.x * x, DinoPJ.hipL.y, DinoPJ.hipL.z)
       let K = vec3(DinoPJ.kneeL.x * x, DinoPJ.kneeL.y, DinoPJ.kneeL.z)
       let F = vec3(DinoPJ.footL.x * x, DinoPJ.footL.y, DinoPJ.footL.z)
-      m.add(ua, DMat.skin, 0.012, coneS(S, E, 0.02, 0.014))
-      m.add(ua, DMat.skin, 0.01, ellS(romanMix(S, E, 0.35) + vec3(0, 0, 0.008), vec3(0.028, 0.012, 0.016)))  // the crest of the arm
+      m.add(ua, DMat.skin, 0.012, coneS(S, E, 0.021, 0.014))
+      m.add(ua, DMat.skin, 0.01, ellS(romanMix(S, E, 0.35) + vec3(0, 0, 0.008), vec3(0.03, 0.013, 0.017)))  // the crest of the arm
       m.add(fa, DMat.skin, 0.008, coneS(E, W, 0.013, 0.011))
+      m.add(fa, DMat.skin, 0.006, sphereS(W, 0.0135))  // the wrist
+      // the pteroid: a slender bone at the wrist pointing back at the shoulder, holding up the
+      // membrane in front of the arm
+      let pteroid: vec3 = W + (S - W) * 0.3 + vec3(0, 0.004, 0.012)
+      m.add(fa, DMat.skin, 0.004, coneS(W, pteroid, 0.005, 0.0024))
       m.add(mc, DMat.skin, 0.006, coneS(W, N, 0.011, 0.0095))
-      m.add(fg, DMat.skin, 0.006, coneS(N, T, 0.0095, 0.0025))
+      m.add(mc, DMat.skin, 0.005, sphereS(N, 0.0125))  // the knuckle of the wing finger
+      // the wing finger: four long joints, each a little thinner
+      for s in 0..<4 {
+        let u0 = Float(s) / 4, u1 = Float(s + 1) / 4
+        let a = romanMix(N, T, u0), b = romanMix(N, T, u1)
+        let ra: Float = romanMix(0.0095, 0.0025, u0), rb: Float = romanMix(0.0095, 0.0025, u1)
+        m.add(fg, DMat.skin, 0.005, coneS(a, b, ra, rb))
+        if s > 0 { m.add(fg, DMat.skin, 0.003, sphereS(a, ra * 1.18)) }
+      }
       for f in 0..<3 {  // the little fingers it walks on
         let d = normalize(vec3(x * 0.25, -0.3 + 0.2 * Float(f), 1.0))
         let f1 = N + d * 0.016 + vec3(0, -0.004, 0)
         m.add(mc, DMat.skin, 0.003, coneS(N, f1, 0.0052, 0.0036))
         addClaw(m, mc, f1, d, vec3(0, -1, 0), 0.01, 0.0032, 1.2)
       }
-      // the membrane: from the leading edge (arm, hand and finger) to the trailing edge, which
-      // rides on its own bones (drawn in against the wing as it folds)
+      // the membrane: from the leading edge (arm, hand and finger) back to a trailing edge that
+      // sweeps in one smooth curve from the wing tip to the knee - narrow at the tip, broad
+      // near the body - billowing a little between them. It is cut into strips; each rides on
+      // its bone of the leading edge and on the trailing edge's own bone (drawn in against the
+      // wing as it folds), weighted by how near it is to each edge.
       let tr = sd > 0 ? PTB.ltrail : PTB.rtrail, tr2 = sd > 0 ? PTB.ltrail2 : PTB.rtrail2
-      let T2 = vec3(0.62 * x, 0.355, -0.12), W1 = vec3(0.3 * x, 0.335, -0.1), K1 = K + vec3(x * 0.006, 0.012, 0.0)
-      // 1 on the leading edge a-b, 0 on the trailing edge t0-t1
-      func edgeW(_ a: vec3, _ b: vec3, _ t0: vec3, _ t1: vec3) -> SDFFn {
-        { p in
-          func segD(_ q: vec3, _ u: vec3, _ v: vec3) -> Float {
-            let uv = v - u
-            let t = clamp(dot(q - u, uv) / dot(uv, uv), 0, 1)
-            return length(q - (u + uv * t))
-          }
-          let dl = segD(p, a, b), dt = segD(p, t0, t1)
-          return dt / max(1e-4, dl + dt)
+      let trA = sd > 0 ? PTB.ltrailA : PTB.rtrailA, trH = sd > 0 ? PTB.ltrailH : PTB.rtrailH
+      let K1 = K + vec3(x * 0.006, 0.012, 0.0)
+      let C1 = vec3(0.62 * x, 0.36, -0.15), C2 = vec3(0.22 * x, 0.33, -0.155)
+      func trail(_ u: Float) -> vec3 {  // from the tip (u = 0) to the knee (1)
+        let a: Float = 1 - u
+        let b0: Float = a * a * a, b1: Float = 3 * a * a * u
+        let b2: Float = 3 * a * u * u, b3: Float = u * u * u
+        let p01: vec3 = T * b0 + C1 * b1
+        let p012: vec3 = p01 + C2 * b2
+        return p012 + K1 * b3
+      }
+      let lead: [vec3] = [S, E, W, N, T]
+      func leadAt(_ ax: Float) -> vec3 {  // the leading edge where |x| = ax
+        for i in 0..<4 {
+          let x0 = abs(lead[i].x), x1 = abs(lead[i + 1].x)
+          if ax <= x1 || i == 3 { return romanMix(lead[i], lead[i + 1], clamp((ax - x0) / (x1 - x0), 0, 1)) }
+        }
+        return T
+      }
+      func trailAt(_ ax: Float) -> vec3 {  // the trailing edge where |x| = ax (|x| shrinks from the tip to the knee)
+        var lo: Float = 0, hi: Float = 1
+        for _ in 0..<24 {
+          let mid: Float = 0.5 * (lo + hi)
+          if abs(trail(mid).x) > ax { lo = mid } else { hi = mid }
+        }
+        return trail(0.5 * (lo + hi))
+      }
+      // the membrane follows its trailing-edge bone (which, spread, moves exactly with the wing
+      // bone, and folded squeezes it in against that bone), except right on the leading edge,
+      // where it is fixed to the bone
+      let leadPts = lead
+      let wEdge: SDFFn = { p in
+        var best: Float = 1e9
+        for i in 0..<(leadPts.count - 1) {
+          let uv = leadPts[i + 1] - leadPts[i]
+          let t = clamp(dot(p - leadPts[i], uv) / dot(uv, uv), 0, 1)
+          best = min(best, length(p - (leadPts[i] + uv * t)))
+        }
+        return 1 - smoothstep(0.006, 0.02, best)
+      }
+      // strips between these spans (|x|), split at the joints so each lies on one bone
+      let cuts: [Float] = [abs(K1.x), abs(E.x), abs(W.x), abs(N.x), abs(T.x) - 0.004]
+      let pieces: [Int] = [1, 2, 2, 5]
+      let leadBone: [Int] = [ua, fa, mc, fg], trailBone: [Int] = [trA, tr, trH, tr2]
+      for s in 0..<4 {
+        for k in 0..<pieces[s] {
+          let np = Float(pieces[s])
+          let a0: Float = romanMix(cuts[s], cuts[s + 1], Float(k) / np)
+          let a1: Float = romanMix(cuts[s], cuts[s + 1], Float(k + 1) / np)
+          let l0 = leadAt(a0), l1 = leadAt(a1), t0 = trailAt(a0), t1 = trailAt(a1)
+          let h0: Float = 0.06 * length(l0 - t0), h1: Float = 0.06 * length(l1 - t1)
+          let m0: vec3 = romanMix(l0, t0, 0.45) + vec3(0, h0, 0)  // the billow
+          let m1: vec3 = romanMix(l1, t1, 0.45) + vec3(0, h1, 0)
+          let lb = leadBone[s], tb = trailBone[s]
+          m.addStretch(lb, tb, DMat.membrane, 0.004, sheetS(l0, l1, m1, 0.0042), wEdge)
+          m.addStretch(lb, tb, DMat.membrane, 0.004, sheetS(l0, m1, m0, 0.0042), wEdge)
+          m.addStretch(lb, tb, DMat.membrane, 0.004, sheetS(m0, m1, t1, 0.0042), wEdge)
+          m.addStretch(lb, tb, DMat.membrane, 0.004, sheetS(m0, t1, t0, 0.0042), wEdge)
         }
       }
-      let wOut = edgeW(N, T, T, W1)
-      m.addStretch(fg, tr2, DMat.membrane, 0.004, sheetS(N, T, T2, 0.0042), wOut)
-      m.addStretch(fg, tr2, DMat.membrane, 0.004, sheetS(N, T2, W1, 0.0042), wOut)
-      let wIn = edgeW(S, N, W1, K1)
-      m.addStretch(mc, tr, DMat.membrane, 0.004, sheetS(W, N, W1, 0.0042), wIn)
-      m.addStretch(fa, tr, DMat.membrane, 0.004, sheetS(E, W, W1, 0.0042), wIn)
-      m.addStretch(fa, tr, DMat.membrane, 0.004, sheetS(E, W1, K1, 0.0042), wIn)
-      m.addStretch(ua, tr, DMat.membrane, 0.004, sheetS(S + vec3(0, -0.006, -0.01), E, K1, 0.0042), wIn)
+      // ... and where it meets the flank, from the shoulder down to the knee
+      m.addStretch(ua, trA, DMat.membrane, 0.004, sheetS(S + vec3(0, -0.006, -0.01), leadAt(cuts[0]), K1, 0.0042), wEdge)
       let pa = S + vec3(0, 0.002, 0.012), pb = W + vec3(0, 0.002, 0.004), pc = E + vec3(0, 0.002, 0.02)
       m.addStretch(fa, ua, DMat.membrane, 0.004, sheetS(pa, pb, pc, 0.0038), along(W, S))  // the propatagium in front of the elbow
       // legs and clawed feet
@@ -487,18 +712,24 @@ extension Dino {
     m.add(QDB.body, DMat.skin, 0.08, ellS(vec3(0, 0.37, -0.2), vec3(0.13, 0.12, 0.12)))  // the hips
     m.add(QDB.body, DMat.skin, 0.08, ellS(vec3(0, 0.31, 0.12), vec3(0.13, 0.13, 0.12)))  // the shoulders
     m.paint(DMat.belly, ellS(vec3(0, 0.2, -0.05), vec3(0.12, 0.05, 0.22)), DMat.skin)
-    // the bristly back: a row of low knobs
-    addScutes(m, QDB.body, vec3(0, 0.49, -0.28), vec3(0, 0.47, 0.08), 7, 0.014)
+    // the bristly back: a row of low knobs following the curve of the back
+    for i in 0..<7 {
+      let z: Float = -0.25 + 0.05 * Float(i)
+      let zz: Float = z + 0.09
+      let y: Float = 0.486 - 1.2 * zz * zz
+      m.add(QDB.body, DMat.scute, 0.01, ellS(vec3(0, y, z), vec3(0.012, 0.009, 0.016)))
+    }
     // the neck under the frill
     addTube(m, DMat.skin, [vec3(0, 0.33, 0.16), vec3(0, 0.33, 0.23), vec3(0, 0.325, 0.3)], [0.1, 0.092, 0.085],
             [QDB.neck1, QDB.neck3], 0.04)
+    addFolds(m, QDB.neck2, vec3(0, 0.33, 0.16), vec3(0, 0.325, 0.3), 0.1, 0.085, [0.3, 0.55, 0.8], 0.007)
     // the head
     m.add(QDB.head, DMat.skin, 0, ellS(vec3(0, 0.31, 0.4), vec3(0.078, 0.085, 0.13)))
     m.add(QDB.head, DMat.skin, 0.03, coneS(vec3(0, 0.3, 0.45), vec3(0, 0.235, 0.575), 0.058, 0.026))
     m.add(QDB.head, DMat.horn, 0.006, coneS(vec3(0, 0.245, 0.565), vec3(0, 0.195, 0.62), 0.026, 0.005))  // the beak
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
-      addEye(m, QDB.head, vec3(s * 0.064, 0.35, 0.43), 0.012, vec3(s * 1.0, 0.15, 0.25))
+      addEye(m, QDB.head, vec3(s * 0.063, 0.352, 0.432), 0.0145, vec3(s * 1.0, 0.15, 0.25))
       // the cheek horns (epijugals)
       addClaw(m, QDB.head, vec3(s * 0.075, 0.27, 0.37), vec3(s * 1.0, -0.4, 0.1), vec3(0, -1, 0), 0.04, 0.016, 0.4,
               DMat.horn, 0.01)
@@ -539,31 +770,20 @@ extension Dino {
       let d: Float = abs(p.y - 0.253 + 0.15 * (p.z - 0.4)) - 0.003
       return max(d, max(0.37 - p.z, p.z - 0.6))
     }, vec3(0, 0.24, 0.48), 0.15), DMat.skin)
-    // legs: sprawled front legs, pillars behind, hoof-like claws
-    for sd in stride(from: -1, through: 1, by: 2) {
-      let x = Float(sd)
-      let fu = sd > 0 ? QDB.flu : QDB.fru, fl = sd > 0 ? QDB.fll : QDB.frl
-      let hu = sd > 0 ? QDB.hlu : QDB.hru, hl = sd > 0 ? QDB.hll : QDB.hrl
-      let FU = vec3(j.flu.x * x, j.flu.y, j.flu.z), FL = vec3(j.fll.x * x, j.fll.y, j.fll.z)
-      let FF = vec3(j.ffoot.x * x, 0.03, j.ffoot.z)
-      let HU = vec3(j.hlu.x * x, j.hlu.y, j.hlu.z), HL = vec3(j.hll.x * x, j.hll.y, j.hll.z)
-      let HF = vec3(j.hfoot.x * x, 0.03, j.hfoot.z)
-      m.add(fu, DMat.skin, 0.04, coneS(FU + vec3(0, 0.03, 0), FL, 0.055, 0.038))
-      m.add(fl, DMat.skin, 0.02, coneS(FL, FF, 0.038, 0.033))
-      m.add(fl, DMat.skin, 0.015, ellS(FF + vec3(0, -0.006, 0.012), vec3(0.04, 0.026, 0.042)))
-      m.add(hu, DMat.skin, 0.05, ellS(romanMix(HU, HL, 0.4) + vec3(x * 0.01, 0, 0), vec3(0.06, 0.11, 0.08)))
-      m.add(hu, DMat.skin, 0.03, coneS(HU, HL, 0.065, 0.045))
-      m.add(hl, DMat.skin, 0.02, coneS(HL, HF, 0.044, 0.036))
-      m.add(hl, DMat.skin, 0.015, ellS(HF + vec3(0, -0.006, 0.014), vec3(0.043, 0.027, 0.048)))
-      for k in -1...1 {
-        let fk = Float(k)
-        m.add(fl, DMat.claw, 0.004, ellS(FF + vec3(fk * 0.022, -0.016, 0.048), vec3(0.011, 0.012, 0.012)))
-        m.add(hl, DMat.claw, 0.004, ellS(HF + vec3(fk * 0.024, -0.016, 0.056), vec3(0.012, 0.012, 0.013)))
-      }
-    }
-    // the tail
-    addTube(m, DMat.skin, [vec3(0, 0.37, -0.27), vec3(0, 0.33, -0.45), vec3(0, 0.27, -0.56), vec3(0, 0.19, -0.65)],
-            [0.088, 0.058, 0.034, 0.008], [QDB.tail1, QDB.tail2, QDB.tail3], 0.03)
+    // legs: the front ones half-sprawled (elbows out and back), the hind ones pillars; broad
+    // padded feet with blunt hooves
+    var L = DinoQuadLegSpec()
+    L.upperR = 0.058; L.elbowR = 0.036; L.foreR = 0.037; L.wristR = 0.029
+    L.thighR = 0.066; L.kneeR = 0.04; L.shinR = 0.04; L.ankleR = 0.031
+    L.fPad = vec3(0.04, 0.022, 0.043); L.hPad = vec3(0.042, 0.022, 0.05)
+    L.thigh = vec3(0.062, 0.12, 0.085)
+    L.hooves = true
+    addQuadLegs(m, j, L)
+    // the tail: heavy at the root, held off the ground, tapering
+    addTail(m, DMat.skin,
+            [vec3(0, 0.37, -0.27), vec3(0, 0.35, -0.38), vec3(0, 0.32, -0.48), vec3(0, 0.293, -0.555),
+             vec3(0, 0.262, -0.63), vec3(0, 0.225, -0.705), vec3(0, 0.185, -0.785)],
+            0.095, 0.008, [QDB.tail1, QDB.tail1, QDB.tail2, QDB.tail2, QDB.tail3, QDB.tail3], 0.03)
     return m
   }
 
@@ -573,13 +793,15 @@ extension Dino {
     let j = quadBase(DAsset.rook)
     let m = Model()
     m.setSkeleton(skeleton(DAsset.rook))
-    m.add(QDB.body, DMat.skin, 0, ellS(vec3(0, 0.57, 0.07), vec3(0.13, 0.15, 0.19)))
-    m.add(QDB.body, DMat.skin, 0.09, ellS(vec3(0, 0.53, -0.13), vec3(0.12, 0.12, 0.14)))
-    m.add(QDB.body, DMat.skin, 0.06, ellS(vec3(0, 0.64, 0.15), vec3(0.11, 0.09, 0.1)))  // the withers
+    m.add(QDB.body, DMat.skin, 0, ellS(vec3(0, 0.57, 0.06), vec3(0.15, 0.165, 0.2)))
+    m.add(QDB.body, DMat.skin, 0.09, ellS(vec3(0, 0.54, -0.13), vec3(0.135, 0.13, 0.15)))
+    m.add(QDB.body, DMat.skin, 0.06, ellS(vec3(0, 0.64, 0.15), vec3(0.12, 0.095, 0.1)))  // the withers
+    m.add(QDB.body, DMat.skin, 0.07, ellS(vec3(0, 0.46, 0.0), vec3(0.12, 0.075, 0.17)))  // the belly, sagging
     m.paint(DMat.belly, ellS(vec3(0, 0.42, 0.0), vec3(0.1, 0.05, 0.2)), DMat.skin)
     // the neck, in three bones, its underside pale
     addTube(m, DMat.skin, [vec3(0, 0.62, 0.19), vec3(0, 0.86, 0.3), vec3(0, 1.03, 0.37), vec3(0, 1.185, 0.43)],
             [0.076, 0.055, 0.044, 0.034], [QDB.neck1, QDB.neck2, QDB.neck3], 0.03)
+    addFolds(m, QDB.neck1, vec3(0, 0.62, 0.19), vec3(0, 0.86, 0.3), 0.076, 0.055, [0.22, 0.42, 0.62], 0.0045)
     m.paint(DMat.belly, fnS({ p in
       let a = vec3(0, 0.62, 0.19), b = vec3(0, 1.185, 0.43)
       let ab = b - a
@@ -589,43 +811,47 @@ extension Dino {
       return 0.25 * (0.028 - dot(p - c, front))
     }, vec3(0, 0.9, 0.31), 0.4), DMat.skin)
     // the head: small, with the arched nose of a brachiosaur
-    let hc = vec3(0, 1.21, 0.47)
-    m.add(QDB.head, DMat.skin, 0, ellS(hc, vec3(0.032, 0.032, 0.048)))
-    m.add(QDB.head, DMat.skin, 0.025, ellS(vec3(0, 1.243, 0.455), vec3(0.027, 0.029, 0.033)))
-    m.add(QDB.head, DMat.skin, 0.015, coneS(vec3(0, 1.202, 0.49), vec3(0, 1.195, 0.545), 0.026, 0.021))
+    // (a wedge from the braincase to a long, low muzzle, rounded at the end; the arch of the
+    // nose rising over the eyes)
+    m.add(QDB.head, DMat.skin, 0, fnS({ p in
+      let z0: Float = 0.425, z1: Float = 0.562
+      let t = clamp((p.z - z0) / (z1 - z0), 0, 1)
+      let e: Float = max(0, (t - 0.78) / 0.22)
+      let e2: Float = max(0, 1 - e * e)
+      let rnd: Float = e2.squareRoot()
+      let w: Float = romanMix(0.03, 0.0185, t) * romanMix(0.5, 1.0, rnd)
+      let h: Float = romanMix(0.031, 0.0165, t) * romanMix(0.6, 1.0, rnd)
+      let yc: Float = romanMix(1.217, 1.2, t)
+      let ax = abs(p.x) / w, ay = abs(p.y - yc) / h
+      let sp: Float = pow(ax, 2.4) + pow(ay, 2.4)
+      let r: Float = pow(sp, 1 / 2.4)
+      return SDF.smax((r - 1) * min(w, h), max(z0 - p.z, p.z - z1), 0.018) * 0.75
+    }, vec3(0, 1.21, 0.49), 0.09))
+    m.add(QDB.head, DMat.skin, 0.018, ellS(vec3(0, 1.241, 0.47), vec3(0.017, 0.025, 0.026), rotXm(-0.35)))
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
-      addEye(m, QDB.head, vec3(s * 0.029, 1.228, 0.465), 0.0085, vec3(s * 1.0, 0.1, 0.3))
-      m.paint(DMat.dark, ellS(vec3(s * 0.011, 1.271, 0.455), vec3(0.006, 0.004, 0.008)), DMat.skin)
+      addEye(m, QDB.head, vec3(s * 0.0285, 1.229, 0.466), 0.0105, vec3(s * 1.0, 0.1, 0.3))
+      m.paint(DMat.dark, ellS(vec3(s * 0.009, 1.266, 0.466), vec3(0.0055, 0.005, 0.008)), DMat.skin)  // nostrils high on the arch
     }
-    m.add(QDB.jaw, DMat.skin, 0.01, coneS(vec3(0, 1.178, 0.48), vec3(0, 1.175, 0.542), 0.02, 0.016))
+    m.add(QDB.jaw, DMat.skin, 0.01, ellS(vec3(0, 1.184, 0.502), vec3(0.018, 0.0095, 0.052)))
     m.paint(DMat.mouth, fnS({ p in
       max(abs(p.y - 1.186) - 0.0025, max(0.49 - p.z, p.z - 0.56))
     }, vec3(0, 1.186, 0.52), 0.06), DMat.skin)
-    addTeeth(m, QDB.head, vec3(0.016, 1.188, 0.505), vec3(0.01, 1.188, 0.543), 4, vec3(0, -1, 0.3), 0.007, 0.0028)
-    // pillar legs, the front ones taller; each foot with a thumb claw
-    for sd in stride(from: -1, through: 1, by: 2) {
-      let x = Float(sd)
-      let fu = sd > 0 ? QDB.flu : QDB.fru, fl = sd > 0 ? QDB.fll : QDB.frl
-      let hu = sd > 0 ? QDB.hlu : QDB.hru, hl = sd > 0 ? QDB.hll : QDB.hrl
-      let FU = vec3(j.flu.x * x, j.flu.y, j.flu.z), FL = vec3(j.fll.x * x, j.fll.y, j.fll.z)
-      let FF = vec3(j.ffoot.x * x, 0.035, j.ffoot.z)
-      let HU = vec3(j.hlu.x * x, j.hlu.y, j.hlu.z), HL = vec3(j.hll.x * x, j.hll.y, j.hll.z)
-      let HF = vec3(j.hfoot.x * x, 0.035, j.hfoot.z)
-      m.add(fu, DMat.skin, 0.04, coneS(FU + vec3(0, 0.03, 0), FL, 0.058, 0.04))
-      m.add(fl, DMat.skin, 0.04, coneS(FL, FF + vec3(0, 0.03, 0), 0.04, 0.036))
-      m.add(fl, DMat.skin, 0.035, coneS(FF + vec3(0, 0.03, 0), vec3(FF.x, 0.014, FF.z + 0.006), 0.036, 0.044))
-      m.add(hu, DMat.skin, 0.05, ellS(romanMix(HU, HL, 0.4), vec3(0.066, 0.13, 0.09)))
-      m.add(hl, DMat.skin, 0.04, coneS(HL, HF + vec3(0, 0.03, 0), 0.048, 0.04))
-      m.add(hl, DMat.skin, 0.035, coneS(HF + vec3(0, 0.03, 0), vec3(HF.x, 0.014, HF.z + 0.01), 0.04, 0.048))
-      addClaw(m, fl, vec3(FF.x - x * 0.03, 0.02, FF.z + 0.032), vec3(-x * 0.3, 0.2, 1.0), vec3(0, -1, 0), 0.03, 0.01, 0.9)
-      for k in -1...1 {
-        m.add(hl, DMat.claw, 0.004, ellS(HF + vec3(Float(k) * 0.026, -0.022, 0.05), vec3(0.012, 0.012, 0.012)))
-      }
-    }
-    // the tail
-    addTube(m, DMat.skin, [vec3(0, 0.56, -0.2), vec3(0, 0.47, -0.42), vec3(0, 0.37, -0.56), vec3(0, 0.25, -0.7)],
-            [0.075, 0.048, 0.03, 0.008], [QDB.tail1, QDB.tail2, QDB.tail3], 0.03)
+    addTeeth(m, QDB.head, vec3(0.013, 1.188, 0.5), vec3(0.008, 1.188, 0.538), 4, vec3(0, -1, 0.3), 0.007, 0.0026)
+    // pillar legs, the front ones taller: columns of muscle, elephantine feet (the forefeet a
+    // horseshoe of toes with a single thumb claw, the hind feet with three great claws)
+    var L = DinoQuadLegSpec()
+    L.upperR = 0.06; L.elbowR = 0.04; L.foreR = 0.042; L.wristR = 0.035
+    L.thighR = 0.07; L.kneeR = 0.044; L.shinR = 0.046; L.ankleR = 0.037
+    L.fPad = vec3(0.043, 0.019, 0.042); L.hPad = vec3(0.047, 0.019, 0.052)
+    L.thigh = vec3(0.068, 0.14, 0.095)
+    L.hooves = false
+    addQuadLegs(m, j, L)
+    // the tail: a long whip sweeping down towards the board
+    addTail(m, DMat.skin,
+            [vec3(0, 0.56, -0.2), vec3(0, 0.52, -0.33), vec3(0, 0.47, -0.45), vec3(0, 0.42, -0.54),
+             vec3(0, 0.36, -0.63), vec3(0, 0.295, -0.725), vec3(0, 0.22, -0.825)],
+            0.085, 0.007, [QDB.tail1, QDB.tail1, QDB.tail2, QDB.tail2, QDB.tail3, QDB.tail3], 0.03)
     return m
   }
 
@@ -697,13 +923,13 @@ extension Dino {
     tick("Hatching the raptors")
     build(DAsset.knight, pteroModel(), vec3(-0.88, -0.005, -0.18), vec3(0.88, 0.66, 0.52))
     tick("Teaching the pteranodons to fly")
-    build(DAsset.bishop, trikeModel(), vec3(-0.25, -0.005, -0.7), vec3(0.25, 0.68, 0.66))
+    build(DAsset.bishop, trikeModel(), vec3(-0.25, -0.005, -0.86), vec3(0.25, 0.68, 0.66))
     tick("Sharpening the triceratops' horns")
-    build(DAsset.rook, brachioModel(), vec3(-0.2, -0.005, -0.74), vec3(0.2, 1.32, 0.6))
+    build(DAsset.rook, brachioModel(), vec3(-0.2, -0.005, -0.9), vec3(0.2, 1.32, 0.6))
     tick("Raising the brachiosaurus")
-    build(DAsset.queen, spinoModel(), vec3(-0.15, -0.005, -0.76), vec3(0.15, 0.84, 0.76))
+    build(DAsset.queen, spinoModel(), vec3(-0.15, -0.005, -0.84), vec3(0.15, 0.84, 0.76))
     tick("Hoisting the spinosaurus' sail")
-    build(DAsset.king, rexModel(), vec3(-0.19, -0.005, -0.72), vec3(0.19, 0.84, 0.7))
+    build(DAsset.king, rexModel(), vec3(-0.19, -0.005, -0.82), vec3(0.19, 0.84, 0.7))
     tick("Waking the tyrant king")
     do {
       let c = poolModel()
