@@ -383,7 +383,10 @@ final class RChariotRunDown: RBattle {
       a.ctl.armR = vec3(0.4, 0.2, 0.5)
       brace(w, 1.0)
       let front: vec3 = a.pos + a.forward() * 0.42
-      if !hit && dot(flat(front - V), dir) > -v.radius() * 0.8 {
+      // (it strikes as the horses reach the victim - or, where the edge of the board pulls it
+      // up short, as it stops)
+      let arrived = walker.s >= walker.len - 1e-3
+      if !hit && (dot(flat(front - V), dir) > -v.radius() * 0.8 || arrived) {
         hit = true
         let side = vec3(-dir.z, 0, dir.x)
         let sgn: Float = w.fx.rnd() < 0.5 ? -1.0 : 1.0
@@ -463,9 +466,11 @@ final class RChariotScythes: RBattle {
       }
       walker.update(w, dt)
       a.ctl.lean = 0.2
-      // the blade on the victim's side of the axle
+      // the blade on the victim's side of the axle: it cuts as it passes the victim - or, on the
+      // edge of the board, where the chariot cannot run on past it, as the chariot pulls up
       let blade = rModelPoint(a, vec3(sgn * -0.29, 0.14, -0.26))
-      if !hit && dot(flat(blade - V), a.forward()) > 0.0 {
+      let arrived = walker.s >= walker.len - 1e-3
+      if !hit && (dot(flat(blade - V), a.forward()) > 0.0 || arrived) {
         hit = true
         let hitAt: vec3 = V + vec3(0, min(0.32, v.height() * 0.35), 0)
         let fwd = a.forward()

@@ -465,12 +465,15 @@ int App::run() {
     for (size_t i = 0; i < game.san().size(); ++i) std::printf(" %s", game.san()[i].c_str());
     std::printf("\nresult: %s (%d plies, %d actors, %zu chunks)\n", chess::resultText(game.result()), game.plyCount(),
                 (int)world.actors.size(), world.chunks.size());
-    // still busy, or a piece left off its square: a battle that went wrong
-    int off = 0;
-    for (const Actor& a : world.actors)
+    // still busy, a piece left off its square, or a captured piece still standing: a battle that went wrong
+    int off = 0, standing = 0;
+    for (const Actor& a : world.actors) {
       if (a.alive && a.square >= 0 && glm::length(glm::vec2(a.pos.x, a.pos.z) - glm::vec2(squareCenter(a.square).x, squareCenter(a.square).z)) > 0.05f)
         ++off;
-    std::printf("state: %zu animations running, %d pieces off their squares\n", anims.size(), off);
+      if (a.alive && a.visible && a.square >= 0 && world.actorAt[a.square] != a.id) ++standing;
+    }
+    std::printf("state: %zu animations running, %d pieces off their squares, %d captured pieces still standing\n", anims.size(), off,
+                standing);
   }
   return 0;
 }
@@ -1641,7 +1644,14 @@ void App::handleInput() {
 // ---------------------------------------------------------------------------
 void App::updateGame(float dt) {
   if (!anims.empty()) {
-    if (anims.front()->update(world, dt)) anims.pop_front();
+    if (anims.front()->update(world, dt)) {
+      anims.pop_front();
+      // (a safety net: no captured piece is left standing on the board)
+      if (anims.empty()) {
+        int n = world.strikeDownCaptured();
+        if (n > 0) std::fprintf(stderr, "[battle] %d captured piece(s) still standing at the end of the move: struck down\n", n);
+      }
+    }
     return;
   }
   if (announcePending) {

@@ -1452,7 +1452,10 @@ class ChariotRunDown : public RBattle {
         a.ctl.armR = vec3(0.4f, 0.2f, 0.5f);
         brace(w, 1.0f);
         vec3 front = a.pos + a.forward() * 0.42f;
-        if (!hit && glm::dot(flat(front - V), dir) > -v.radius() * 0.8f) {
+        // (it strikes as the horses reach the victim - or, where the edge of the board pulls it
+        // up short, as it stops)
+        bool arrived = walker.s >= walker.len - 1e-3f;
+        if (!hit && (glm::dot(flat(front - V), dir) > -v.radius() * 0.8f || arrived)) {
           hit = true;
           vec3 side(-dir.z, 0, dir.x);
           float sgn = w.fx.rnd() < 0.5f ? -1.0f : 1.0f;
@@ -1537,9 +1540,11 @@ class ChariotScythes : public RBattle {
         }
         walker.update(w, dt);
         a.ctl.lean = 0.2f;
-        // the blade on the victim's side of the axle
+        // the blade on the victim's side of the axle: it cuts as it passes the victim - or, on the
+        // edge of the board, where the chariot cannot run on past it, as the chariot pulls up
         vec3 blade = modelPoint(a, vec3(sgn * -0.29f, 0.14f, -0.26f));
-        if (!hit && glm::dot(flat(blade - V), a.forward()) > 0.0f) {
+        bool arrived = walker.s >= walker.len - 1e-3f;
+        if (!hit && (glm::dot(flat(blade - V), a.forward()) > 0.0f || arrived)) {
           hit = true;
           vec3 hitAt = V + vec3(0, std::min(0.32f, v.height() * 0.35f), 0);
           vec3 fwd = a.forward();

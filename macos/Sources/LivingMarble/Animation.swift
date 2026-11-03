@@ -660,6 +660,18 @@ final class World {
     sound(.shatter, 0.5, c, 1.6)
   }
 
+  /// After a move: a captured piece still standing (a battle whose blow never landed) is struck
+  /// down now, rather than sharing its square with the victor. Returns how many.
+  @discardableResult
+  func strikeDownCaptured() -> Int {
+    var n = 0
+    for a in actors where a.alive && a.visible && a.square >= 0 && actorAt[a.square] != a.id {
+      shatter(a, a.pos + vec3(0, a.height() * 0.5, 0), vec3(0, 1, 0), 1.0, 0.6, 4.0)
+      n += 1
+    }
+    return n
+  }
+
   /// Shatter an actor into Voronoi chunks.
   func shatter(_ a: Actor, _ impact: vec3, _ impulse: vec3, _ explode: Float, _ upBias: Float, _ spin: Float = 6) {
     if a.set != 0 {

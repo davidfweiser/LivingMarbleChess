@@ -522,7 +522,16 @@ final class GameController: NSObject, MTKViewDelegate {
 
   private func updateGame(_ dt: Float) {
     if let a = anims.first {
-      if a.update(world, dt) { anims.removeFirst() }
+      if a.update(world, dt) {
+        anims.removeFirst()
+        // (a safety net: no captured piece is left standing on the board)
+        if anims.isEmpty {
+          let n = world.strikeDownCaptured()
+          if n > 0 {
+            FileHandle.standardError.write("[battle] \(n) captured piece(s) still standing at the end of the move: struck down\n".data(using: .utf8)!)
+          }
+        }
+      }
       return
     }
     if announcePending {

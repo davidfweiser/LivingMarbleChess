@@ -272,6 +272,9 @@ class World {
   // shatter an actor into Voronoi chunks
   void shatter(Actor& a, const glm::vec3& impact, const glm::vec3& impulse, float explode, float upBias,
                float spin = 6.0f);
+  // after a move: a captured piece still standing (a battle whose blow never landed) is struck
+  // down now, rather than sharing its square with the victor; returns how many
+  int strikeDownCaptured();
   // slice an actor in two along its slice plane
   void slice(Actor& a, float separation);
   // break a medieval asset (e.g. a throne) drawn with model matrix M

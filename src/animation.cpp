@@ -420,6 +420,16 @@ void World::glassBurst(const Actor& a) {
   sound(SFX_SHATTER, 0.5f, c, 1.6f);
 }
 
+int World::strikeDownCaptured() {
+  int n = 0;
+  for (Actor& a : actors) {
+    if (!a.alive || !a.visible || a.square < 0 || actorAt[a.square] == a.id) continue;
+    shatter(a, a.pos + vec3(0, a.height() * 0.5f, 0), vec3(0, 1.0f, 0), 1.0f, 0.6f, 4.0f);
+    ++n;
+  }
+  return n;
+}
+
 void World::shatter(Actor& a, const vec3& impact, const vec3& impulse, float explode, float upBias, float spin) {
   if (a.set != 0) {
     a.neutralize();
