@@ -117,6 +117,7 @@ void Actor::update(float dt, float t, Audio* audio) {
 void figurePose(int set, int asset, const medieval::Controls& c, medieval::Pose& out) {
   if (set == 2) alien::buildPose(asset, c, out);
   else if (set == 3) roman::buildPose(asset, c, out);
+  else if (set == 4) dino::buildPose(asset, c, out);
   else medieval::buildPose(asset, c, out);
 }
 
@@ -136,6 +137,7 @@ float Actor::height() const {
   float h = set == 1   ? medieval::pieceHeight(kind)
             : set == 2 ? alien::pieceHeight(kind)
             : set == 3 ? roman::pieceHeight(kind)
+            : set == 4 ? dino::pieceHeight(kind)
                        : meshgen::pieceHeight(kind);
   return h * scale;
 }
@@ -143,6 +145,7 @@ float Actor::radius() const {
   float r = set == 1   ? medieval::pieceRadius(kind)
             : set == 2 ? alien::pieceRadius(kind)
             : set == 3 ? roman::pieceRadius(kind)
+            : set == 4 ? dino::pieceRadius(kind)
                        : meshgen::pieceRadius(kind);
   return r * scale;
 }
@@ -165,13 +168,13 @@ void Actor::neutralize() {
 quat Actor::rotation() const { return glm::angleAxis(yaw, vec3(0, 1, 0)) * tilt; }
 
 glm::mat4 Actor::rigidModel() const {
-  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 || set == 3 ? bob * 0.3f : bob, 0));
+  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 || set >= 3 ? bob * 0.3f : bob, 0));
   M = glm::rotate(M, yaw, vec3(0, 1, 0));
   return glm::scale(M, vec3(scale));
 }
 
 glm::mat4 Actor::model() const {
-  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 || set == 3 ? bob * 0.3f : bob, 0));
+  glm::mat4 M = glm::translate(glm::mat4(1.0f), pos + vec3(0, set == 1 || set >= 3 ? bob * 0.3f : bob, 0));
   M = glm::rotate(M, yaw, vec3(0, 1, 0));
   if (std::fabs(tilt.w) < 0.99999f) {
     M = glm::translate(M, tiltPivot * scale);
@@ -284,6 +287,7 @@ glm::mat4 World::seatModel(const Actor& a) const {
 
 const meshgen::PieceAssets& World::figureAssets(int set, int asset) const {
   if (set == 3) return rlib->asset[asset];
+  if (set == 4) return dlib->asset[asset];
   return set == 2 ? alib->asset[asset] : mlib->asset[asset];
 }
 
@@ -662,6 +666,7 @@ void World::stopFidgets() {
       a.ctl.headYaw = a.ctl.headPitch = a.ctl.lean = a.ctl.twist = 0;
       a.ctl.armL = a.ctl.armR = vec3(0);
       a.ctl.perk = a.ctl.jaw = a.ctl.tongue = a.ctl.hover = a.ctl.crouch = a.ctl.hatch = 0;
+      if (a.set == 4) a.ctl.neck = a.ctl.itemYaw = a.ctl.wings = 0;
     }
     a.fidgetT = -1;
     a.yawTarget = a.baseYaw;
@@ -741,6 +746,46 @@ void World::updateFidgets(float dt) {
         a.fidgetT = -1;
         c.headYaw = c.headPitch = c.lean = c.twist = c.neck = 0;
         c.armR = vec3(0);
+      }
+      continue;
+    }
+    if (a.set == 4) {
+      // dinosaurs: a look round, a sniff of the air, a yawn and a stretch, a swish of the tail
+      medieval::Controls& c = a.ctl;
+      switch (a.fidgetType) {
+        case 0: {  // a look round
+          end = 2.4f;
+          float u = std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI);
+          c.headYaw = a.fidgetDir * (a.kind == meshgen::K_ROOK ? 0.9f : 0.65f) * u;
+          c.twist = a.fidgetDir * 0.08f * u;
+          c.itemYaw = -a.fidgetDir * 0.15f * u;
+          break;
+        }
+        case 1: {  // sniffing the air, a snort; the pteranodon shakes out its wings
+          end = 1.5f;
+          float u = glm::clamp(t / end, 0.0f, 1.0f);
+          if (a.kind == meshgen::K_KNIGHT) {
+            c.wings = 0.45f * std::sin(u * kPI);
+            c.flap = u * 18.0f;
+          } else {
+            c.neck = 0.25f * std::sin(u * kPI);
+            c.headPitch = -0.2f * std::sin(u * kPI) + 0.05f * std::sin(u * kPI * 8.0f) * (1.0f - u);
+          }
+          break;
+        }
+        default: {  // a yawn, a stretch, a swish of the tail
+          end = 1.8f;
+          float u = std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI);
+          c.jaw = 0.75f * u;
+          c.neck = 0.3f * u;
+          c.headPitch = -0.15f * u;
+          c.itemYaw = a.fidgetDir * 0.35f * std::sin(glm::clamp(t / end, 0.0f, 1.0f) * kPI * 2.0f);
+          break;
+        }
+      }
+      if (t >= end) {
+        a.fidgetT = -1;
+        c.headYaw = c.headPitch = c.lean = c.twist = c.neck = c.jaw = c.itemYaw = c.wings = 0;
       }
       continue;
     }
@@ -1026,6 +1071,17 @@ void World::updateGhosts(float dt) {
     if (a.set == 3 && a.kind == meshgen::K_KNIGHT) k.rear = 0.45f * cs;  // the horses rear
     if (a.set == 3 && a.kind == meshgen::K_ROOK) k.bridge = 0.3f * std::fabs(std::sin(g.t * 6.0f + ph)) * cs;
     if (a.set == 3) k.cape = 0.5f * cs;
+    if (a.set == 4) {  // roaring, the pteranodon flapping, the big ones rearing
+      k.neck = 0.45f * cs - 0.3f * ds;
+      k.jaw = 0.9f * cs;
+      k.armL = k.armR = vec3(0.6f, 0.2f, 0.0f) * cs;
+      k.itemYaw = 0.4f * std::sin(g.t * 7.0f + ph) * cs;
+      if (a.kind == meshgen::K_KNIGHT) {
+        k.wings = cs;
+        k.flap += dt * 14.0f * cs;
+      }
+      if (a.kind == meshgen::K_ROOK || a.kind == meshgen::K_BISHOP) k.rear = (a.kind == meshgen::K_ROOK ? 0.35f : 0.6f) * cs;
+    }
     // a faint pale glow, brighter when cheering, and it materialises out of the wisps
     a.glow = glm::vec4(kGhostLight, 0.1f + 0.45f * cs + 0.15f * ws);
     a.dissolve = (1.0f - g.appear) * 0.85f;
@@ -1118,7 +1174,7 @@ void World::figureItems(Renderer& r, const Actor& a, std::vector<DrawItem>& out)
     d.mesh = &G[a.kind].lod0;
     d.meshLow = &G[a.kind].lod1;
     d.model = a.model();
-    if (a.set == 1 || a.set == 3) {
+    if (a.set == 1 || a.set >= 3) {
       // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
       d.rig = glm::vec4(a.rig.x * 0.3f, a.rig.y, 1.0f + (a.rig.z - 1.0f) * 0.12f, a.rig.w * 0.25f);
     } else {
@@ -1127,8 +1183,8 @@ void World::figureItems(Renderer& r, const Actor& a, std::vector<DrawItem>& out)
       d.rig = glm::vec4(a.rig.x * k, a.rig.y, 1.0f + (a.rig.z - 1.0f) * k, a.rig.w * k);
     }
     d.rigH = a.height() / std::max(a.scale, 1e-3f);
-    d.material = a.set == 2 ? MAT_ALIEN : (a.set == 3 ? MAT_ROMAN : MAT_MEDIEVAL);
-    d.interior = a.set == 3 && a.kind != meshgen::K_ROOK ? 1.0f : 0.0f;
+    d.material = a.set == 2 ? MAT_ALIEN : (a.set == 3 ? MAT_ROMAN : (a.set == 4 ? MAT_DINO : MAT_MEDIEVAL));
+    d.interior = (a.set == 3 && a.kind != meshgen::K_ROOK) || a.set == 4 ? 1.0f : 0.0f;
     d.team = a.color;
     d.bones = a.pose.bone;
     d.boneCount = a.pose.count;
@@ -1225,8 +1281,9 @@ void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
     d.material = c.set == 1   ? MAT_MEDIEVAL
                  : c.set == 2 ? MAT_ALIEN
                  : c.set == 3 ? MAT_ROMAN
+                 : c.set == 4 ? MAT_DINO
                               : (c.color == 0 ? MAT_WHITE : MAT_BLACK);
-    d.interior = c.set == 3 && c.kind != roman::R_ROOK && c.kind != roman::R_BOLT && c.kind != roman::R_PILUM ? 1.0f : 0.0f;
+    d.interior = (c.set == 3 && c.kind != roman::R_ROOK && c.kind != roman::R_BOLT && c.kind != roman::R_PILUM) || c.set == 4 ? 1.0f : 0.0f;
     if (c.set == 2 && (c.kind == alien::AL_CANOPY || c.kind == alien::AL_JAR)) {
       d.material = MAT_GLASS;
       d.glass = true;
@@ -1247,14 +1304,14 @@ void World::buildDrawItems(Renderer& r, std::vector<DrawItem>& out) const {
     d.meshLow = &G[p.asset].lod1;
     d.model = p.model();
     d.rigH = 1.0f;
-    d.material = p.set == 2 ? MAT_ALIEN : (p.set == 3 ? MAT_ROMAN : MAT_MEDIEVAL);
+    d.material = p.set == 2 ? MAT_ALIEN : (p.set == 3 ? MAT_ROMAN : (p.set == 4 ? MAT_DINO : MAT_MEDIEVAL));
     d.team = p.color;
     d.bones = p.pose.bone;
     d.boneCount = p.pose.count;
     d.texOffset = p.texOffset;
     d.glow = p.glow;
     d.dissolve = p.dissolve;
-    d.dissolveColor = p.set == 3 ? vec3(0.0f) : vec3(1.0f, 0.5f, 0.15f);  // the Romans' dead simply fade
+    d.dissolveColor = p.set >= 3 ? vec3(0.0f) : vec3(1.0f, 0.5f, 0.15f);  // the Romans' and dinosaurs' dead simply fade
     d.interior = p.interior;
     if (!p.shadow) {
       d.castShadow = false;

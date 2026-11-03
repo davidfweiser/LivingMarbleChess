@@ -122,6 +122,8 @@ add_executable(living_marble
   src/alien_pose.cpp
   src/roman_mesh.cpp
   src/roman_pose.cpp
+  src/dino_mesh.cpp
+  src/dino_pose.cpp
   src/textures.cpp
   src/renderer.cpp
   src/shaders.cpp
@@ -130,6 +132,7 @@ add_executable(living_marble
   src/battle_medieval.cpp
   src/battle_alien.cpp
   src/battle_roman.cpp
+  src/battle_dino.cpp
   src/particles.cpp
   src/audio.cpp
   src/music.cpp
@@ -173,7 +176,7 @@ if(EMSCRIPTEN)
   configure_file(LICENSE LICENSE.txt COPYONLY)
   configure_file(THIRD_PARTY_NOTICES.txt THIRD_PARTY_NOTICES.txt COPYONLY)
   # the front page's pictures
-  foreach(shot web-board marble-battle medieval-battle alien-battle roman-battle)
+  foreach(shot web-board marble-battle medieval-battle alien-battle roman-battle dino-battle)
     configure_file(docs/screenshots/${shot}.jpg screens/${shot}.jpg COPYONLY)
   endforeach()
   # iPhone and iPad: the icon of the game added to the Home Screen
@@ -250,11 +253,11 @@ if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
   set(CPACK_PACKAGE_NAME living-marble)
   set(CPACK_PACKAGE_VENDOR "David Weiser")
   set(CPACK_PACKAGE_CONTACT "David Weiser <davidfweiser@gmail.com>")
-  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "3D battle chess with living marble, medieval, alien and Roman armies")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "3D battle chess with living marble, medieval, alien, Roman and dinosaur armies")
   string(CONCAT CPACK_PACKAGE_DESCRIPTION
       "Chess on a floating lacquered board where the pieces come alive and fight\n"
       "for every capture. Play the marble set, whose pieces shatter, or the medieval,\n"
-      "alien and Roman armies, with a battle for every kind of capture; captured pieces\n"
+      "alien, Roman and dinosaur armies, with a battle for every kind of capture; captured pieces\n"
       "come back as ghosts to cheer their side on. Play the computer at five\n"
       "strengths, a friend on the same screen, or watch the AI play itself.")
   set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/davidfweiser/LivingMarbleChess")

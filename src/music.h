@@ -14,7 +14,7 @@
 namespace music {
 
 constexpr int kPieces = 6;  // pawn, knight, bishop, rook, queen, king
-constexpr int kArmies = 4;  // Living Marble, medieval, aliens, Romans
+constexpr int kArmies = 5;  // Living Marble, medieval, aliens, Romans, dinosaurs
 
 class Engine {
  public:
@@ -25,7 +25,7 @@ class Engine {
 
   // Control, from the game. Not thread-safe: call under the lock that guards render().
   void play(int piece);   // this piece's music (0 pawn .. 5 king), from the next bar line
-  void setArmy(int army); // whose music: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans (from the next bar line)
+  void setArmy(int army); // whose music: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs (from the next bar line)
   void resume();          // starts again after stop(), with a random piece's music
   void stop();            // fades out (the game is over)
   void setEnabled(bool on);

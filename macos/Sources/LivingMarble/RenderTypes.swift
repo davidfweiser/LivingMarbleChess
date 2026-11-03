@@ -25,7 +25,7 @@ struct PieceGpu {
 }
 
 enum Material: Int32 {
-  case white = 0, black = 1, sword = 2, iron = 3, medieval = 4, alien = 5, glass = 6, roman = 7
+  case white = 0, black = 1, sword = 2, iron = 3, medieval = 4, alien = 5, glass = 6, roman = 7, dino = 8
 }
 
 struct DrawItem {
@@ -51,7 +51,7 @@ struct DrawItem {
   var ghostId: Int32 = -1 // the items of one ghost share an id
   var bones: [mat4] = []  // skinned meshes (medieval, alien and Roman figures), at most Medieval.maxBones
   var team: Int32 = 0     // medieval / aliens / Romans: 0 white army, 1 black army
-  var interior: Float = 0 // Romans: what fracture faces show (0 wood, 1 flesh)
+  var interior: Float = 0 // Romans, dinosaurs: what fracture faces show (0 wood, 1 flesh)
 }
 
 struct PointLight {

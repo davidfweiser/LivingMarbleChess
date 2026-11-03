@@ -94,6 +94,24 @@ enum Sfx: Int, CaseIterable {
   case scorpion  // the bolt-thrower loosing
   case lion      // a lion's roar
   case gulp      // drinking, then choking
+  // the dinosaurs
+  case rexroar   // a tyrannosaurus' roar: deep, rumbling, bellowing
+  case screech   // a raptor's shriek
+  case hiss      // a hiss
+  case growl     // a low growl, rumbling in the throat
+  case squawk    // a pteranodon's harsh call
+  case bellow    // a great plant-eater's bellow
+  case snort     // a snort
+  case flap      // wing beats
+  case crunch    // bones crunched in jaws
+  case tear      // flesh torn by claws
+  case snap      // jaws snapping shut
+  case tailwhip  // a tail cracking like a whip
+  case quake     // a giant footfall that shakes the ground
+  case dinodeath // a dying dinosaur's groan
+  case meteor    // a meteor screaming in, and the impact
+  case gore      // horns driven in
+  case bodyfall  // a heavy body crashing down
   // the ghosts of captured pieces
   case cheer     // a far-off little crowd of ghosts cheering
 }

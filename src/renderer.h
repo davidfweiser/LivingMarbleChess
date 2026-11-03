@@ -10,6 +10,7 @@
 #include "gl.h"
 #include "medieval.h"
 #include "meshgen.h"
+#include "dino.h"
 #include "roman.h"
 #include "textures.h"
 
@@ -42,7 +43,7 @@ class Shader {
 };
 
 enum Material { MAT_WHITE = 0, MAT_BLACK = 1, MAT_SWORD = 2, MAT_IRON = 3, MAT_MEDIEVAL = 4, MAT_ALIEN = 5, MAT_GLASS = 6,
-                MAT_ROMAN = 7 };
+                MAT_ROMAN = 7, MAT_DINO = 8 };
 
 struct DrawItem {
   const GpuMesh* mesh = nullptr;
@@ -59,7 +60,7 @@ struct DrawItem {
   glm::vec3 dissolveColor{1.0f, 0.8f, 0.4f};
   float heat = 0;
   float stone = 0;  // medieval: turned to salt
-  float interior = 0;  // Romans: what fresh fracture faces show (0 splintered wood, 1 flesh)
+  float interior = 0;  // Romans, dinosaurs: what fresh fracture faces show (0 splintered wood, 1 flesh)
   bool castShadow = true;
   bool reflect = true;
   bool groundAO = true;
@@ -142,10 +143,14 @@ class Renderer {
   PieceGpu roman[roman::R_COUNT];
   bool romanReady = false;
   void uploadRoman(const roman::Library& lib);
-  // the GPU meshes of a skinned set (1 medieval, 2 aliens, 3 Romans) once uploaded, else null
+  PieceGpu dino[dino::D_COUNT];
+  bool dinoReady = false;
+  void uploadDino(const dino::Library& lib);
+  // the GPU meshes of a skinned set (1 medieval, 2 aliens, 3 Romans, 4 dinosaurs) once uploaded, else null
   const PieceGpu* figures(int set) const {
     if (set == 2) return alienReady ? alien : nullptr;
     if (set == 3) return romanReady ? roman : nullptr;
+    if (set == 4) return dinoReady ? dino : nullptr;
     return medievalReady ? medieval : nullptr;
   }
 

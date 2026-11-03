@@ -37,7 +37,7 @@ static void usage() {
       "  --graphics 0..3         Low / Medium / High / Ultra (default Ultra)\n"
       "  --demo                  watch the AI play itself\n"
       "  --fen \"<fen>\"           start from a position\n"
-      "  --pieces marble|medieval|alien|roman  which army to play with (default marble)\n"
+      "  --pieces marble|medieval|alien|roman|dino  which army to play with (default marble)\n"
       "  --dof                   depth of field: blur what the camera is not focused on\n"
       "  --mute                  no sound\n"
       "  --no-music              no background music (M turns it on and off)\n"
@@ -105,6 +105,7 @@ int main(int argc, char** argv) {
       o.pieces = (v == "medieval" || v == "1")                  ? 1
                  : (v == "alien" || v == "aliens" || v == "2") ? 2
                  : (v == "roman" || v == "romans" || v == "3") ? 3
+                 : (v == "dino" || v == "dinos" || v == "dinosaur" || v == "dinosaurs" || v == "4") ? 4
                                                                : 0;
     }
     else if (a == "--join") o.join = next();  // (the web page: a friend's online game, from ?join=)

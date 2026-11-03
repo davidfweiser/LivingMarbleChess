@@ -306,7 +306,7 @@ flat in float vMat;
 #ifdef GL_ES
 in float vClipDist;
 #endif
-uniform int uMat;        // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass, 7 Roman
+uniform int uMat;        // 0 white marble, 1 black marble, 2 sword, 3 iron, 4 medieval figure, 5 alien, 6 glass, 7 Roman, 8 dinosaur
 uniform int uTeam;       // medieval / aliens: 0 white army, 1 black army
 uniform float uTime;
 uniform vec4 uGlow;      // rgb + strength
@@ -315,7 +315,7 @@ uniform vec3 uCrackColor;
 uniform vec3 uDissolveColor;
 uniform float uHeat;
 uniform float uStone;
-uniform float uInterior;  // Romans: fresh fracture faces show 0 splintered wood, 1 flesh
+uniform float uInterior;  // Romans, dinosaurs: fresh fracture faces show 0 splintered wood, 1 flesh
 uniform float uGroundAO;
 uniform float uGhost;    // > 0: a translucent ghost (its opacity)
 out vec4 oColor;
@@ -771,6 +771,206 @@ void romanSurface(int id, bool black, vec3 o, vec3 on, inout vec3 albedo, inout 
   }
 }
 
+)GLSL"  // (another literal: MSVC caps a single string literal at 16 KB)
+R"GLSL(
+// The dinosaurs. The white army is sand and cream with rust markings, the black
+// army slate and charcoal with crimson. Scales: a cellular pattern in the rest
+// pose's coordinates, each scale tinted and domed, dark in the creases between.
+vec3 dinoCell(vec3 x, float size, out float edge, out vec3 toCenter) {
+  vec3 p = x / size;
+  vec3 i = floor(p), f = fract(p);
+  float d1 = 8.0, d2 = 8.0;
+  vec3 best = vec3(0.0), bestId = vec3(0.0);
+  for (int z = -1; z <= 1; ++z)
+    for (int y = -1; y <= 1; ++y)
+      for (int xx = -1; xx <= 1; ++xx) {
+        vec3 g = vec3(float(xx), float(y), float(z));
+        vec3 id = i + g;
+        vec3 o = vec3(hash13(id), hash13(id + 17.31), hash13(id + 41.7)) * 0.8 + 0.1;
+        vec3 r = g + o - f;
+        float d = dot(r, r);
+        if (d < d1) {
+          d2 = d1;
+          d1 = d;
+          best = r;
+          bestId = id;
+        } else if (d < d2) {
+          d2 = d;
+        }
+      }
+  edge = sqrt(d2) - sqrt(d1);  // 0 on the crease between two scales
+  toCenter = best * size;
+  return bestId;
+}
+
+// px: the size of a pixel on the figure (model units), ao: the baked occlusion (low in creases)
+void dinoSurface(int id, bool black, vec3 o, vec3 on, float px, float ao, inout vec3 albedo, inout float rough, inout float metal,
+                 inout float wrap, inout vec3 sss, inout vec3 N, inout vec3 emissive, inout float specOcc) {
+  px = max(px, 1e-6);
+  float n1 = texture(uNoise, o * 3.3 + uTexOffset * 0.13).r;
+  float n2 = texture(uNoise, o * 9.0 + uTexOffset * 0.07).g;
+  float n3 = texture(uNoise, o * 31.0).b;
+  vec3 V = normalize(uCamPos - vWorld);
+  float NoV = saturate(dot(N, V));
+  // the army's colours: hide, its stripes, the pale belly
+  vec3 hide = black ? vec3(0.15, 0.16, 0.14) : vec3(0.62, 0.49, 0.32);
+  vec3 stripe = black ? vec3(0.05, 0.05, 0.048) : vec3(0.34, 0.21, 0.11);
+  vec3 belly = black ? vec3(0.36, 0.33, 0.28) : vec3(0.86, 0.79, 0.64);
+  float top = smoothstep(-0.35, 0.75, on.y);
+  if (id == 0 || id == 1 || id == 17 || id == 10 || id == 11) {  // scaly hide, scutes, belly, frill, sail
+    float size = id == 1 ? 0.014 : (id == 17 ? 0.0065 : 0.0088);
+    // seen from afar the scales shrink to a pixel or less: they fade into an even tone
+    // instead of glittering
+    float vis = smoothstep(1.2, 4.0, size / px);
+    float edge;
+    vec3 tc;
+    vec3 cid = dinoCell(o, size, edge, tc);
+    float tint = mix(0.5, hash13(cid + 3.7), vis);
+    vec3 base;
+    if (id == 17) {
+      base = belly;
+    } else if (id == 10) {  // the frill: bold display colours in rings and spots
+      float r = length(o - vec3(0.0, 0.38, 0.2));
+      float ring = smoothstep(0.35, 0.65, sin(r * 46.0 + n1 * 3.0));
+      float spot = smoothstep(0.62, 0.72, texture(uNoise, o * 14.0 + uTexOffset * 0.1).r);
+      vec3 c0 = black ? vec3(0.32, 0.02, 0.03) : vec3(0.72, 0.36, 0.1);
+      vec3 c1 = black ? vec3(0.03, 0.025, 0.025) : vec3(0.42, 0.08, 0.04);
+      vec3 c2 = black ? vec3(0.55, 0.42, 0.18) : vec3(0.92, 0.84, 0.62);
+      base = mix(mix(c0, c1, ring * 0.8), c2, spot * 0.7);
+    } else if (id == 11) {  // the sail: spines and colour rising to its edge; light shines through it
+      float spine = pow(abs(cos(o.z * 3.14159 / 0.0306)), 6.0);
+      float h = smoothstep(0.45, 0.72, o.y);
+      vec3 hi = black ? vec3(0.42, 0.03, 0.04) : vec3(0.78, 0.32, 0.1);
+      base = mix(hide, hi, h) * (0.85 + 0.25 * spine);
+      base = mix(base, stripe, smoothstep(0.55, 0.7, n1) * 0.4);
+      sss = (black ? vec3(0.6, 0.05, 0.04) : vec3(1.0, 0.45, 0.2)) * (0.6 + 0.6 * h);
+      wrap = 0.5;
+    } else {
+      // banded down the back and the tail, mottled, countershaded
+      float band = smoothstep(0.42, 0.62, sin(o.z * 34.0 + o.y * 9.0 + n1 * 5.0 + n2 * 2.0)) * smoothstep(-0.1, 0.45, on.y);
+      base = mix(hide, stripe, band * 0.85);
+      base = mix(base, stripe, smoothstep(0.6, 0.8, n2) * 0.35);
+      base *= mix(0.8, 1.05, 1.0 - top * 0.6);
+      base = mix(base, belly, (1.0 - smoothstep(-0.55, 0.15, on.y)) * 0.85);
+      if (id == 1) base = mix(base, black ? vec3(0.09, 0.085, 0.075) : vec3(0.42, 0.32, 0.2), 0.6);
+    }
+    float crease = (1.0 - smoothstep(0.0, id == 1 ? 0.2 : 0.24, edge)) * vis;
+    albedo = base * (0.92 + 0.14 * tint + 0.08 * (n3 - 0.5)) * (1.0 - 0.28 * crease - 0.06 * (1.0 - vis));
+    rough = (id == 11 ? 0.55 : 0.62) + 0.15 * n2 + 0.15 * crease + 0.04 * (1.0 - vis);
+    // in the creases (behind the knees and elbows, under the jaw, round the neck and where the
+    // legs meet the body) the skin gathers into wrinkles running across the limbs
+    float groove = 0.0, gs = 0.0;
+    if (id == 0 || id == 17) {
+      float s = (o.y + 0.22 * o.z + 0.05 * n2) * 230.0;
+      float fold = (1.0 - smoothstep(0.35, 0.85, ao)) * smoothstep(1.0, 3.0, 0.0273 / px);
+      groove = smoothstep(0.55, 1.0, cos(s)) * fold;
+      gs = sin(s) * fold * smoothstep(0.2, 1.0, cos(s));
+      albedo *= 1.0 - 0.35 * groove;
+      rough += 0.1 * groove;
+    }
+    wrap = max(wrap, 0.3);
+    if (id != 11 && id != 10) sss = black ? vec3(0.25, 0.08, 0.05) : vec3(0.55, 0.25, 0.12);
+    // each scale domed
+    float dome = id == 1 ? 1.3 : 0.9;
+    N = normalize(N + (-tc / size) * dome * 0.16 * (1.0 - crease) * vis + (vec3(n1, n2, n3) - 0.5) * 0.08 +
+                  vec3(0.0, 0.35 * gs, 0.0));
+    specOcc = 0.7;
+  } else if (id == 2 || id == 3) {  // feathers: fine barbs, barred; glossy black with a sheen of green and purple
+    float barb = texture(uNoise, vec3(o.x * 160.0, o.y * 160.0, o.z * 14.0)).r;
+    float bars = smoothstep(0.3, 0.7, sin(o.z * (id == 3 ? 150.0 : 70.0) + o.y * 40.0 + n1 * 3.0));
+    vec3 base = black ? vec3(0.04, 0.045, 0.045) : vec3(0.58, 0.44, 0.28);
+    vec3 bar = black ? vec3(0.015, 0.016, 0.018) : vec3(0.3, 0.19, 0.1);
+    if (id == 3) base = black ? vec3(0.03, 0.03, 0.035) : vec3(0.46, 0.33, 0.2);
+    albedo = mix(base, bar, bars * (id == 3 ? 0.8 : 0.5)) * (0.75 + 0.45 * barb);
+    albedo = mix(albedo, belly * (black ? 0.7 : 1.0), (1.0 - smoothstep(-0.6, 0.1, on.y)) * (id == 2 ? 0.7 : 0.0));
+    if (id == 3 && !black) albedo = mix(albedo, vec3(0.9, 0.86, 0.78), smoothstep(0.75, 0.9, n2) * 0.6);  // pale tips
+    rough = black ? 0.32 : 0.62;
+    wrap = 0.35;
+    if (black) emissive += mix(vec3(0.02, 0.07, 0.05), vec3(0.05, 0.02, 0.07), n1) * pow(1.0 - NoV, 2.5) * 0.5;  // iridescence
+    N = normalize(N + (vec3(barb, n2, n3) - 0.5) * 0.25);
+    specOcc = 0.6;
+  } else if (id == 4) {  // horn and beak: fibrous keratin
+    float fib = texture(uNoise, vec3(o.x * 90.0, o.y * 18.0, o.z * 90.0)).r;
+    vec3 base = black ? vec3(0.17, 0.15, 0.13) : vec3(0.78, 0.71, 0.58);
+    albedo = base * (0.75 + 0.35 * fib + 0.1 * n1);
+    albedo = mix(albedo, black ? vec3(0.05, 0.045, 0.04) : vec3(0.36, 0.29, 0.2), smoothstep(0.55, 0.8, n2) * 0.5);
+    rough = 0.35 + 0.2 * fib;
+    N = normalize(N + (vec3(fib, n3, n2) - 0.5) * 0.15);
+  } else if (id == 5) {  // claws: dark glossy keratin
+    albedo = (black ? vec3(0.03, 0.028, 0.026) : vec3(0.13, 0.11, 0.09)) * (0.8 + 0.3 * n1);
+    rough = 0.22 + 0.1 * n2;
+  } else if (id == 6) {  // teeth
+    albedo = vec3(0.86, 0.82, 0.7) * (0.9 + 0.1 * n1);
+    rough = 0.3;
+    sss = vec3(0.3, 0.25, 0.18);
+  } else if (id == 7) {  // eyes: a glossy amber (or yellow) iris
+    vec3 iris = black ? vec3(0.78, 0.66, 0.08) : vec3(0.82, 0.46, 0.08);
+    albedo = iris * (0.7 + 0.5 * texture(uNoise, o * 120.0).r);
+    rough = 0.05;
+    emissive += iris * 0.08;
+    specOcc = 1.0;
+  } else if (id == 8) {  // pupils, nostrils, the throat
+    albedo = vec3(0.012, 0.01, 0.009);
+    rough = 0.15;
+    specOcc = 0.6;
+  } else if (id == 9) {  // the mouth: wet gums and tongue
+    albedo = vec3(0.42, 0.11, 0.1) * (0.8 + 0.3 * n1);
+    rough = 0.22;
+    wrap = 0.3;
+    sss = vec3(0.6, 0.12, 0.08);
+  } else if (id == 12) {  // wing membrane: thin, veined skin the light shines through
+    float vein = 1.0 - smoothstep(0.0, 0.05, abs(texture(uNoise, o * vec3(4.0, 22.0, 9.0)).r - 0.5));
+    vec3 base = black ? vec3(0.13, 0.09, 0.085) : vec3(0.6, 0.45, 0.31);
+    albedo = base * (0.8 + 0.3 * n1) * (1.0 - 0.3 * vein);
+    rough = 0.5;
+    wrap = 0.55;
+    sss = black ? vec3(0.55, 0.08, 0.06) : vec3(1.0, 0.55, 0.3);
+  } else if (id == 13) {  // the pteranodon's crest: bright, fading at the base
+    float h = smoothstep(0.5, 0.6, o.y);
+    vec3 c0 = black ? vec3(0.08, 0.06, 0.06) : vec3(0.85, 0.62, 0.22);
+    vec3 c1 = black ? vec3(0.5, 0.03, 0.05) : vec3(0.8, 0.22, 0.07);
+    albedo = mix(c0, c1, h) * (0.85 + 0.25 * n1);
+    rough = 0.38;
+    sss = c1 * 0.6;
+    wrap = 0.3;
+  } else if (id == 14) {  // blood: dark, wet and glossy
+    albedo = vec3(0.13, 0.002, 0.002) * (0.75 + 0.35 * n1);
+    rough = 0.1 + 0.08 * n2;
+    wrap = 0.2;
+    sss = vec3(0.25, 0.0, 0.0);
+    specOcc = 1.0;
+  } else if (id == 15) {  // the meteor: scorched rock
+    albedo = vec3(0.05, 0.045, 0.04) * (0.7 + 0.6 * n2);
+    rough = 0.9;
+    N = normalize(N + (vec3(n1, n2, n3) - 0.5) * 0.5);
+  } else if (id == 16) {  // ... glowing in its cracks
+    albedo = vec3(0.1, 0.03, 0.01);
+    rough = 0.7;
+    emissive += vec3(4.0, 1.3, 0.25) * (0.6 + 0.8 * n3);
+  } else if (id == 18) {  // the pteranodon's coat of fine fur (pycnofibres), soft at the rims
+    float fv = smoothstep(1.0, 3.0, 0.004 / px);
+    float fib = mix(0.5, texture(uNoise, vec3(o.x * 240.0, o.y * 70.0, o.z * 240.0)).r, fv);
+    float tuft = texture(uNoise, vec3(o.x * 80.0, o.y * 26.0, o.z * 80.0) + 3.1).g;
+    vec3 base = black ? vec3(0.085, 0.075, 0.07) : vec3(0.52, 0.38, 0.25);
+    albedo = base * (0.72 + 0.45 * fib) * (0.85 + 0.3 * tuft);
+    albedo = mix(albedo, belly * (black ? 0.75 : 0.95), (1.0 - smoothstep(-0.6, 0.1, on.y)) * 0.5);
+    rough = 0.85;
+    wrap = 0.45;
+    sss = black ? vec3(0.12, 0.05, 0.04) : vec3(0.4, 0.22, 0.12);
+    emissive += albedo * pow(1.0 - NoV, 3.0) * 0.12;
+    N = normalize(N + (vec3(fib, tuft, n3) - 0.5) * 0.3);
+    specOcc = 0.5;
+  }
+  // fresh wounds: flesh
+  if (vAux > 0.0) {
+    vec3 broken = vec3(0.32, 0.02, 0.02) * (0.7 + 0.5 * n3);
+    albedo = mix(albedo, broken, vAux);
+    rough = mix(rough, 0.25, vAux);
+    metal = mix(metal, 0.0, vAux);
+    sss *= 1.0 - vAux;
+  }
+}
+
 // Glass: reflections and a faint tint, more opaque at grazing angles (premultiplied alpha).
 vec4 glassColor(vec3 N, vec3 V, bool black) {
   float NoV = max(dot(N, V), 1e-4);
@@ -879,6 +1079,9 @@ void main() {
     else if (uMat == 7)
       romanSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
                    specOcc);
+    else if (uMat == 8)
+      dinoSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), length(fwidth(vObj)), vAO, albedo, rough, metal, wrap,
+                  sss, N, emissive, specOcc);
     else
       medievalSurface(int(vMat + 0.5), uTeam == 1, vObj, normalize(vObjN), albedo, rough, metal, wrap, sss, N, emissive,
                       specOcc);

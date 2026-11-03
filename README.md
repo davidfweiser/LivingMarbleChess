@@ -2,9 +2,9 @@
 
 ![The marble set on the floating board, with the game's panel](docs/screenshots/board.jpg)
 
-| Living Marble | Medieval | Aliens | Romans |
-| :---: | :---: | :---: | :---: |
-| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) | ![A legionary pole-vaults over his enemy in a somersault](docs/screenshots/roman-battle.jpg) |
+| Living Marble | Medieval | Aliens | Romans | Dinosaurs |
+| :---: | :---: | :---: | :---: | :---: |
+| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) | ![A legionary pole-vaults over his enemy in a somersault](docs/screenshots/roman-battle.jpg) | ![A brachiosaurus rears up over a spinosaurus, to crash down on her](docs/screenshots/dino-battle.jpg) |
 
 A photoreal 3D chess game in C++ where carved marble Staunton pieces come alive:
 they hop, lean, wobble and turn to face each other — and every capture is a
@@ -30,6 +30,14 @@ wheels, the empress and the emperor. They don't shatter like marble: they fight
 hand to hand - parrying, somersaulting, stabbing - and the fallen bleed and lie
 on the board a moment before they fade away.
 
+And a fifth: **the dinosaurs** (`--pieces dino`). Feathered velociraptors with
+sickle claws, pteranodons that fly their moves, triceratops, a brachiosaurus
+for a tower, the spinosaurus queen with her sail and the tyrannosaurus king.
+They fight like animals - claws, horns, beaks, jaws and tails: raptors hunt in
+packs and leap onto their prey, a pteranodon stoops out of the sky, the
+brachiosaurus rears up and comes crashing down, the tyrant king lifts his prey
+in his jaws and shakes it - and the fallen collapse on their sides and bleed.
+
 In every army, **the fallen come back as ghosts**: a captured piece slowly
 takes shape again, translucent, beside the board, and watches the rest of the
 game — cheering its side on.
@@ -39,9 +47,10 @@ themes of its own — concert-hall classical for the marble pieces (a minuet for
 the pawn, a galop for the knight, a waltz for the queen, a coronation anthem
 for the king), early music for the medieval army (recorders, bagpipes,
 hurdy-gurdy, lute and tabor), 1950s science fiction for the aliens
-(theremin, vibraphone, bongos and bleeps) and sword-and-sandal epics for the
-Romans (cornu and buccina, lyre, aulos, water organ, war drums and choir) — and
-when a piece moves, its music takes over.
+(theremin, vibraphone, bongos and bleeps), sword-and-sandal epics for the
+Romans (cornu and buccina, lyre, aulos, water organ, war drums and choir) and a
+lost world for the dinosaurs (horns and great drums, strings and choir, log
+drums, marimba, a bone flute) — and when a piece moves, its music takes over.
 
 Everything is procedural. There are **no model, texture or sound files**:
 the pieces are sculpted from signed-distance fields at startup, the board's
@@ -116,8 +125,7 @@ ghosts floating at the side of the board — White's along the a-file, Black's
 along the h-file, each row starting from its own end. They are the pieces
 themselves in their own colours, smaller and see-through (you can see the
 board through them), fading away towards their feet. This works the same for
-the marble, medieval and alien armies (switching armies switches the ghosts
-too).
+every army (switching armies switches the ghosts too).
 
 The ghosts bob in the air and turn to watch whoever is on the move. When their
 side captures a piece, gives check or mates, they jump for joy: arms and
@@ -133,7 +141,9 @@ captured piece back to life and its ghost disappears.
 Every army has its own music, and in each one every type of piece has three
 themes, written to suit both: the Living Marble pieces play concert-hall
 classical, the medieval army early music from the castle and the cathedral,
-and the aliens 1950s science-fiction and space-age tunes. When a piece moves,
+the aliens 1950s science-fiction and space-age tunes, the Romans the epics of
+the legions and the arena, and the dinosaurs a lost world of horns, great drums
+and choir. When a piece moves,
 the music switches to one of its themes at the next bar line (a promoted pawn
 brings in the music of what it becomes). A theme plays at least two bars before
 another piece's can take over, and each piece's theme picks up where it left off
@@ -186,6 +196,17 @@ church bell, the check horn — the music steps back.
 | Rook   | **The Siege of Alesia** — a heavy Phrygian siege march: cornu over a drone, hammering drums, then the legion chanting · **Ballista** — ticking ratchets and pizzicato, then buccina and aulos bursts · **Ram at the Gates** — the ram's pounding beat under horns, strings and choir |
 | Queen  | **The Empress's Garden** — a graceful waltz for flute and kithara over harp, then violin · **Livia's Poison** — a slinky Phrygian-dominant dance for aulos over a drone, tympanum and sistrum · **Augusta** — a majestic E-flat anthem for horn, strings and harp, then choir and buccina |
 | King   | **Triumph of Caesar** — a triumphal march: buccina fanfares over war drum and side drum, then choir and cornu · **Ave Imperator** — a hymn to the emperor for choir and water organ, then cornu and buccina · **Bread and Circuses** — the games: a festive aulos dance over lyre, tympanum, sistrum and cymbals |
+
+**The dinosaurs** — horns and great drums, strings and choir, log drums, marimba and kalimba, a bone flute
+
+| Piece | Themes |
+|---|---|
+| Pawn   | **Clever Girls** — a sly D-minor stalk: bassoon over pizzicato, log drums and a rattle, then horn and marimba · **The Hunt Begins** — a 6/8 chase: horn over spiccato strings and taiko · **Sickle Claw** — a tense Phrygian ostinato: bone flute over marimba, shaker and great drums |
+| Knight | **Over the Cliffs** — a soaring F-major waltz for horn over harp and strings, then violin and choir · **Thermals** — an airy tune for whistle over harp and pad, then bone flute · **Stoop** — a headlong A-minor dive: rushing violins over timpani and taiko, brass below |
+| Bishop | **The Three-Horned Herd** — a sturdy march for low brass and horn over tuba, great drum and timpani · **Stampede** — a galloping 6/8 for horn over spiccato, taiko and log drums · **Frill and Horn** — a proud E-flat theme for horn over strings and harp, then choir |
+| Rook   | **Giants of the Valley** — a slow D-major hymn of awe for horn, then choir and violin, over strings and harp · **Footfalls** — great slow footfalls: a droning bark horn, low brass and cello over taiko and great drum · **Longneck Lullaby** — a gentle lullaby for celesta over kalimba and pad |
+| Queen  | **River Queen** — a sinuous Phrygian-dominant tune for bone flute over a drone, congas and bongos · **Sail at Dusk** — a mysterious A-minor waltz for flute over harp and pad, then cello · **Jaws in the Shallows** — a menacing two-note ostinato in the cellos under low brass and a high violin |
+| King   | **Tyrant King** — a massive C-minor march: brass over great drums, taiko and timpani, then choir and horn · **Thunder Lizard** — a driving D-minor theme for trombone over spiccato strings and taiko, then horn · **Lord of the Cretaceous** — a majestic E-flat anthem for horn, then choir and brass |
 
 The panel has a *Music* volume of its own beside *Volume* (which turns
 everything up or down), and *Play music* (or **M**) turns it on and off; it
@@ -348,6 +369,68 @@ and death cries, armour crashing to the ground, the roar of the arena, the
 cornu, chariot wheels and a whip, creaking timber, the ram, the scorpion, a
 lion and a poisoned cup.
 
+## The dinosaurs
+
+The fifth army (*Pieces › Dinosaurs*, or `--pieces dino`) is sculpted the same
+way, also in the background the first time: muscled thighs and shoulders, knees,
+elbows and ankles, padded feet, folds of skin round the neck, lips over the
+teeth. Their scales, feathers, fur, horns and skin are drawn by the shader: each
+scale domed, with dark creases between them (fading into an even tone at a
+distance instead of glittering), the skin wrinkled in the creases behind the
+knees and elbows, the hides banded, mottled and countershaded (pale bellies).
+White's army is sand and cream with rust markings, Black's slate and charcoal
+with crimson (its raptors' feathers shimmer green and purple).
+
+- **Pawn** — a velociraptor: feathered, with quills on its arms and a fan of
+  feathers on its tail, a long low snout full of teeth, and a sickle claw held up
+  off the ground on each foot. It runs
+- **Knight** — a pteranodon with a crest swept back from its skull, a long
+  toothless beak and a furry body. On the board it walks on its folded wings,
+  the long wing finger folded up beside its arm; they open into wings of skin
+  from the finger's tip to its knees, the trailing edge one sweeping curve; it
+  flies its moves
+- **Bishop** — a triceratops: three horns, a great frill with bony knobs round its
+  edge, a parrot's beak; half-sprawled forelegs and broad, hoofed feet
+- **Rook** — a brachiosaurus, a living tower: pillar legs, the front ones longer,
+  on elephantine feet with great claws, a long neck sloping up to a small head
+  with an arched nose. The board shakes as it walks
+- **Queen** — the spinosaurus: a sail along her back, a crocodile's snout ending
+  in a rosette of teeth, strong arms with great hooked thumb claws, a tall
+  paddle of a tail
+- **King** — the tyrannosaurus: the great head, broad behind the eyes, its lips
+  closing over the banana teeth, a row of scutes down its back, massive legs,
+  tiny two-fingered arms
+
+They breathe, look about, sniff the air, yawn and swish their tails; at rest a
+tail curls to one side (slowly shifting from side to side), and it straightens
+out behind as they walk. Heads bob as they walk, the feet stay flat on the board
+as they bear the weight, and the lowest foot always stays on the board. The
+dinosaurs fight back: a victim threatens, lunges and snaps at its attacker.
+The fallen don't shatter: they stagger, their legs give way and they fall on
+their sides - or are knocked flying, or flung - and lie in a spreading pool of
+blood for a moment before they fade away.
+
+| Attacker | Attacks |
+|---|---|
+| Pawn   | **Killing claw** — a hiss, a sprint and a leap: it lands on the victim feet first and clings to its neck, kicking with its sickle claws until it goes down · **Pack attack** — it calls, two more raptors come running from the edges of the board, the victim turns on one of them and the others are on it; the pack feeds, then runs off · **Dodge and bite** — it circles; the victim lunges, it slips aside and the jaws close on air; it darts in, seizes the throat and hangs on until it rips it open |
+| Knight | **Dive** — it takes off, climbs and circles, folds its wings and stoops on the victim beak first, pulls out of the dive and lands beyond · **Wing buffet** — it rears up, mantling its wings and beating them in the victim's face; a wing knocks the victim's jaws aside and it stabs three times · **Talon strike** — it flies a wide loop and comes in low, feet first, hitting the victim like an eagle, then lands and finishes it with its beak |
+| Bishop | **Horn charge** — it paws the ground and snorts, lowers its horns and charges; the victim is gored and tossed · **Horn lock** — it takes the victim's bite on its frill, drives it back across the board, twists its head and gores it · **Frill bash** — a swing of the great head knocks the victim off its feet; it rears and tramples it |
+| Rook   | **Rearing stomp** — the victim cowers; it rears up on its hind legs, towering over it, and comes crashing down on it with its forefeet · **Neck swing** — the long neck lowered, drawn back and swung like a club · **Tail lash** — it turns its back on the victim and cracks its tail across it like a whip |
+| Queen  | **Hooked claws** — she rears and roars, swats the victim's jaws aside and rakes it with her great thumb claws · **Snatch** — she stalks in low like a crocodile, seizes the victim in her long jaws, shakes it and flings it away · **Tail swipe** — she spins round and her tail sweeps the victim off its feet; she pins it with a foot and bites |
+| King   | **Bone-crusher** — he charges, seizes the victim in his jaws, lifts it, shakes it and throws it aside, and roars over his kill · **The roar** — the victim snaps at his face and misses; he roars into its face - the board shakes, the dust flies, the victim cowers - and bites down from above · **Head ram** — he rams the victim with his massive skull, stamps on it and tears at it |
+
+When castling, the brachiosaurus walks to its square while the tyrant king
+strides round in an arc behind it. A promoted raptor becomes the spinosaurus in
+a pillar of light. Checkmate is a meteor: the mated king looks up at a light
+growing in the sky and roars at it, and it strikes the board beside him in a
+blinding blast that throws him down.
+
+Sounds of the dinosaurs: the tyrannosaurus' roar, a raptor's shriek, hisses,
+growls and snorts, the pteranodon's harsh call, the plant-eaters' bellows, wing
+beats, giant footfalls that shake the board, jaws snapping shut, bones crunching,
+flesh torn, horns driven in, a tail cracking like a whip, bodies crashing down,
+a dying groan, and a meteor screaming in.
+
 ## Graphics
 
 - Physically based shading (GGX / Smith / Schlick) with image-based lighting
@@ -503,7 +586,7 @@ the Mac and iOS apps).
 On startup the pieces are sculpted and fractured procedurally — at the default
 detail (`--quality 3`) this takes about 5–10 seconds on a fast multi-core PC
 (about 13 seconds on an M2 Mac), longer when starting with the medieval,
-alien or Roman army (shown on the loading screen). On a slower computer `--quality 1`
+alien, Roman or dinosaur army (shown on the loading screen). On a slower computer `--quality 1`
 starts much quicker.
 
 ### Web page
@@ -587,7 +670,7 @@ many pixels, and screenshots show the 3D scene without the interface panels.
 --demo                  watch the AI play itself
 --level 0..4            AI strength
 --fen "<FEN>"           start from a position
---pieces marble|medieval|alien|roman  which army to play with (default marble)
+--pieces marble|medieval|alien|roman|dino  which army to play with (default marble)
 --dof                   depth of field: blur what the camera is not focused on
 --mute                  no sound
 --no-music              no background music (M turns it on and off)
@@ -602,7 +685,7 @@ style 0–2 instead of a random one), `--shots t1,t2,...` (screenshots at those
 times, with `--battle K` or with `--fen "<FEN>" --move e2e4` for any move),
 `--camera yaw,pitch,dist[,tx,ty,tz]`, `--no-cinematic` (keeps that camera still
 through the battles), `--scenario 4` (a gallery of ghosts on both sides),
-`--no-ui`. All of them work with `--pieces medieval`, `--pieces alien` and `--pieces roman`.
+`--no-ui`. All of them work with `--pieces medieval`, `--pieces alien`, `--pieces roman` and `--pieces dino`.
 
 *Ultra*, the default, renders at the screen's full resolution (on a 4K screen
 too); *High* caps the internal resolution at 1440p. If the frame rate is low,
@@ -639,7 +722,7 @@ across the short side), with 4× instead of 8× MSAA.
 | `medieval.h`, `medieval_mesh.cpp` | The medieval army: figures built from blended, painted SDF parts, each bound to a bone; skeletons and skin weights |
 | `medieval_pose.cpp` | Turns animation controls into bone matrices: walking, riding, standing up, drawbridge, dragon |
 | `alien.h`, `alien_mesh.cpp`, `alien_pose.cpp` | The aliens: their figures, skeletons and poses (waddling, hovering, the saucer's flight, the tripod's legs, tongues, tails) |
-| `sculpt.h`, `pose_kit.h` | The sculpting and posing kit shared by the medieval army, the aliens and the Romans |
+| `sculpt.h`, `pose_kit.h` | The sculpting and posing kit shared by the medieval army, the aliens, the Romans and the dinosaurs |
 | `textures.*` | Bakes the inlaid wooden board (grain, pores, seams, brass, lettering) and 3D noise |
 | `shaders.cpp` | All GLSL: PBR, PCSS, marble, lacquer, IBL generation, SSAO, DoF, bloom, tone mapping |
 | `renderer.*` | Render passes: shadow → reflection → prepass → SSAO → MSAA HDR → DoF → bloom → composite |
@@ -649,9 +732,11 @@ across the short side), with 4× instead of 8× MSAA.
 | `battle_alien.cpp` | The aliens' moves, castling, checkmate and their 18 battles |
 | `roman.h`, `roman_mesh.cpp`, `roman_pose.cpp` | The Romans: their figures (and the lion), skeletons and poses (marching, fighting, kicking, somersaulting, falling limp, cloaks swinging, the chariot, the siege tower's ram, bridge, door and scorpion) |
 | `battle_roman.cpp` | The Romans' moves, castling, checkmate and their 18 battles: hand-to-hand fights, blood, bodies falling |
+| `dino.h`, `dino_mesh.cpp`, `dino_pose.cpp` | The dinosaurs: their figures, skeletons and poses (running, flying, folding wings, rearing, lunging, pouncing, lying limp; feet kept on the board) |
+| `battle_dino.cpp` | The dinosaurs' moves, castling, the meteor and their 18 battles: claws, horns, jaws and tails |
 | `particles.*` | Dust, smoke, sparks, embers, magic, lightning |
 | `audio.*` | Procedural sound synthesis (including a pipe organ and choir) and a small real-time mixer (miniaudio) |
-| `music.*`, `music_score.cpp` | The music: a real-time synthesiser and sequencer, and the score of the 72 themes (three for each piece in each army) |
+| `music.*`, `music_score.cpp` | The music: a real-time synthesiser and sequencer, and the score of the 90 themes (three for each piece in each army) |
 | `app.*`, `ui.cpp` | Window, game flow, input/picking, frame rate, Dear ImGui interface |
 | `power.*` | Whether the system asks to save power (Windows battery saver, Linux power-saver profile) |
 
@@ -673,6 +758,8 @@ same design:
 | `BattlesMedieval*.swift` | The medieval army's choreography and battles (as `battle_medieval.cpp`) |
 | `BattlesAlien*.swift` | The aliens' choreography and battles (as `battle_alien.cpp`) |
 | `BattlesRoman*.swift` | The Romans' choreography and battles (as `battle_roman.cpp`) |
+| `Dino.swift`, `DinoMesh.swift`, `DinoPose.swift` | The dinosaurs, their skeletons and poses (as `dino*`) |
+| `BattlesDino*.swift` | The dinosaurs' choreography and battles (as `battle_dino.cpp`) |
 | `Audio.swift` | Procedural sounds mixed in real time through AVAudioEngine |
 | `Music.swift`, `MusicScore.swift` | The music (as `music.*`; it plays exactly the same samples) |
 | `GameController.swift`, `GameView.swift` | Game flow, mouse/trackpad/keyboard input, picking, frame rate, capture tools |

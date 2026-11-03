@@ -239,7 +239,7 @@ struct Cell {
 };
 
 const char* const kPieceNames[kPieces] = {"pawn", "knight", "bishop", "rook", "queen", "king"};
-const char* const kArmyNames[kArmies] = {"marble", "medieval", "alien", "roman"};
+const char* const kArmyNames[kArmies] = {"marble", "medieval", "alien", "roman", "dino"};
 constexpr int kSlots = kArmies * kPieces;  // an army's piece: army * kPieces + piece
 
 std::vector<std::string> splitWS(const std::string& s) {

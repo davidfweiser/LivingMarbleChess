@@ -76,7 +76,7 @@ The command line's options, as in `?pieces=medieval&quality=3&graphics=3`:
 
 | | |
 |---|---|
-| `pieces=marble`, `medieval`, `alien`, `roman` | which army to start with |
+| `pieces=marble`, `medieval`, `alien`, `roman`, `dino` | which army to start with |
 | `quality=0` .. `3` | sculpting detail (default 2; 3 is the desktop's, slower to load) |
 | `graphics=0` .. `3` | Low, Medium, High (default), Ultra |
 | `demo` | watch the AI play itself |

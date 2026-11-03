@@ -16,7 +16,7 @@ R"SCORE(# ======================================================================
 #   glide: slides into each note from the instrument's last one (s)   bend: semitones,s (each note starts that far off)
 #   wah: rate,octaves (the filter sways)
 #
-# The songs: for each army (marble, medieval, alien, roman) three for each piece
+# The songs: for each army (marble, medieval, alien, roman, dino) three for each piece
 #   song army= piece= bpm= beat=<steps a beat, 4> bar=<steps a bar, 16> bars= swing= echo=<steps> gain= title=
 #   chords: one a bar unless given a length (C:8 G = C for 8 steps, G the rest of the bar)
 #   drum <instrument> [settings]: x hit, X accent, o soft, . rest - one character a step
@@ -1178,6 +1178,218 @@ pat lyre lo=C3: 1 . 5 . 8 . 5 . 1 . 5 . 8 . 5 .
 mel aulos: | F5:2 A5 C6:4 A5:2 F5:2 C5:4 | Eb5:2 G5 Bb5:4 G5:2 Eb5:2 Bb4:4 | F5:2 A5 C6 F6 Eb6:4 C6:4 | G5:2 E5 C5 E5 G5:8
   | A5:2 C6 F6:4 E6:2 C6:2 A5:4 | Bb5:2 G5 Eb5:4 F5:2 G5:2 Bb5:4 | D6:4 Bb5:4 E6:4 C6:4 | F6:8 r:8 |
 mel buccina tr=-12 bars=9-16 vol=0.7: same
+)SCORE",
+R"SCORE(
+# ===========================================================================
+# The dinosaurs: the lost world - horns and great drums, strings and choir, log
+# drums, marimba and kalimba, a bone flute and a droning horn of bark
+# ===========================================================================
+patch didge     synth saw sub=0.3 a=0.2 d=1 s=1 r=0.5 cut=1.2 res=0.4 wah=0.4,1.0 drive=1.5 gain=0.22 rev=0.3
+patch logdrum   drum membrane f=300 pamt=0.1 pdec=0.01 d=0.25 p2=1.6 p2amp=0.4 snap=0.2 nf=1500 ndec=0.005 gain=0.45 rev=0.2
+patch marimba   fm ratio=4 index=0.35 idec=0.03 a=0.001 d=1.2 s=0 r=0.4 gain=0.42 rev=0.25
+patch kalimba   fm ratio=5.4 index=0.6 idec=0.05 p2=2 p2amp=0.2 p2dec=0.3 a=0.001 d=1.6 s=0 r=0.6 gain=0.36 rev=0.3 del=0.15
+patch boneflute synth flute noise=0.09 a=0.04 d=0.4 s=0.85 r=0.2 vib=4.5,0.22,0.3 cut=4 gain=0.42 rev=0.35 del=0.15
+patch lowbrass  synth saw uni=2 det=4 sub=0.35 a=0.04 d=1 s=0.85 r=0.4 cut=1.2 res=0.15 fenv=1.6 fatk=0.06 fdec=0.3 drive=1.4 gain=0.5 rev=0.35
+patch bigdrum   drum membrane f=42 pamt=0.7 pdec=0.07 d=2 snap=0.9 nf=300 ndec=0.08 drive=1.6 gain=0.55 rev=0.45
+patch rattle    drum shaker nf=5000 a=0.03 d=0.25 gain=0.35 rev=0.1
+
+# ---------------------------------------------------------------- the pawn: the raptors - cunning, quick, hunting in packs
+song army=dino piece=pawn bpm=120 bars=16 gain=0.87 title=Clever_Girls
+chords: Dm | Dm | Bb | A | Dm | Dm | Gm:8 A:8 | Dm
+drum logdrum: x..x..x...x..x..
+drum rattle: ..x...x...x...x.
+drum bigdrum bars=9-16: X.......X.......
+pat pizz lo=D3: 1 . 5 . 1 . 5 . 3 . 5 . 1 . 5 .
+pat marimba lo=D4 vol=0.6 bars=9-16: 1 3 5 3 8 5 3 5 1 3 5 3 8 5 3 5
+mel bassoon: | D3:2 r:2 F3:2 r:2 A3:3 G#3:1 A3:4 | Bb3:2 r:2 A3:2 r:2 G3:4 F3:4 | D4:2 r:2 C4:2 Bb3:2 A3:4 G3:4 | A3:8 C#3:4 E3:4
+  | D3:2 r:2 F3:2 r:2 A3:3 G#3:1 A3:4 | D4:4 C4:2 Bb3:2 A3:8 | Bb3:4 G3:4 E3:4 C#3:4 | D3:12 r:4 |
+mel horn tr=12 bars=9-16 vol=0.55: same
+
+song army=dino piece=pawn bpm=150 beat=6 bar=12 bars=16 gain=0.9 title=The_Hunt_Begins
+chords: Em | Em | C | D | Em | Em | Am:6 B:6 | Em
+drum taiko: X.....x..x..
+drum logdrum: ..x.x...x.x.
+drum crash bars=1,9: x...........
+pat spicc lo=E3 vol=0.8: 1 . 5 1 . 5 1 . 5 1 . 5
+pat tuba lo=E2 gate=0.5: 1 . . . . . 5, . . . . .
+mel horn: | B4:3 E5:3 G5:3 B5:3 | A5:6 G5:3 F#5:3 | E5:3 G5:3 C6:6 | B5:6 A5:6
+  | G5:3 B5:3 E6:6 | D6:3 C6:3 B5:6 | A5:3 C6:3 B5:3 D#5:3 | E5:12 |
+mel violin tr=12 bars=9-16 vol=0.55: same
+
+song army=dino piece=pawn bpm=132 bars=16 gain=0.68 title=Sickle_Claw
+chords: Em | F | Em | Dm:8 Em:8 | Em | F | G:8 F:8 | Em
+drum logdrum: x.xx..x.x.xx..x.
+drum shaker vol=0.6: xxxxxxxxxxxxxxxx
+drum bigdrum: X.......X..X....
+pat marimba lo=E4 vol=0.7: 1 2 3 1 2 3 1 2 3 1 2 3 1 2 5 3
+pat lowbrass lo=E2 gate=0.4 bars=9-16: 1 . . . . . 1 . . . 1 . . . . .
+mel boneflute: | E5:4 F5:2 E5:2 B4:8 | C5:4 D5:2 C5:2 A4:8 | E5:2 F5 G5 A5 B5:4 A5:4 | G5:4 F5:4 E5:8
+  | B5:4 C6:2 B5:2 G5:8 | A5:4 C6:4 F5:8 | G5:2 A5 B5 C6 D6:4 C6:2 A5:2 | B5:12 r:4 |
+
+# ---------------------------------------------------------------- the knight: the pteranodons - cliffs, wind, the stoop
+song army=dino piece=knight bpm=104 beat=4 bar=12 bars=16 gain=1.11 title=Over_the_Cliffs
+chords: F | C | Dm | Bb | F | C | Bb:6 C:6 | F
+pat harp lo=F3: 1 3 5 8 5 3 1 3 5 8 5 3
+pat strings lo=A3 gate=1 vol=0.6: c - - - - - - - - - - -
+drum timp bars=9-16: x...........
+drum crash bars=9: x...........
+mel horn: | C5:4 F5:6 G5:2 | E5:8 C5:4 | D5:4 F5:4 A5:4 | Bb5:8 A5:2 G5:2
+  | A5:4 C6:6 Bb5:2 | G5:8 E5:4 | F5:4 D5:4 E5:4 | F5:12 |
+mel violin tr=12 bars=9-16 vol=0.55: same
+mel choir bars=13-16 vol=0.5: | A4:4 C5:6 Bb4:2 | G4:8 E4:4 | F4:4 D4:4 E4:4 | F4:12 |
+
+song army=dino piece=knight bpm=84 bars=16 gain=1.15 title=Thermals
+chords: G | Em | C | D | G | Em | Am:8 D:8 | G
+pat harp lo=G3 vol=0.7: 1 5 8 10 12 10 8 5 1 5 8 10 12 10 8 5
+pat pad lo=B3 gate=1 vol=0.6: c - - - - - - - - - - - - - - -
+drum rattle vol=0.4: ........x.......
+mel whistle: | D5:8 B5:4 A5:4 | G5:8 E5:8 | E5:4 G5:4 C6:6 B5:2 | A5:12 r:4
+  | D5:8 D6:4 C6:4 | B5:8 G5:8 | C6:4 B5:4 A5:4 F#5:4 | G5:12 r:4 |
+mel boneflute tr=-12 bars=9-16 vol=0.6: same
+
+)SCORE",
+R"SCORE(song army=dino piece=knight bpm=160 bars=16 gain=0.82 title=Stoop
+chords: Am | F | C | G | Am | F | Dm:8 E:8 | Am
+drum timp: X.x.x.x.X.x.xx.x
+drum taiko: X.......X...X...
+drum crash bars=1,9: x...............
+pat spicc lo=A3 vol=0.8: 1 3 5 8 5 3 1 3 5 8 5 3 1 3 5 3
+pat tuba lo=A1 gate=0.5: 1 . 1 . 1 . 1 . 1 . 1 . 1 . 1 .
+mel violin: | E6:2 D6 C6 B5 A5:4 E5:4 | F5:2 G5 A5 C6 F6:8 | E6:2 D6 C6 D6 E6:4 G6:4 | D6:12 B5:4
+  | E6:2 D6 C6 B5 A5:4 C6:4 | F6:2 E6 D6 C6 A5:8 | D6:4 F6:4 E6:4 G#5:4 | A5:12 r:4 |
+mel brass bars=9-16: | A4:8 C5:8 | F4:8 A4:8 | G4:8 E4:8 | D4:12 r:4 | A4:8 E5:8 | F5:8 C5:8 | D5:8 B4:8 | A4:12 r:4 |
+
+# ---------------------------------------------------------------- the bishop: the triceratops - the herd, the stampede, the horns
+song army=dino piece=bishop bpm=96 bars=16 gain=0.92 title=The_Three-Horned_Herd
+chords: Bb | Eb | Bb | F | Bb | Eb | F | Bb | Gm | Eb | Bb | F | Gm | Eb | F:8 F7:8 | Bb
+drum bigdrum: X.......x.......
+drum timp: ....x.......x.x.
+pat tuba lo=Bb1 gate=0.6: 1 . . . 5, . . . 1 . . . 5, . . .
+pat strings lo=F3 gate=0.6 vol=0.6: . . c . . . c . . . c . . . c .
+mel lowbrass bars=1-8: | Bb3:6 D4:2 F4:8 | G4:6 F4:2 Eb4:8 | D4:4 F4:4 Bb4:4 D5:4 | C5:12 r:4
+  | Bb4:6 A4:2 G4:4 F4:4 | Eb4:4 G4:4 Bb4:8 | A4:4 F4:4 C5:4 Eb5:4 | D5:12 r:4 |
+mel horn bars=9-16: | D5:6 Eb5:2 F5:8 | G5:6 F5:2 Eb5:8 | D5:4 F5:4 Bb5:8 | A5:12 r:4
+  | G5:6 F5:2 Eb5:4 D5:4 | C5:4 Eb5:4 G5:8 | F5:4 A5:4 C6:4 Eb5:4 | D5:12 r:4 |
+
+song army=dino piece=bishop bpm=138 beat=6 bar=12 bars=16 gain=0.78 title=Stampede
+chords: Dm | Dm | Bb | A | Dm | Gm | A:6 A7:6 | Dm
+drum taiko: X..x..X..x..
+drum logdrum: .xx.xx.xx.xx
+drum crash bars=1,9: x...........
+pat spicc lo=D3 vol=0.8: 1 1 5 1 1 5 1 1 5 1 1 5
+pat tuba lo=D2 gate=0.5: 1 . . 5, . . 1 . . 5, . .
+mel horn: | A4:3 D5:3 F5:3 A5:3 | G5:6 F5:3 E5:3 | F5:3 D5:3 Bb4:6 | A4:6 C#5:6
+  | D5:3 F5:3 A5:3 D6:3 | Bb5:6 G5:6 | E5:3 G5:3 A5:3 C#5:3 | D5:12 |
+mel brass bars=9-16 vol=0.7: same
+
+song army=dino piece=bishop bpm=88 bars=16 gain=1.18 title=Frill_and_Horn
+chords: Eb | Ab | Eb | Bb | Cm | Ab | Bb | Eb
+pat strings lo=G3 gate=1 vol=0.6: c - - - - - - - c - - - - - - -
+pat harp lo=Eb3 vol=0.5: 1 3 5 8 1 3 5 8 1 3 5 8 1 3 5 8
+drum timp: x.......x...x...
+mel horn: | Bb4:6 Eb5:2 G5:8 | Ab5:6 G5:2 F5:4 Eb5:4 | G5:4 Bb5:4 Eb6:8 | D6:12 r:4
+  | C6:6 Bb5:2 G5:4 Eb5:4 | Ab5:6 G5:2 F5:4 C5:4 | D5:4 F5:4 Bb5:4 D5:4 | Eb5:12 r:4 |
+mel choir tr=-12 bars=9-16 vol=0.6: same
+
+# ---------------------------------------------------------------- the rook: the brachiosaurus - awe, footfalls, a lullaby for giants
+song army=dino piece=rook bpm=72 beat=4 bar=12 bars=16 gain=1.25 title=Giants_of_the_Valley
+chords: D | G | D | A | Bm | G | Em:6 A:6 | D
+pat strings lo=F#3 gate=1 vol=0.7: c - - - - - - - - - - -
+pat harp lo=D3 vol=0.5: 1 5 8 10 8 5 1 5 8 10 8 5
+drum timp: x...........
+mel horn: | A4:6 D5:6 | B4:4 D5:4 G5:4 | F#5:8 E5:4 | E5:12
+  | F#5:6 A5:6 | G5:4 F#5:4 E5:4 | D5:4 E5:4 C#5:4 | D5:12 |
+mel choir bars=9-16: same
+mel violin tr=12 bars=13-16 vol=0.5: | F#5:6 A5:6 | G5:4 F#5:4 E5:4 | D5:4 E5:4 C#5:4 | D5:12 |
+
+)SCORE",
+R"SCORE(song army=dino piece=rook bpm=66 bars=16 gain=0.88 title=Footfalls
+chords: Cm | Cm | Ab | G | Cm | Fm | G | Cm
+drum bigdrum: X.......X.......
+drum taiko: ........X.......
+drum rattle: ....x.......x...
+mel didge gate=1: C2:16 | _:16 | _:16 | _:16 |
+pat tuba lo=C2 gate=1: 1 - - - - - - - 5, - - - - - - -
+pat strings lo=G3 gate=1 vol=0.5 bars=9-16: c - - - - - - - c - - - - - - -
+mel lowbrass: | C3:8 Eb3:4 G3:4 | Ab3:8 G3:8 | Ab3:4 C4:4 Eb4:8 | D4:12 r:4
+  | C4:8 Bb3:4 G3:4 | Ab3:4 C4:4 F4:8 | D4:4 B3:4 G3:8 | C3:12 r:4 |
+mel cello tr=12 bars=9-16 vol=0.7: same
+
+song army=dino piece=rook bpm=80 beat=4 bar=12 bars=16 gain=1.60 title=Longneck_Lullaby
+chords: F | Bb | F | C | Dm | Bb | C:6 C7:6 | F
+pat kalimba lo=F4 vol=0.7: 1 3 5 8 5 3 1 3 5 8 5 3
+pat pad lo=A3 gate=1 vol=0.5: c - - - - - - - - - - -
+mel celesta: | C5:4 A5:6 G5:2 | F5:8 D5:4 | C5:4 F5:4 A5:4 | G5:12
+  | A5:4 C6:6 Bb5:2 | A5:8 F5:4 | G5:4 Bb5:4 E5:4 | F5:12 |
+mel strings tr=-12 bars=9-16 vol=0.5: same
+
+# ---------------------------------------------------------------- the queen: the spinosaurus - the river, the sail at dusk, the jaws
+song army=dino piece=queen bpm=100 bars=16 gain=1.03 title=River_Queen
+chords: D | Eb | D | Cm:8 D:8 | D | Eb | Gm:8 Eb:8 | D
+mel drone gate=1: D2+A2:16 | _:16 | _:16 | _:16 |
+drum conga: x..x..x.x..x..x.
+drum bongo: ..x...x...x...xx
+drum rattle bars=9-16: x...x...x...x...
+mel boneflute: | D5:4 Eb5:2 F#5:2 G5:4 F#5:4 | Eb5:6 D5:2 Eb5:4 G5:4 | F#5:2 G5 A5 Bb5 A5:4 F#5:4 | G5:4 Eb5:4 F#5:4 D5:4
+  | A5:4 Bb5:2 A5:2 G5:4 F#5:4 | G5:4 Eb5:4 Bb5:8 | A5:2 G5 F#5 Eb5 D5:4 C5:4 | D5:16 |
+pat marimba lo=D3 bars=9-16 vol=0.6: 1 . . 5 . . 8 . 1 . . 5 . . 8 .
+
+song army=dino piece=queen bpm=76 beat=4 bar=12 bars=16 gain=1.19 title=Sail_at_Dusk
+chords: Am | F | Dm | E | Am | F | Dm:6 E:6 | Am
+pat harp lo=A2 vol=0.6: 1 5 8 10 8 5 1 5 8 10 8 5
+pat pad lo=C4 gate=1 vol=0.6: c - - - - - - - - - - -
+drum timp bars=9-16: x...........
+mel flute: | E5:6 A5:6 | C6:4 B5:4 A5:4 | F5:8 D5:4 | E5:12
+  | E5:4 A5:4 C6:4 | D6:6 C6:2 B5:4 | A5:4 F5:4 G#5:4 | A5:12 |
+mel cello tr=-24 bars=9-16 vol=0.6: same
+
+song army=dino piece=queen bpm=128 bars=16 gain=0.72 title=Jaws_in_the_Shallows
+chords: Em | Em | C | B | Em | Em | Am:8 B:8 | Em
+drum taiko: X.......X.......
+drum timp: ....x...x...x.x.
+drum bigdrum bars=9-16: X...X...X...X...
+mel cello vol=0.9: | E2:2 F2 E2 F2 E2 F2 E2 F2 *2 | C2:2 C#2 C2 C#2 C2 C#2 C2 C#2 | B1:2 C2 B1 C2 B1 C2 B1 C2
+  | E2:2 F2 E2 F2 E2 F2 E2 F2 *2 | A1:2 A#1 A1 A#1 B1 C2 B1 C2 | E2:2 F2 E2 F2 E2:8 |
+mel lowbrass bars=9-16: | E3:12 r:4 | G3:8 F#3:8 | E3:12 r:4 | C3:8 B2:8 | E3:8 G3:8 | F#3:8 D#3:8 | C3:8 B2:8 | E3:16 |
+mel violin bars=9-16 vol=0.5: | B5:16 | C6:16 | B5:16 | A5:8 B5:8 | E6:16 | F6:8 E6:8 | C6:8 B5:8 | B5:16 |
+
+# ---------------------------------------------------------------- the king: the tyrannosaurus - the tyrant, the thunder, the lord of his age
+song army=dino piece=king bpm=84 bars=16 gain=0.79 title=Tyrant_King
+chords: Cm | Cm | Ab | G | Cm | Fm | Ab:8 G:8 | Cm | Fm | Cm | Ab | Eb | Fm | Cm | G | Cm
+drum bigdrum: X.......X.......
+drum taiko: X...X...X..XX...
+drum timp: ..x...x...x...x.
+drum crash bars=1,9: x...............
+pat lowbrass lo=C2 gate=0.7: 1 . . . . . . . 5, . . . 1 . . .
+pat strings lo=G3 gate=0.4 vol=0.6: c . c . c . c . c . c . c . c .
+mel brass bars=1-8: | C4:6 Eb4:2 G4:8 | Ab4:4 G4:4 F4:4 Eb4:4 | Ab4:6 C5:2 Eb5:8 | D5:12 r:4
+  | C5:6 Bb4:2 G4:4 Eb4:4 | F4:4 Ab4:4 C5:8 | Ab4:4 C5:4 B4:4 D5:4 | C5:12 r:4 |
+mel choir bars=9-16: | F4:8 Ab4:8 | G4:8 Eb4:8 | Ab4:8 C5:8 | Bb4:8 G4:8 | C5:8 Ab4:8 | G4:8 Eb5:8 | D5:8 B4:8 | C5:16 |
+mel horn bars=9-16 vol=0.7: | C5:6 Eb5:2 F5:8 | Eb5:6 D5:2 C5:8 | C5:6 Eb5:2 Ab5:8 | G5:12 r:4
+  | Ab5:6 G5:2 F5:8 | Eb5:6 D5:2 C5:8 | D5:4 F5:4 G5:4 B4:4 | C5:12 r:4 |
+
+song army=dino piece=king bpm=144 bars=16 gain=0.66 title=Thunder_Lizard
+chords: Dm | Dm | Bb | C | Dm | Dm | Gm:8 A:8 | Dm
+drum taiko: X..X..X.X..X..X.
+drum bigdrum: X.......X.......
+drum snare vol=0.6: ....x.......x...
+drum crash bars=1,5,9,13: x...............
+pat spicc lo=D3 vol=0.8: 1 1 1 1 5 5 5 5 8 8 8 8 5 5 5 5
+pat tuba lo=D2 gate=0.5: 1 . . 1 . . 1 . 5, . . 5, . . 5, .
+mel trombone: | D3:4 F3:4 A3:4 D4:4 | C4:8 A3:8 | Bb3:4 D4:4 F4:4 D4:4 | E4:8 C4:8
+  | D4:4 F4:4 A4:4 F4:4 | D4:8 A3:8 | Bb3:4 G3:4 A3:4 C#4:4 | D4:12 r:4 |
+mel horn tr=12 bars=9-16 vol=0.7: same
+
+song army=dino piece=king bpm=76 beat=4 bar=12 bars=16 gain=1.05 title=Lord_of_the_Cretaceous
+chords: Eb | Ab | Eb | Bb | Cm | Ab | Bb:6 Bb7:6 | Eb
+pat strings lo=G3 gate=1 vol=0.7: c - - - - - - - - - - -
+pat harp lo=Eb3 vol=0.5: 1 5 8 10 8 5 1 5 8 10 8 5
+drum timp: x.......x...
+drum crash bars=1,9: x...........
+mel horn: | Bb4:6 Eb5:6 | C5:4 Eb5:4 Ab5:4 | G5:8 F5:4 | F5:12
+  | G5:6 Bb5:6 | Ab5:4 G5:4 F5:4 | Eb5:4 F5:4 D5:4 | Eb5:12 |
+mel choir bars=9-16: same
+mel brass bars=13-16 vol=0.6: | G5:6 Bb5:6 | Ab5:4 G5:4 F5:4 | Eb5:4 F5:4 D5:4 | Eb5:12 |
 )SCORE",
 nullptr};
 

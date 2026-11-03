@@ -36,12 +36,14 @@ extension PointLight {
   }
 }
 
-/// Bone matrices of a skinned figure (set 1 medieval, 2 aliens, 3 Romans).
+/// Bone matrices of a skinned figure (set 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs).
 func figurePose(_ set: Int, _ asset: Int, _ c: MControls, _ out: inout MPose) {
   if set == 2 {
     Alien.buildPose(asset, c, &out)
   } else if set == 3 {
     Roman.buildPose(asset, c, &out)
+  } else if set == 4 {
+    Dino.buildPose(asset, c, &out)
   } else {
     Medieval.buildPose(asset, c, &out)
   }
@@ -151,6 +153,7 @@ final class Actor {
     let h = set == 1 ? Medieval.pieceHeight(kind)
       : set == 2 ? Alien.pieceHeight(kind)
       : set == 3 ? Roman.pieceHeight(kind)
+      : set == 4 ? Dino.pieceHeight(kind)
       : MeshGen.pieceHeight(kind)
     return h * scale
   }
@@ -158,10 +161,11 @@ final class Actor {
     let r = set == 1 ? Medieval.pieceRadius(kind)
       : set == 2 ? Alien.pieceRadius(kind)
       : set == 3 ? Roman.pieceRadius(kind)
+      : set == 4 ? Dino.pieceRadius(kind)
       : MeshGen.pieceRadius(kind)
     return r * scale
   }
-  /// A medieval, alien or Roman figure (ctl / pose).
+  /// A medieval, alien, Roman or dinosaur figure (ctl / pose).
   var skinned: Bool { self.set != 0 }
   func forward() -> vec3 { vec3(sin(yaw), 0, cos(yaw)) }
 
@@ -249,13 +253,13 @@ final class Actor {
 
   /// Without tilt.
   func rigidModel() -> mat4 {
-    var m = translate(mat4.identity, pos + vec3(0, set == 1 || set == 3 ? bob * 0.3 : bob, 0))
+    var m = translate(mat4.identity, pos + vec3(0, set == 1 || set >= 3 ? bob * 0.3 : bob, 0))
     m = rotate(m, yaw, vec3(0, 1, 0))
     return m * mat4(diagonal: vec4(scale, scale, scale, 1))
   }
 
   func model() -> mat4 {
-    var m = translate(mat4.identity, pos + vec3(0, set == 1 || set == 3 ? bob * 0.3 : bob, 0))
+    var m = translate(mat4.identity, pos + vec3(0, set == 1 || set >= 3 ? bob * 0.3 : bob, 0))
     m = rotate(m, yaw, vec3(0, 1, 0))
     if abs(tilt.w) < 0.99999 {
       m = translate(m, tiltPivot * scale)
@@ -268,7 +272,7 @@ final class Actor {
 
 final class Chunk {
   var kind = 0, color = 0, index = 0
-  var set = 0  // 1: 'kind' is a medieval asset, 2: an alien one, 3: a Roman one
+  var set = 0  // 1: 'kind' is a medieval asset, 2: an alien one, 3: a Roman one, 4: a dinosaur one
   var half = false
   var pos = vec3(0), v = vec3(0), w = vec3(0)
   var rot = quat.identity
@@ -297,10 +301,10 @@ final class Prop {
 }
 
 /// A skinned creature or object that is not a chessman (the dragon, a cow, the
-/// mothership, a lion, a fallen Roman, a pool of blood).
+/// mothership, a lion, a fallen Roman or dinosaur, a pool of blood, a meteor).
 final class Puppet {
   var asset = 0, color = 0, id = 0
-  var set = 1  // 1 medieval asset, 2 alien asset, 3 Roman asset
+  var set = 1  // 1 medieval asset, 2 alien asset, 3 Roman asset, 4 dinosaur asset
   var pos = vec3(0)
   var yaw: Float = 0, scale: Float = 1
   var tilt = quat.identity  // applied after the yaw (a flying spear's pitch)
@@ -315,7 +319,7 @@ final class Puppet {
   var life: Float = -1, fadeRate: Float = 0.8
   var growRate: Float = 0, growTo: Float = 1
   var shadow = true  // casts a shadow and shows in the board
-  var interior: Float = 0  // what its fracture faces show (Romans: 1 flesh)
+  var interior: Float = 0  // what its fracture faces show (Romans, dinosaurs: 1 flesh)
 
   func model() -> mat4 {
     var m = translate(mat4.identity, pos)
@@ -462,7 +466,8 @@ final class World {
   var mlib = MedievalLibrary()
   var alib = AlienLibrary()
   var rlib = RomanLibrary()
-  var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans
+  var dlib = DinoLibrary()
+  var pieceSet = 0  // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs
   var puppets: [Puppet] = []
   var nextPuppetId = 1
   var audio: Audio?
@@ -511,9 +516,10 @@ final class World {
     let s = a.scale * Medieval.seatScale(a.kind)
     return m * mat4(diagonal: vec4(s, s, s, 1))
   }
-  /// The meshes of a skinned set's asset (set 1 medieval, 2 aliens, 3 Romans).
+  /// The meshes of a skinned set's asset (set 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs).
   func figureAssets(_ set: Int, _ asset: Int) -> PieceAssets {
-    set == 3 ? rlib.asset[asset] : (set == 2 ? alib.asset[asset] : mlib.asset[asset])
+    if set == 4 { return dlib.asset[asset] }
+    return set == 3 ? rlib.asset[asset] : (set == 2 ? alib.asset[asset] : mlib.asset[asset])
   }
   func assetsOf(_ c: Chunk) -> PieceAssets { c.set != 0 ? figureAssets(c.set, c.kind) : lib.piece[c.kind] }
   func shake(_ amount: Float) { trauma = min(1, trauma + amount) }
@@ -917,6 +923,11 @@ final class World {
         a.ctl.hover = 0
         a.ctl.crouch = 0
         a.ctl.hatch = 0
+        if a.set == 4 {
+          a.ctl.neck = 0
+          a.ctl.itemYaw = 0
+          a.ctl.wings = 0
+        }
       }
       a.fidgetT = -1
       a.yawTarget = a.baseYaw
@@ -995,6 +1006,46 @@ final class World {
           a.ctl.twist = 0
           a.ctl.neck = 0
           a.ctl.armR = vec3(0)
+        }
+        continue
+      }
+      if a.set == 4 {
+        // dinosaurs: a look round, a sniff of the air, a yawn and a stretch, a swish of the tail
+        switch a.fidgetType {
+        case 0:  // a look round
+          end = 2.4
+          let u = sin(clamp(t / end, 0, 1) * kPI)
+          a.ctl.headYaw = a.fidgetDir * (a.kind == Kind.rook ? 0.9 : 0.65) * u
+          a.ctl.twist = a.fidgetDir * 0.08 * u
+          a.ctl.itemYaw = -a.fidgetDir * 0.15 * u
+        case 1:  // sniffing the air, a snort; the pteranodon shakes out its wings
+          end = 1.5
+          let u = clamp(t / end, 0, 1)
+          if a.kind == Kind.knight {
+            a.ctl.wings = 0.45 * sin(u * kPI)
+            a.ctl.flap = u * 18
+          } else {
+            a.ctl.neck = 0.25 * sin(u * kPI)
+            a.ctl.headPitch = -0.2 * sin(u * kPI) + 0.05 * sin(u * kPI * 8) * (1 - u)
+          }
+        default:  // a yawn, a stretch, a swish of the tail
+          end = 1.8
+          let u = sin(clamp(t / end, 0, 1) * kPI)
+          a.ctl.jaw = 0.75 * u
+          a.ctl.neck = 0.3 * u
+          a.ctl.headPitch = -0.15 * u
+          a.ctl.itemYaw = a.fidgetDir * 0.35 * sin(clamp(t / end, 0, 1) * kPI * 2)
+        }
+        if t >= end {
+          a.fidgetT = -1
+          a.ctl.headYaw = 0
+          a.ctl.headPitch = 0
+          a.ctl.lean = 0
+          a.ctl.twist = 0
+          a.ctl.neck = 0
+          a.ctl.jaw = 0
+          a.ctl.itemYaw = 0
+          a.ctl.wings = 0
         }
         continue
       }
@@ -1270,6 +1321,18 @@ final class World {
       if a.set == 3 && a.kind == Kind.knight { a.ctl.rear = 0.45 * cs }  // the horses rear
       if a.set == 3 && a.kind == Kind.rook { a.ctl.bridge = 0.3 * abs(sin(g.t * 6 + ph)) * cs }
       if a.set == 3 { a.ctl.cape = 0.5 * cs }
+      if a.set == 4 {  // roaring, the pteranodon flapping, the big ones rearing
+        a.ctl.neck = 0.45 * cs - 0.3 * ds
+        a.ctl.jaw = 0.9 * cs
+        a.ctl.armL = vec3(0.6, 0.2, 0.0) * cs
+        a.ctl.armR = vec3(0.6, 0.2, 0.0) * cs
+        a.ctl.itemYaw = 0.4 * sin(g.t * 7 + ph) * cs
+        if a.kind == Kind.knight {
+          a.ctl.wings = cs
+          a.ctl.flap += dt * 14 * cs
+        }
+        if a.kind == Kind.rook || a.kind == Kind.bishop { a.ctl.rear = (a.kind == Kind.rook ? 0.35 : 0.6) * cs }
+      }
       // a faint pale glow, brighter when cheering, and it materialises out of the wisps
       a.glow = vec4(light, 0.1 + 0.45 * cs + 0.15 * ws)
       a.dissolve = (1 - g.appear) * 0.85
@@ -1357,7 +1420,7 @@ final class World {
       d.mesh = G[a.kind].lod0
       d.meshLow = G[a.kind].lod1
       d.model = a.model()
-      if a.set == 1 || a.set == 3 {
+      if a.set == 1 || a.set >= 3 {
         // painted figures are not made of rubber: only a hint of the squash-and-stretch rig
         d.rig = vec4(a.rig.x * 0.3, a.rig.y, 1 + (a.rig.z - 1) * 0.12, a.rig.w * 0.25)
       } else {
@@ -1366,8 +1429,8 @@ final class World {
         d.rig = vec4(a.rig.x * k, a.rig.y, 1 + (a.rig.z - 1) * k, a.rig.w * k)
       }
       d.rigH = a.height() / max(a.scale, 1e-3)
-      d.material = a.set == 2 ? .alien : (a.set == 3 ? .roman : .medieval)
-      d.interior = a.set == 3 && a.kind != Kind.rook ? 1 : 0
+      d.material = a.set == 2 ? .alien : (a.set == 3 ? .roman : (a.set == 4 ? .dino : .medieval))
+      d.interior = (a.set == 3 && a.kind != Kind.rook) || a.set == 4 ? 1 : 0
       d.team = Int32(a.color)
       d.bones = a.pose.active
       d.texOffset = a.texOffset
@@ -1468,8 +1531,9 @@ final class World {
       d.material = c.set == 1 ? .medieval
         : c.set == 2 ? .alien
         : c.set == 3 ? .roman
+        : c.set == 4 ? .dino
         : (c.color == 0 ? .white : .black)
-      d.interior = c.set == 3 && c.kind != RAsset.rook && c.kind != RAsset.bolt && c.kind != RAsset.pilum ? 1 : 0
+      d.interior = (c.set == 3 && c.kind != RAsset.rook && c.kind != RAsset.bolt && c.kind != RAsset.pilum) || c.set == 4 ? 1 : 0
       if c.set == 2 && (c.kind == AAsset.canopy || c.kind == AAsset.jar) {
         d.material = .glass
         d.glass = true
@@ -1489,13 +1553,13 @@ final class World {
       d.meshLow = G[p.asset].lod1
       d.model = p.model()
       d.rigH = 1
-      d.material = p.set == 2 ? .alien : (p.set == 3 ? .roman : .medieval)
+      d.material = p.set == 2 ? .alien : (p.set == 3 ? .roman : (p.set == 4 ? .dino : .medieval))
       d.team = Int32(p.color)
       d.bones = p.pose.active
       d.texOffset = p.texOffset
       d.glow = p.glow
       d.dissolve = p.dissolve
-      d.dissolveColor = p.set == 3 ? vec3(0) : vec3(1.0, 0.5, 0.15)  // the Romans' dead simply fade
+      d.dissolveColor = p.set >= 3 ? vec3(0) : vec3(1.0, 0.5, 0.15)  // the Romans' and dinosaurs' dead simply fade
       d.interior = p.interior
       if !p.shadow {
         d.castShadow = false
