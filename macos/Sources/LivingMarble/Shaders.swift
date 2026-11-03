@@ -881,13 +881,13 @@ void dinoSurface(int id, bool black, float3 o, float3 on, float px, float ao, fl
   float n3 = noise.sample(sNoise, o * 31.0).b;
   float NoV = saturate(dot(N, V));
   // the army's colours: the hide darkening along the back, its markings, the pale belly
-  float3 hide = black ? float3(0.105, 0.108, 0.095) : float3(0.44, 0.31, 0.175);
-  float3 back = black ? float3(0.04, 0.042, 0.038) : float3(0.2, 0.125, 0.065);
-  float3 stripe = black ? float3(0.016, 0.015, 0.014) : float3(0.1, 0.05, 0.022);
-  float3 belly = black ? float3(0.26, 0.24, 0.205) : float3(0.74, 0.63, 0.45);
+  float3 hide = black ? float3(0.165, 0.17, 0.152) : float3(0.44, 0.31, 0.175);
+  float3 back = black ? float3(0.07, 0.074, 0.068) : float3(0.2, 0.125, 0.065);
+  float3 stripe = black ? float3(0.03, 0.028, 0.026) : float3(0.1, 0.05, 0.022);
+  float3 belly = black ? float3(0.36, 0.335, 0.29) : float3(0.74, 0.63, 0.45);
   // dust and dried mud on the feet and lower legs
   float dirt = (1.0 - smoothstep(0.015, 0.11 + 0.05 * n1, o.y)) * smoothstep(0.3, 0.6, n2 + 0.25);
-  float3 dust = black ? float3(0.1, 0.09, 0.075) : float3(0.36, 0.29, 0.2);
+  float3 dust = black ? float3(0.15, 0.135, 0.11) : float3(0.36, 0.29, 0.2);
   if (id == 0 || id == 1 || id == 17 || id == 10 || id == 11) {  // scaly hide, scutes, belly, frill, sail
     // Scales in two sizes, as on real dinosaur skin: a ground of small pebbly scales
     // everywhere, and over the back, the flanks and the tail larger domed feature scales
@@ -929,7 +929,7 @@ void dinoSurface(int id, bool black, float3 o, float3 on, float px, float ao, fl
       float ring = smoothstep(0.35, 0.65, sin(r * 46.0 + m1 * 3.0));
       float spot = smoothstep(0.62, 0.72, noise.sample(sNoise, pc * 14.0 + texOffset * 0.1, gradient3d(dox * 14.0, doy * 14.0)).r);
       float3 c0 = black ? float3(0.3, 0.025, 0.03) : float3(0.66, 0.3, 0.08);
-      float3 c1 = black ? float3(0.03, 0.025, 0.025) : float3(0.36, 0.07, 0.035);
+      float3 c1 = black ? float3(0.05, 0.04, 0.04) : float3(0.36, 0.07, 0.035);
       float3 c2 = black ? float3(0.5, 0.4, 0.2) : float3(0.88, 0.78, 0.56);
       base = mix(mix(c0, c1, ring * 0.8), c2, spot * 0.7);
     } else if (id == 11) {  // the sail: spines and colour rising to its edge; light shines through it
@@ -953,7 +953,7 @@ void dinoSurface(int id, bool black, float3 o, float3 on, float px, float ao, fl
       base = mix(base, speck > 0.0 ? stripe : belly, abs(speck) * 0.55 * max(vis, feat));
       base *= 0.95 + 0.1 * m2;  // (soft variations of tone)
       base = mix(base, belly, (1.0 - smoothstep(-0.6, 0.1, on.y + 0.15 * (m2 - 0.5))) * 0.9);
-      if (id == 1) base = mix(base, black ? float3(0.06, 0.058, 0.052) : float3(0.32, 0.23, 0.14), 0.6);
+      if (id == 1) base = mix(base, black ? float3(0.095, 0.092, 0.085) : float3(0.32, 0.23, 0.14), 0.6);
     }
     // each scale its own shade; the feature scales a little paler or darker than the ground
     base *= 0.9 + 0.2 * h1 + feat * (black ? 0.18 : -0.08) * (h1 - 0.3);
@@ -993,10 +993,10 @@ void dinoSurface(int id, bool black, float3 o, float3 on, float px, float ao, fl
   } else if (id == 2 || id == 3) {  // feathers: fine barbs, barred; glossy black with a sheen of green and purple
     float barb = noise.sample(sNoise, float3(o.x * 160.0, o.y * 160.0, o.z * 14.0)).r;
     float bars = smoothstep(0.3, 0.7, sin(o.z * (id == 3 ? 150.0 : 70.0) + o.y * 40.0 + n1 * 3.0));
-    float3 base = black ? float3(0.04, 0.045, 0.045) : float3(0.46, 0.33, 0.19);
-    float3 bar = black ? float3(0.015, 0.016, 0.018) : float3(0.2, 0.12, 0.06);
-    if (id == 3) base = black ? float3(0.03, 0.03, 0.035) : float3(0.36, 0.25, 0.14);
-    base = mix(base, black ? float3(0.02, 0.022, 0.024) : float3(0.22, 0.14, 0.075), smoothstep(-0.1, 0.9, on.y) * 0.6);  // a darker back
+    float3 base = black ? float3(0.068, 0.075, 0.075) : float3(0.46, 0.33, 0.19);
+    float3 bar = black ? float3(0.026, 0.027, 0.031) : float3(0.2, 0.12, 0.06);
+    if (id == 3) base = black ? float3(0.05, 0.05, 0.058) : float3(0.36, 0.25, 0.14);
+    base = mix(base, black ? float3(0.036, 0.039, 0.042) : float3(0.22, 0.14, 0.075), smoothstep(-0.1, 0.9, on.y) * 0.6);  // a darker back
     albedo = mix(base, bar, bars * (id == 3 ? 0.8 : 0.5)) * (0.75 + 0.45 * barb);
     albedo = mix(albedo, belly * (black ? 0.7 : 1.0), (1.0 - smoothstep(-0.6, 0.1, on.y)) * (id == 2 ? 0.7 : 0.0));
     // the feathers themselves, lying back along the body: each one's tip over the next one's
@@ -1058,14 +1058,14 @@ void dinoSurface(int id, bool black, float3 o, float3 on, float px, float ao, fl
     specOcc = 0.9;
   } else if (id == 12) {  // wing membrane: thin, veined skin the light shines through
     float vein = 1.0 - smoothstep(0.0, 0.05, abs(noise.sample(sNoise, o * float3(4.0, 22.0, 9.0)).r - 0.5));
-    float3 base = black ? float3(0.13, 0.09, 0.085) : float3(0.6, 0.45, 0.31);
+    float3 base = black ? float3(0.19, 0.13, 0.12) : float3(0.6, 0.45, 0.31);
     albedo = base * (0.8 + 0.3 * n1) * (1.0 - 0.3 * vein);
     rough = 0.5;
     wrap = 0.55;
     sss = black ? float3(0.55, 0.08, 0.06) : float3(1.0, 0.55, 0.3);
   } else if (id == 13) {  // the pteranodon's crest: bright, fading at the base
     float h = smoothstep(0.5, 0.6, o.y);
-    float3 c0 = black ? float3(0.08, 0.06, 0.06) : float3(0.85, 0.62, 0.22);
+    float3 c0 = black ? float3(0.12, 0.09, 0.09) : float3(0.85, 0.62, 0.22);
     float3 c1 = black ? float3(0.5, 0.03, 0.05) : float3(0.8, 0.22, 0.07);
     albedo = mix(c0, c1, h) * (0.85 + 0.25 * n1);
     rough = 0.38;
@@ -1089,7 +1089,7 @@ void dinoSurface(int id, bool black, float3 o, float3 on, float px, float ao, fl
     float fv = smoothstep(1.0, 3.0, 0.004 / px);
     float fib = mix(0.5, noise.sample(sNoise, float3(o.x * 240.0, o.y * 70.0, o.z * 240.0)).r, fv);
     float tuft = noise.sample(sNoise, float3(o.x * 80.0, o.y * 26.0, o.z * 80.0) + 3.1).g;
-    float3 base = black ? float3(0.085, 0.075, 0.07) : float3(0.52, 0.38, 0.25);
+    float3 base = black ? float3(0.13, 0.115, 0.105) : float3(0.52, 0.38, 0.25);
     albedo = base * (0.72 + 0.45 * fib) * (0.85 + 0.3 * tuft);
     albedo = mix(albedo, belly * (black ? 0.75 : 0.95), (1.0 - smoothstep(-0.6, 0.1, on.y)) * 0.5);
     rough = 0.85;

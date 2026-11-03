@@ -388,14 +388,14 @@ feathers lie in overlapping layers; wet, dark mouths. White's army is sand and
 tan with dark brown markings, Black's slate and charcoal with crimson (its
 raptors' feathers shimmer green and purple).
 
-- **Pawn** — a velociraptor: feathered, with quills on its arms and a fan of
-  feathers on its tail, a long low snout full of teeth, and a sickle claw held up
-  off the ground on each foot. It runs
+- **Pawn** — a velociraptor: feathered, with a folded half-wing of quills on
+  each arm and a fan of feathers on its tail, a long low snout full of teeth,
+  and a sickle claw held up off the ground on each foot. It runs
 - **Knight** — a pteranodon with a crest swept back from its skull, a long
   toothless beak and a furry body. On the board it walks on its folded wings,
-  the long wing finger folded up beside its arm; they open into wings of skin
-  from the finger's tip to its knees, the trailing edge one sweeping curve; it
-  flies its moves
+  the long wing finger folded up beside its arm and the skin of the wing hanging
+  in folds along it; they open into wings of skin from the finger's tip to its
+  knees, the trailing edge one sweeping curve; it flies its moves
 - **Bishop** — a triceratops: three horns, a great frill with bony knobs round its
   edge, a parrot's beak; half-sprawled forelegs and broad, hoofed feet
 - **Rook** — a brachiosaurus, a living tower: pillar legs, the front ones longer,

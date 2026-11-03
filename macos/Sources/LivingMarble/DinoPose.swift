@@ -278,9 +278,10 @@ extension Dino {
     }
     // the membranes: drawn in against the bones of the wing as it folds. Each trailing-edge
     // bone squeezes the membrane towards a line through its joint (along x at rest), turned onto
-    // its wing bone as it folds.
-    let k: Float = romanMix(0.12, 1.0, spread)
-    let fold: Float = (1 - k) / 0.88
+    // its wing bone as it folds. Folded, some of it still shows: a drape of skin between the
+    // arm and the flank, a narrower one along the hand and the finger.
+    let kFold: [Float] = [0.5, 0.5, 0.3, 0.3]
+    let fold: Float = 1 - spread
     for side in 0..<2 {
       let L = side == 0
       var T = wingTip()
@@ -294,6 +295,7 @@ extension Dino {
         let e = lead[i + 1] >= 0 ? sk.joint[lead[i + 1]] : T
         let f = normalize(e - a)
         let fx: Float = f.x < 0 ? -1 : 1
+        let k: Float = romanMix(kFold[i], 1.0, spread)
         b.st[trail[i]] = vec3(1.0, k, k)
         // (glm::slerp from the identity quat(1, 0, 0, 0))
         b.R[trail[i]] = simd_slerp(quat.identity, rotationBetween(vec3(fx, 0, 0), f), fold)

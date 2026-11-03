@@ -399,17 +399,26 @@ extension Dino {
     addTeeth(m, THB.jaw, vec3(0.008, 0.41, 0.262), vec3(0.005, 0.408, 0.318), 5, vec3(0, 1, 0.1), 0.0065, 0.0024)
     openJaw(m, jaw0, j.jaw, G)
     addTeeth(m, THB.head, vec3(0.0125, 0.416, 0.255), vec3(0.0075, 0.415, 0.326), 6, vec3(0, -1, 0.15), 0.008, 0.0042)
-    // arms folded at the sides, a fan of quills on each forearm
+    // arms folded at the sides, a folded half-wing of quills on each: separate vanes rooted along
+    // the forearm and the hand, overlapping like a closed fan, the short ones at the elbow
+    // hanging down and back, the long ones at the hand lying back along the forearm and past the
+    // elbow; each tip rounded, so that the trailing edge is scalloped
     addTheroArms(m, j, 0.0135, 0.0095, 3, 0.013, DMat.feather)
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
       let fa = sd > 0 ? THB.lfore : THB.rfore
       let el = vec3(j.elL.x * s, j.elL.y, j.elL.z), wr = vec3(j.wrL.x * s, j.wrL.y, j.wrL.z)
-      let out = vec3(s * 0.006, 0, 0)
-      let a = wr + out + vec3(0, -0.006, -0.004), b = el + out + vec3(0, -0.004, 0.0)
-      let c = b + vec3(s * 0.004, -0.052, -0.034), d = a + vec3(s * 0.004, -0.05, -0.022)
-      m.add(fa, DMat.quill, 0.004, sheetS(a, b, c, 0.0036))
-      m.add(fa, DMat.quill, 0.004, sheetS(a, c, d, 0.0036))
+      let along = normalize(wr - el)
+      let n = 8
+      for i in 0..<n {
+        let t: Float = 1.3 * Float(i) / Float(n - 1)  // (past the wrist: onto the hand)
+        let u: Float = t / 1.3
+        let root = romanMix(el, wr, t) + vec3(s * (0.0065 + 0.002 * u), -0.004, 0)
+        let back = -along + vec3(s * 0.12, -0.42, 0)
+        let d = normalize(romanMix(vec3(s * 0.16, -0.8, -0.58), normalize(back), u))
+        let len: Float = romanMix(0.03, 0.074, u)
+        m.add(fa, DMat.quill, 0.0025, ellS(root + d * (len * 0.5), vec3(0.003, len * 0.5, 0.0068), frameY(d, along)))
+      }
     }
     // legs: feathered thighs, scaly shins and feet, the sickle claws
     addTheroLegs(m, j, 0.03, 0.0145, 0.009, 0.036, DMat.feather, true)
@@ -623,11 +632,11 @@ extension Dino {
     m.setSkeleton(skeleton(DAsset.knight))
     // the body, tilted up at the shoulders, in its coat of fine fur; the breast muscles that
     // drive the wings
-    m.add(PTB.body, DMat.fuzz, 0, ellS(vec3(0, 0.298, -0.008), vec3(0.054, 0.06, 0.112), rotXm(-0.6)))
-    m.add(PTB.body, DMat.fuzz, 0.025, ellS(vec3(0, 0.34, 0.055), vec3(0.064, 0.047, 0.048)))  // the shoulders
-    m.add(PTB.body, DMat.fuzz, 0.025, ellS(vec3(0, 0.3, 0.07), vec3(0.046, 0.045, 0.036)))  // the breast
+    m.add(PTB.body, DMat.fuzz, 0, ellS(vec3(0, 0.298, -0.008), vec3(0.061, 0.066, 0.116), rotXm(-0.6)))
+    m.add(PTB.body, DMat.fuzz, 0.025, ellS(vec3(0, 0.34, 0.055), vec3(0.072, 0.052, 0.052)))  // the shoulders
+    m.add(PTB.body, DMat.fuzz, 0.025, ellS(vec3(0, 0.3, 0.07), vec3(0.052, 0.05, 0.04)))  // the breast
     // the neck, furred at its base
-    addTube(m, DMat.skin, [vec3(0, 0.35, 0.07), vec3(0, 0.43, 0.125), vec3(0, 0.485, 0.158)], [0.026, 0.02, 0.017],
+    addTube(m, DMat.skin, [vec3(0, 0.35, 0.07), vec3(0, 0.43, 0.125), vec3(0, 0.485, 0.158)], [0.03, 0.022, 0.018],
             [PTB.neck, PTB.neck], 0.012)
     m.add(PTB.neck, DMat.fuzz, 0.015, ellS(vec3(0, 0.37, 0.085), vec3(0.03, 0.036, 0.03), rotXm(-0.6)))
     // the head: skull, the long beak, the crest
@@ -677,21 +686,22 @@ extension Dino {
       let H = vec3(DinoPJ.hipL.x * x, DinoPJ.hipL.y, DinoPJ.hipL.z)
       let K = vec3(DinoPJ.kneeL.x * x, DinoPJ.kneeL.y, DinoPJ.kneeL.z)
       let F = vec3(DinoPJ.footL.x * x, DinoPJ.footL.y, DinoPJ.footL.z)
-      m.add(ua, DMat.skin, 0.012, coneS(S, E, 0.021, 0.014))
-      m.add(ua, DMat.skin, 0.01, ellS(romanMix(S, E, 0.35) + vec3(0, 0, 0.008), vec3(0.03, 0.013, 0.017)))  // the crest of the arm
-      m.add(fa, DMat.skin, 0.008, coneS(E, W, 0.013, 0.011))
-      m.add(fa, DMat.skin, 0.006, sphereS(W, 0.0135))  // the wrist
+      m.add(ua, DMat.skin, 0.012, coneS(S, E, 0.026, 0.0175))
+      m.add(ua, DMat.skin, 0.01, ellS(romanMix(S, E, 0.35) + vec3(0, 0, 0.008), vec3(0.036, 0.017, 0.021)))  // the crest of the arm
+      m.add(fa, DMat.skin, 0.008, coneS(E, W, 0.0175, 0.0135))
+      m.add(fa, DMat.skin, 0.008, ellS(romanMix(E, W, 0.3), vec3(0.016, 0.0145, 0.034), frameY(vec3(0, 1, 0), W - E)))  // its muscles
+      m.add(fa, DMat.skin, 0.006, sphereS(W, 0.0165))  // the wrist
       // the pteroid: a slender bone at the wrist pointing back at the shoulder, holding up the
       // membrane in front of the arm
       let pteroid: vec3 = W + (S - W) * 0.3 + vec3(0, 0.004, 0.012)
       m.add(fa, DMat.skin, 0.004, coneS(W, pteroid, 0.005, 0.0024))
-      m.add(mc, DMat.skin, 0.006, coneS(W, N, 0.011, 0.0095))
-      m.add(mc, DMat.skin, 0.005, sphereS(N, 0.0125))  // the knuckle of the wing finger
+      m.add(mc, DMat.skin, 0.006, coneS(W, N, 0.0135, 0.0115))
+      m.add(mc, DMat.skin, 0.005, sphereS(N, 0.0152))  // the knuckle of the wing finger
       // the wing finger: four long joints, each a little thinner
       for s in 0..<4 {
         let u0 = Float(s) / 4, u1 = Float(s + 1) / 4
         let a = romanMix(N, T, u0), b = romanMix(N, T, u1)
-        let ra: Float = romanMix(0.0095, 0.0025, u0), rb: Float = romanMix(0.0095, 0.0025, u1)
+        let ra: Float = romanMix(0.0118, 0.003, u0), rb: Float = romanMix(0.0118, 0.003, u1)
         m.add(fg, DMat.skin, 0.005, coneS(a, b, ra, rb))
         if s > 0 { m.add(fg, DMat.skin, 0.003, sphereS(a, ra * 1.18)) }
       }
@@ -772,8 +782,9 @@ extension Dino {
       let pa = S + vec3(0, 0.002, 0.012), pb = W + vec3(0, 0.002, 0.004), pc = E + vec3(0, 0.002, 0.02)
       m.addStretch(fa, ua, DMat.membrane, 0.004, sheetS(pa, pb, pc, 0.0038), along(W, S))  // the propatagium in front of the elbow
       // legs and clawed feet
-      m.add(th, DMat.skin, 0.01, coneS(H, K, 0.016, 0.009))
-      m.add(sh, DMat.skin, 0.006, coneS(K, F, 0.0085, 0.006))
+      m.add(th, DMat.skin, 0.01, coneS(H, K, 0.021, 0.0115))
+      m.add(th, DMat.fuzz, 0.012, ellS(romanMix(H, K, 0.3), vec3(0.019, 0.03, 0.022)))  // the thigh, furred
+      m.add(sh, DMat.skin, 0.006, coneS(K, F, 0.0108, 0.0074))
       for t in -1...2 {
         let d = normalize(vec3(x * 0.15 * Float(t), -0.1, 1.0))
         var t1 = F + d * 0.022

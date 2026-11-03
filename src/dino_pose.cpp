@@ -243,8 +243,10 @@ void pteroPose(const Controls& c, Pose& out) {
   }
   // the membranes: drawn in against the bones of the wing as it folds. Each trailing-edge
   // bone squeezes the membrane towards a line through its joint (along x at rest), turned onto
-  // its wing bone as it folds.
-  float k = glm::mix(0.12f, 1.0f, spread), u = (1.0f - k) / 0.88f;
+  // its wing bone as it folds. Folded, some of it still shows: a drape of skin between the
+  // arm and the flank, a narrower one along the hand and the finger.
+  const float kFold[4] = {0.5f, 0.5f, 0.3f, 0.3f};
+  float u = 1.0f - spread;
   for (int side = 0; side < 2; ++side) {
     bool L = side == 0;
     vec3 T = wingTip();
@@ -254,6 +256,7 @@ void pteroPose(const Controls& c, Pose& out) {
     for (int i = 0; i < 4; ++i) {
       vec3 a = sk.joint[lead[i]], e = lead[i + 1] >= 0 ? sk.joint[lead[i + 1]] : T;
       vec3 f = glm::normalize(e - a);
+      float k = glm::mix(kFold[i], 1.0f, spread);
       b.st[trail[i]] = vec3(1.0f, k, k);
       b.R[trail[i]] = glm::slerp(quat(1, 0, 0, 0), rotationBetween(vec3(f.x < 0 ? -1.0f : 1.0f, 0, 0), f), u);
     }

@@ -669,16 +669,25 @@ Model raptorModel() {
   addTeeth(m, TH_JAW, vec3(0.008f, 0.41f, 0.262f), vec3(0.005f, 0.408f, 0.318f), 5, vec3(0, 1, 0.1f), 0.0065f, 0.0024f);
   openJaw(m, jaw0, j.jaw, G);
   addTeeth(m, TH_HEAD, vec3(0.0125f, 0.416f, 0.255f), vec3(0.0075f, 0.415f, 0.326f), 6, vec3(0, -1, 0.15f), 0.008f, 0.0042f);
-  // arms folded at the sides, a fan of quills on each forearm
+  // arms folded at the sides, a folded half-wing of quills on each: separate vanes rooted along
+  // the forearm and the hand, overlapping like a closed fan, the short ones at the elbow
+  // hanging down and back, the long ones at the hand lying back along the forearm and past the
+  // elbow; each tip rounded, so that the trailing edge is scalloped
   addTheroArms(m, j, 0.0135f, 0.0095f, 3, 0.013f, DM_FEATHER);
   for (int sd = -1; sd <= 1; sd += 2) {
     int fa = sd > 0 ? TH_LFORE : TH_RFORE;
     vec3 el(j.elL.x * sd, j.elL.y, j.elL.z), wr(j.wrL.x * sd, j.wrL.y, j.wrL.z);
-    vec3 out(sd * 0.006f, 0, 0);
-    vec3 a = wr + out + vec3(0, -0.006f, -0.004f), b = el + out + vec3(0, -0.004f, 0.0f);
-    vec3 c = b + vec3(sd * 0.004f, -0.052f, -0.034f), d = a + vec3(sd * 0.004f, -0.05f, -0.022f);
-    m.add(fa, DM_QUILL, 0.004f, sheetS(a, b, c, 0.0036f));
-    m.add(fa, DM_QUILL, 0.004f, sheetS(a, c, d, 0.0036f));
+    vec3 along = glm::normalize(wr - el);
+    const int n = 8;
+    for (int i = 0; i < n; ++i) {
+      float t = 1.3f * i / (n - 1);  // (past the wrist: onto the hand)
+      float u = t / 1.3f;
+      vec3 root = glm::mix(el, wr, t) + vec3(sd * (0.0065f + 0.002f * u), -0.004f, 0.0f);
+      vec3 back = -along + vec3(sd * 0.12f, -0.42f, 0.0f);
+      vec3 d = glm::normalize(glm::mix(vec3(sd * 0.16f, -0.8f, -0.58f), glm::normalize(back), u));
+      float len = glm::mix(0.03f, 0.074f, u);
+      m.add(fa, DM_QUILL, 0.0025f, ellS(root + d * (len * 0.5f), vec3(0.003f, len * 0.5f, 0.0068f), frameY(d, along)));
+    }
   }
   // legs: feathered thighs, scaly shins and feet, the sickle claws
   addTheroLegs(m, j, 0.03f, 0.0145f, 0.009f, 0.036f, DM_FEATHER, true);
@@ -876,11 +885,11 @@ Model pteroModel() {
   m.skel = &skeleton(D_KNIGHT);
   // the body, tilted up at the shoulders, in its coat of fine fur; the breast muscles that
   // drive the wings
-  m.add(PT_BODY, DM_FUZZ, 0.0f, ellS(vec3(0, 0.298f, -0.008f), vec3(0.054f, 0.06f, 0.112f), rotXm(-0.6f)));
-  m.add(PT_BODY, DM_FUZZ, 0.025f, ellS(vec3(0, 0.34f, 0.055f), vec3(0.064f, 0.047f, 0.048f)));  // the shoulders
-  m.add(PT_BODY, DM_FUZZ, 0.025f, ellS(vec3(0, 0.3f, 0.07f), vec3(0.046f, 0.045f, 0.036f)));   // the breast
+  m.add(PT_BODY, DM_FUZZ, 0.0f, ellS(vec3(0, 0.298f, -0.008f), vec3(0.061f, 0.066f, 0.116f), rotXm(-0.6f)));
+  m.add(PT_BODY, DM_FUZZ, 0.025f, ellS(vec3(0, 0.34f, 0.055f), vec3(0.072f, 0.052f, 0.052f)));  // the shoulders
+  m.add(PT_BODY, DM_FUZZ, 0.025f, ellS(vec3(0, 0.3f, 0.07f), vec3(0.052f, 0.05f, 0.04f)));   // the breast
   // the neck, furred at its base
-  addTube(m, DM_SKIN, {vec3(0, 0.35f, 0.07f), vec3(0, 0.43f, 0.125f), vec3(0, 0.485f, 0.158f)}, {0.026f, 0.02f, 0.017f},
+  addTube(m, DM_SKIN, {vec3(0, 0.35f, 0.07f), vec3(0, 0.43f, 0.125f), vec3(0, 0.485f, 0.158f)}, {0.03f, 0.022f, 0.018f},
           {PT_NECK, PT_NECK}, 0.012f);
   m.add(PT_NECK, DM_FUZZ, 0.015f, ellS(vec3(0, 0.37f, 0.085f), vec3(0.03f, 0.036f, 0.03f), rotXm(-0.6f)));
   // the head: skull, the long beak, the crest
@@ -921,19 +930,20 @@ Model pteroModel() {
     vec3 S(shL.x * x, shL.y, shL.z), E(elL.x * x, elL.y, elL.z), W(wrL.x * x, wrL.y, wrL.z), N(knL.x * x, knL.y, knL.z);
     vec3 T(tipL.x * x, tipL.y, tipL.z);
     vec3 H(hipL.x * x, hipL.y, hipL.z), K(kneeL.x * x, kneeL.y, kneeL.z), F(footL.x * x, footL.y, footL.z);
-    m.add(ua, DM_SKIN, 0.012f, coneS(S, E, 0.021f, 0.014f));
-    m.add(ua, DM_SKIN, 0.01f, ellS(glm::mix(S, E, 0.35f) + vec3(0, 0, 0.008f), vec3(0.03f, 0.013f, 0.017f)));  // the crest of the arm
-    m.add(fa, DM_SKIN, 0.008f, coneS(E, W, 0.013f, 0.011f));
-    m.add(fa, DM_SKIN, 0.006f, sphereS(W, 0.0135f));  // the wrist
+    m.add(ua, DM_SKIN, 0.012f, coneS(S, E, 0.026f, 0.0175f));
+    m.add(ua, DM_SKIN, 0.01f, ellS(glm::mix(S, E, 0.35f) + vec3(0, 0, 0.008f), vec3(0.036f, 0.017f, 0.021f)));  // the crest of the arm
+    m.add(fa, DM_SKIN, 0.008f, coneS(E, W, 0.0175f, 0.0135f));
+    m.add(fa, DM_SKIN, 0.008f, ellS(glm::mix(E, W, 0.3f), vec3(0.016f, 0.0145f, 0.034f), frameY(vec3(0, 1, 0), W - E)));  // its muscles
+    m.add(fa, DM_SKIN, 0.006f, sphereS(W, 0.0165f));  // the wrist
     // the pteroid: a slender bone at the wrist pointing back at the shoulder, holding up the
     // membrane in front of the arm
     m.add(fa, DM_SKIN, 0.004f, coneS(W, W + (S - W) * 0.3f + vec3(0, 0.004f, 0.012f), 0.005f, 0.0024f));
-    m.add(mc, DM_SKIN, 0.006f, coneS(W, N, 0.011f, 0.0095f));
-    m.add(mc, DM_SKIN, 0.005f, sphereS(N, 0.0125f));  // the knuckle of the wing finger
+    m.add(mc, DM_SKIN, 0.006f, coneS(W, N, 0.0135f, 0.0115f));
+    m.add(mc, DM_SKIN, 0.005f, sphereS(N, 0.0152f));  // the knuckle of the wing finger
     // the wing finger: four long joints, each a little thinner
     for (int s = 0; s < 4; ++s) {
       vec3 a = glm::mix(N, T, s / 4.0f), b = glm::mix(N, T, (s + 1) / 4.0f);
-      float ra = glm::mix(0.0095f, 0.0025f, s / 4.0f), rb = glm::mix(0.0095f, 0.0025f, (s + 1) / 4.0f);
+      float ra = glm::mix(0.0118f, 0.003f, s / 4.0f), rb = glm::mix(0.0118f, 0.003f, (s + 1) / 4.0f);
       m.add(fg, DM_SKIN, 0.005f, coneS(a, b, ra, rb));
       if (s > 0) m.add(fg, DM_SKIN, 0.003f, sphereS(a, ra * 1.18f));
     }
@@ -1007,8 +1017,9 @@ Model pteroModel() {
     m.addStretch(fa, ua, DM_MEMBRANE, 0.004f, sheetS(S + vec3(0, 0.002f, 0.012f), W + vec3(0, 0.002f, 0.004f), E + vec3(0, 0.002f, 0.02f), 0.0038f),
                  along(W, S));  // the propatagium in front of the elbow
     // legs and clawed feet
-    m.add(th, DM_SKIN, 0.01f, coneS(H, K, 0.016f, 0.009f));
-    m.add(sh, DM_SKIN, 0.006f, coneS(K, F, 0.0085f, 0.006f));
+    m.add(th, DM_SKIN, 0.01f, coneS(H, K, 0.021f, 0.0115f));
+    m.add(th, DM_FUZZ, 0.012f, ellS(glm::mix(H, K, 0.3f), vec3(0.019f, 0.03f, 0.022f)));  // the thigh, furred
+    m.add(sh, DM_SKIN, 0.006f, coneS(K, F, 0.0108f, 0.0074f));
     for (int t = -1; t <= 2; ++t) {
       vec3 d = glm::normalize(vec3(x * 0.15f * t, -0.1f, 1.0f));
       vec3 t1 = F + d * 0.022f;
