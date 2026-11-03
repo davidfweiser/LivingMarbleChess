@@ -19,7 +19,7 @@ struct MovePlan {
 };
 
 constexpr int kBattleStyles = 3;  // per piece type
-const char* battleStyleName(int kind, int style, int set = 0);  // set: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans
+const char* battleStyleName(int kind, int style, int set = 0);  // set: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs
 
 std::unique_ptr<Anim> makeMoveAnim(World& w, const MovePlan& plan);
 std::unique_ptr<Anim> makeCheckmateAnim(World& w, int kingId, int winnerColor);
@@ -47,3 +47,10 @@ std::unique_ptr<Anim> makeRomanBattle(World& w, int kind, int style, const MoveP
 std::unique_ptr<Anim> makeRomanQuiet(const MovePlan& plan);
 std::unique_ptr<Anim> makeRomanQuickCapture(const MovePlan& plan);
 std::unique_ptr<Anim> makeRomanCheckmate(int kingId, int winnerColor);
+
+// the dinosaurs (battle_dino.cpp)
+const char* dinoBattleStyleName(int kind, int style);
+std::unique_ptr<Anim> makeDinoBattle(World& w, int kind, int style, const MovePlan& plan);
+std::unique_ptr<Anim> makeDinoQuiet(const MovePlan& plan);
+std::unique_ptr<Anim> makeDinoQuickCapture(const MovePlan& plan);
+std::unique_ptr<Anim> makeDinoCheckmate(int kingId, int winnerColor);

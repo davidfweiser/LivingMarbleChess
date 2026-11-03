@@ -79,6 +79,24 @@ enum Sfx {
   SFX_SCORPION,  // the bolt-thrower loosing
   SFX_LION,      // a lion's roar
   SFX_GULP,      // drinking, then choking
+  // the dinosaurs
+  SFX_REXROAR,   // a tyrannosaurus' roar: deep, rumbling, bellowing
+  SFX_SCREECH,   // a raptor's shriek
+  SFX_HISS,      // a hiss
+  SFX_GROWL,     // a low growl, rumbling in the throat
+  SFX_SQUAWK,    // a pteranodon's harsh call
+  SFX_BELLOW,    // a great plant-eater's bellow
+  SFX_SNORT,     // a snort
+  SFX_FLAP,      // wing beats
+  SFX_CRUNCH,    // bones crunched in jaws
+  SFX_TEAR,      // flesh torn by claws
+  SFX_SNAP,      // jaws snapping shut
+  SFX_TAILWHIP,  // a tail cracking like a whip
+  SFX_QUAKE,     // a giant footfall that shakes the ground
+  SFX_DINODEATH, // a dying dinosaur's groan
+  SFX_METEOR,    // a meteor screaming in, and the impact
+  SFX_GORE,      // horns driven in
+  SFX_BODYFALL,  // a heavy body crashing down
   // the ghosts of captured pieces
   SFX_CHEER,     // a far-off little crowd of ghosts cheering
   SFX_COUNT
@@ -99,7 +117,7 @@ class Audio {
 
   // The background music: every piece type has its own themes in each army (music.h).
   void playMusic(int piece);  // the music of this piece (0 pawn .. 5 king), from the next bar
-  void setMusicArmy(int set); // whose music: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans
+  void setMusicArmy(int set); // whose music: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs
   void resumeMusic();         // a new game: start it again if it was stopped
   void stopMusic();           // the game is over: fade it out
   void setMusic(bool on);

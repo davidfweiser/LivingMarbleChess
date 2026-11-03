@@ -469,6 +469,11 @@ void Renderer::uploadRoman(const roman::Library& lib) {
   romanReady = true;
 }
 
+void Renderer::uploadDino(const dino::Library& lib) {
+  uploadFigures(dino, lib.asset, dino::D_COUNT);
+  dinoReady = true;
+}
+
 void Renderer::uploadBoardTextures(const tex::Image& albedo, const tex::Image& detail, float half) {
   delTex(boardAlbedo);
   delTex(boardDetail);

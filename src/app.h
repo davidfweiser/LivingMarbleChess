@@ -60,7 +60,7 @@ struct Options {
   std::string selectSq;
   std::string loadingShot;        // capture the loading screen           // e.g. e2, pre-select a piece (screenshots)          // e.g. e5d6, played right after setup          // simulate without drawing (stress tests)
   int scenario = 0;               // canned positions for screenshots
-  int pieces = 0;                 // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans
+  int pieces = 0;                 // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs
   std::string join;               // the web page: join a friend's online game (its code)
   bool lobby = false;             // the web page: the lobby (Play someone online) as soon as the game is ready
   bool touch = false;             // the web page on a touch screen (iPhone, iPad): fingers, and a toolbar
@@ -220,11 +220,11 @@ class App {
   void setFullscreen(bool on);
   void setMode(Mode m);
   void applyGraphicsPreset(int p);
-  // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans (the figure sets are built in the background on first use)
+  // 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs (the figure sets are built in the background on first use)
   void setPieceSet(int s);
   int pieceSet = 0;
   int pendingSet = -1;
-  bool armyBuilding(int set) const { return set > 0 && set < 4 && army[set].running; }
+  bool armyBuilding(int set) const { return set > 0 && set < 5 && army[set].running; }
   float armyProgress(int set) const;
   bool isHumanTurn() const;
   bool animating() const { return !anims.empty(); }
@@ -287,13 +287,14 @@ class App {
   medieval::Library mlib;
   alien::Library alib;
   roman::Library rlib;
-  struct ArmyBuild {  // background build of a figure set (index 1 medieval, 2 aliens, 3 Romans)
+  dino::Library dlib;
+  struct ArmyBuild {  // background build of a figure set (index 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs)
     meshgen::BuildProgress progress;
     std::thread thread;
     std::atomic<bool> ready{false};
     bool running = false;
     bool uploaded = false;
-  } army[4];
+  } army[5];
   void startArmyBuild(int set);
   void buildArmy(int set, meshgen::BuildProgress* progress);
   void uploadArmy(int set);

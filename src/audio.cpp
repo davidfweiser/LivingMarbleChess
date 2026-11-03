@@ -1535,6 +1535,288 @@ void synthRoman(std::vector<Buf>& S) {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// The dinosaurs' sounds
+// ---------------------------------------------------------------------------
+void synthDino(std::vector<Buf>& S) {
+  Rng r;
+  r.s = 9241;
+  {  // REXROAR: a huge, deep bellow with a rasp in it, a trumpeting edge and a rumble under it all
+    Buf b = make(3.0f);
+    auto pitch = [](float t) {
+      float up = std::sin(std::min(t / 1.5f, 1.0f) * 3.14159f);
+      return 52.0f + 34.0f * up - 16.0f * std::max(0.0f, t - 1.5f);
+    };
+    auto env = [](float t) { return envAR(t, 0.3f, 1.25f, 1.0f) * (0.75f + 0.25f * std::sin(t * 6.2831f * 21.0f)); };
+    addVoice(b, r, 0.0f, 2.6f, pitch, env, kAw, kOh, [](float t) { return t * 0.5f; }, 0.55f, 0.38f);
+    addVoice(b, r, 0.05f, 2.4f, [pitch](float t) { return pitch(t) * 3.02f; },
+             [](float t) { return envAR(t, 0.4f, 0.9f, 0.9f) * 0.32f; }, kEh, kAh, [](float t) { return t * 0.6f; }, 0.4f, 0.3f);
+    for (size_t i = 0; i < b.size(); ++i) {  // the rumble in the chest
+      float t = (float)i / SR;
+      b[i] += 0.5f * envAR(t, 0.4f, 1.2f, 1.0f) * (float)std::sin(TAU * (31.0 + 6.0 * std::sin(t * 2.0)) * t) *
+              (0.6f + 0.4f * std::sin(t * 6.2831f * 13.0f));
+    }
+    Biquad dark;
+    dark.lowpass(2400, 0.7f);
+    for (float& x : b) x = std::tanh(dark.run(x) * 1.4f);
+    reverb(b, 0.4f, 0.86f, 0.35f, 1.5f);
+    normalize(b, 0.95f);
+    S[SFX_REXROAR] = b;
+  }
+  {  // SCREECH: a raptor's harsh, rising shriek and a chattering trill
+    Buf b = make(1.1f);
+    addVoice(b, r, 0.0f, 0.55f, [](float t) { return 520.0f + 420.0f * std::sin(std::min(t / 0.35f, 1.0f) * 2.2f); },
+             [](float t) { return envAR(t, 0.03f, 0.3f, 0.2f); }, kEh, kAh, [](float t) { return t * 2.0f; }, 0.4f, 0.32f);
+    addVoice(b, r, 0.5f, 0.45f, [](float t) { return 760.0f - 300.0f * t; },
+             [](float t) { return envAR(t, 0.01f, 0.25f, 0.18f) * (0.5f + 0.5f * std::sin(t * 6.2831f * 26.0f)) * 0.7f; }, kAh, kUh,
+             [](float t) { return t * 2.0f; }, 0.45f, 0.35f);
+    Biquad hi;
+    hi.bandpass(3200, 1.2f);
+    addNoise(b, r, 0.0f, 0.35f, 6, hi, 0.03f);
+    reverb(b, 0.25f, 0.8f, 0.35f, 0.9f);
+    normalize(b, 0.8f);
+    S[SFX_SCREECH] = b;
+  }
+  {  // HISS: breath forced through the teeth, a growl under it
+    Buf b = make(1.0f);
+    Biquad h1, h2;
+    h1.bandpass(4200, 1.5f);
+    h2.bandpass(2600, 2.0f);
+    for (size_t i = 0; i < b.size(); ++i) {
+      float t = (float)i / SR;
+      float env = envAR(t, 0.06f, 0.55f, 0.3f);
+      b[i] = (h1.run(r.bi()) * 1.0f + h2.run(r.bi()) * 0.6f) * env * (0.85f + 0.15f * std::sin(t * 6.2831f * 31.0f));
+    }
+    addVoice(b, r, 0.0f, 0.9f, [](float t) { return 95.0f + 10.0f * std::sin(t * 9.0f); },
+             [](float t) { return envAR(t, 0.1f, 0.5f, 0.3f) * 0.25f; }, kUh, kUh, [](float) { return 0.0f; }, 0.8f, 0.4f);
+    normalize(b, 0.6f);
+    S[SFX_HISS] = b;
+  }
+  {  // GROWL: a deep, rough rumble in the throat
+    Buf b = make(1.5f);
+    addVoice(b, r, 0.0f, 1.35f, [](float t) { return 62.0f + 12.0f * std::sin(t * 3.0f); },
+             [](float t) { return envAR(t, 0.2f, 0.75f, 0.4f) * (0.55f + 0.45f * std::fabs(std::sin(t * 6.2831f * 9.0f))); }, kUh,
+             kOh, [](float t) { return t; }, 0.6f, 0.45f);
+    Biquad lp;
+    lp.lowpass(1100, 0.7f);
+    for (float& x : b) x = lp.run(x);
+    reverb(b, 0.25f, 0.82f, 0.4f, 1.1f);
+    normalize(b, 0.8f);
+    S[SFX_GROWL] = b;
+  }
+  {  // SQUAWK: a pteranodon's harsh "kraa-kraak"
+    Buf b = make(1.0f);
+    for (int k = 0; k < 2; ++k) {
+      float t0 = k * 0.3f, f = k == 0 ? 380.0f : 330.0f;
+      addVoice(b, r, t0, 0.28f, [f](float t) { return f + 120.0f * std::sin(std::min(t / 0.2f, 1.0f) * 3.14159f); },
+               [](float t) { return envAR(t, 0.012f, 0.16f, 0.1f); }, kAh, kAw, [](float t) { return t * 4.0f; }, 0.35f, 0.42f);
+    }
+    reverb(b, 0.3f, 0.82f, 0.35f, 1.2f);
+    normalize(b, 0.8f);
+    S[SFX_SQUAWK] = b;
+  }
+  {  // BELLOW: a low, honking call through a great nose
+    Buf b = make(2.4f);
+    auto pitch = [](float t) { return 78.0f + 26.0f * std::sin(std::min(t / 1.1f, 1.0f) * 3.14159f) - 10.0f * std::max(0.0f, t - 1.2f); };
+    addVoice(b, r, 0.0f, 1.9f, pitch, [](float t) { return envAR(t, 0.18f, 1.1f, 0.6f); }, kOh, kUh, [](float t) { return t * 0.6f; },
+             0.3f, 0.14f);
+    addVoice(b, r, 0.0f, 1.9f, [pitch](float t) { return pitch(t) * 2.0f; }, [](float t) { return envAR(t, 0.25f, 1.0f, 0.6f) * 0.4f; },
+             kOh, kOh, [](float) { return 0.0f; }, 0.2f, 0.1f);
+    Biquad lp;
+    lp.lowpass(1500, 0.8f);
+    for (float& x : b) x = lp.run(x);
+    reverb(b, 0.45f, 0.86f, 0.35f, 1.5f);
+    normalize(b, 0.85f);
+    S[SFX_BELLOW] = b;
+  }
+  {  // SNORT: two blasts of breath through big nostrils
+    Buf b = make(0.8f);
+    for (int k = 0; k < 2; ++k) {
+      float t0 = k * 0.28f;
+      Biquad n1, n2;
+      n1.bandpass(420, 1.5f);
+      n2.bandpass(1500, 2.0f);
+      for (size_t i = 0; i < (size_t)(0.22f * SR); ++i) {
+        float t = (float)i / SR;
+        float env = envAR(t, 0.01f, 0.05f, 0.15f);
+        size_t j = (size_t)(t0 * SR) + i;
+        if (j < b.size()) b[j] += (n1.run(r.bi()) * 2.0f + n2.run(r.bi()) * 0.5f) * env * (0.7f + 0.3f * r.bi());
+      }
+      addDampedSine(b, t0, 70, 0.4f, 20);
+    }
+    normalize(b, 0.7f);
+    S[SFX_SNORT] = b;
+  }
+  {  // FLAP: three great beats of leathery wings
+    Buf b = make(1.2f);
+    for (int k = 0; k < 3; ++k) {
+      float t0 = 0.02f + k * 0.32f;
+      Biquad lo, rs;
+      lo.lowpass(380, 0.9f);
+      rs.bandpass(1800, 1.0f);
+      for (size_t i = 0; i < (size_t)(0.3f * SR); ++i) {
+        float t = (float)i / SR, u = t / 0.3f;
+        float env = std::pow(std::sin(u * 3.14159f), 2.0f) * (1.0f - 0.5f * u);
+        size_t j = (size_t)(t0 * SR) + i;
+        if (j < b.size()) b[j] += (lo.run(r.bi()) * 6.0f + rs.run(r.bi()) * 0.25f) * env;
+      }
+    }
+    normalize(b, 0.65f);
+    S[SFX_FLAP] = b;
+  }
+  {  // CRUNCH: bones cracking between great teeth
+    Buf b = make(0.9f);
+    addDampedSine(b, 0.0f, 80, 0.8f, 16, 0.6f);
+    for (int k = 0; k < 26; ++k) {
+      float t = 0.01f + -std::log(1.0f - r.next() * 0.99f) * 0.08f;
+      Biquad c;
+      c.bandpass(900 + r.next() * 3200, 2.5f);
+      addNoise(b, r, t, 0.4f + 0.6f * r.next(), 140 + 100 * r.next(), c, 0.0004f);
+      if (r.next() < 0.4f) addDampedSine(b, t, 1300 + r.next() * 1800, 0.12f, 90);
+    }
+    Biquad wet;
+    wet.bandpass(600, 1.5f);
+    addNoise(b, r, 0.0f, 0.5f, 9, wet, 0.01f);
+    normalize(b, 0.9f);
+    S[SFX_CRUNCH] = b;
+  }
+  {  // TEAR: hide and flesh ripped open
+    Buf b = make(0.7f);
+    Biquad f;
+    for (size_t i = 0; i < (size_t)(0.42f * SR); ++i) {
+      float t = (float)i / SR, u = t / 0.42f;
+      if (i % 32 == 0) f.bandpass(600.0f + 2200.0f * u + 400.0f * r.next(), 2.0f);
+      float grit = 0.6f + 0.4f * std::sin(t * 6.2831f * (60.0f + 40.0f * r.next()));
+      b[i] += f.run(r.bi()) * std::pow(std::sin(u * 3.14159f), 0.6f) * grit * 1.4f;
+    }
+    addDampedSine(b, 0.0f, 130, 0.5f, 22);
+    normalize(b, 0.8f);
+    S[SFX_TEAR] = b;
+  }
+  {  // SNAP: jaws slamming shut
+    Buf b = make(0.5f);
+    addDampedSine(b, 0.0f, 950, 0.7f, 70);
+    addDampedSine(b, 0.0f, 1720, 0.45f, 90);
+    addDampedSine(b, 0.0f, 140, 0.8f, 28, 0.5f);
+    Biquad hp;
+    hp.highpass(2500);
+    addNoise(b, r, 0.0f, 1.2f, 160, hp, 0.0002f);
+    normalize(b, 0.85f);
+    S[SFX_SNAP] = b;
+  }
+  {  // TAILWHIP: a rising swish, then the crack of a tail breaking the sound barrier
+    Buf b = make(1.0f);
+    Biquad f;
+    const float L = 0.32f;
+    for (size_t i = 0; i < (size_t)(L * SR); ++i) {
+      float t = (float)i / SR, u = t / L;
+      if (i % 32 == 0) f.bandpass(300.0f + 2500.0f * u * u, 1.3f);
+      b[i] += f.run(r.bi()) * u * u * 1.2f;
+    }
+    Biquad hp;
+    hp.highpass(1500);
+    addNoise(b, r, L, 3.0f, 260, hp, 0.0002f);
+    addDampedSine(b, L, 2300, 0.45f, 120);
+    addDampedSine(b, L, 90, 0.8f, 18, 0.5f);
+    reverb(b, 0.3f, 0.84f, 0.4f, 1.2f);
+    normalize(b, 0.9f);
+    S[SFX_TAILWHIP] = b;
+  }
+  {  // QUAKE: a giant's footfall, the ground shuddering
+    Buf b = make(1.4f);
+    addDampedSine(b, 0.0f, 46, 1.0f, 6, 0.4f);
+    addDampedSine(b, 0.0f, 92, 0.45f, 11);
+    Biquad lo;
+    lo.lowpass(240);
+    addNoise(b, r, 0.0f, 3.0f, 7, lo, 0.004f);
+    for (int k = 0; k < 10; ++k) {
+      float t = 0.05f + r.next() * 0.5f;
+      Biquad c;
+      c.bandpass(800 + r.next() * 2000, 3.0f);
+      addNoise(b, r, t, 0.08f, 80, c);
+    }
+    reverb(b, 0.25f, 0.84f, 0.45f, 1.3f);
+    normalize(b, 0.95f);
+    S[SFX_QUAKE] = b;
+  }
+  {  // DINODEATH: a long groan falling away, the last breath
+    Buf b = make(2.4f);
+    addVoice(b, r, 0.0f, 1.8f, [](float t) { return 130.0f - 55.0f * std::min(1.0f, t / 1.6f) + 6.0f * std::sin(t * 23.0f); },
+             [](float t) { return envAR(t, 0.08f, 0.9f, 0.8f) * (0.8f + 0.2f * std::sin(t * 6.2831f * 11.0f)); }, kOh, kUh,
+             [](float t) { return t * 0.7f; }, 0.6f, 0.35f);
+    Biquad br;
+    br.bandpass(700, 0.8f);
+    addNoise(b, r, 1.6f, 0.25f, 3, br, 0.15f);
+    Biquad lp;
+    lp.lowpass(1800);
+    for (float& x : b) x = lp.run(x);
+    reverb(b, 0.35f, 0.84f, 0.35f, 1.3f);
+    normalize(b, 0.8f);
+    S[SFX_DINODEATH] = b;
+  }
+  {  // METEOR: a rising scream out of the sky, a blinding impact, the ground roaring for seconds
+    Buf b = make(6.0f);
+    const float hit = 2.2f;
+    Biquad f;
+    for (size_t i = 0; i < (size_t)(hit * SR); ++i) {
+      float t = (float)i / SR, u = t / hit;
+      if (i % 32 == 0) f.bandpass(3200.0f - 2400.0f * u, 2.5f);
+      b[i] += f.run(r.bi()) * (0.05f + 0.95f * u * u * u) * 1.5f;
+    }
+    addDampedSine(b, hit, 34, 1.4f, 1.6f, 0.2f);
+    addDampedSine(b, hit, 61, 0.9f, 2.4f);
+    Biquad lo;
+    lo.lowpass(320);
+    addNoise(b, r, hit, 6.0f, 1.2f, lo, 0.003f);
+    Biquad mid;
+    mid.bandpass(1200, 0.7f);
+    addNoise(b, r, hit, 1.6f, 5.0f, mid, 0.002f);
+    for (int k = 0; k < 40; ++k) {
+      float t = hit + 0.2f + -std::log(1.0f - r.next() * 0.99f) * 0.6f;
+      Biquad c;
+      c.bandpass(500 + r.next() * 2500, 3.0f);
+      addNoise(b, r, t, 0.15f + 0.2f * r.next(), 60, c);
+    }
+    for (float& x : b) x = std::tanh(x * 1.3f);
+    reverb(b, 0.45f, 0.88f, 0.35f, 1.6f);
+    normalize(b, 1.0f);
+    S[SFX_METEOR] = b;
+  }
+  {  // GORE: horns driven in: a heavy blow, a wet crunch
+    Buf b = make(0.8f);
+    addDampedSine(b, 0.0f, 95, 1.0f, 14, 1.0f);
+    addDampedSine(b, 0.0f, 210, 0.4f, 25);
+    Biquad sq;
+    for (size_t i = 0; i < (size_t)(0.4f * SR); ++i) {
+      float t = (float)i / SR;
+      if (i % 64 == 0) sq.bandpass(450.0f + 400.0f * std::sin(t * 60.0f) + 300.0f * r.next(), 2.5f);
+      b[i] += sq.run(r.bi()) * std::exp(-t * 8.0f) * 1.4f;
+    }
+    for (int k = 0; k < 10; ++k) {
+      Biquad c;
+      c.bandpass(1200 + r.next() * 2500, 3.0f);
+      addNoise(b, r, 0.01f + r.next() * 0.12f, 0.3f, 140, c, 0.0004f);
+    }
+    normalize(b, 0.9f);
+    S[SFX_GORE] = b;
+  }
+  {  // BODYFALL: a great body hitting the ground, and the dust settling
+    Buf b = make(1.3f);
+    addDampedSine(b, 0.0f, 58, 1.0f, 9, 0.5f);
+    addDampedSine(b, 0.02f, 120, 0.4f, 16);
+    Biquad lo;
+    lo.lowpass(420);
+    addNoise(b, r, 0.0f, 2.5f, 10, lo, 0.003f);
+    Biquad sl;
+    sl.bandpass(900, 1.0f);
+    addNoise(b, r, 0.03f, 0.6f, 6, sl, 0.02f);
+    reverb(b, 0.2f, 0.82f, 0.45f, 1.1f);
+    normalize(b, 0.85f);
+    S[SFX_BODYFALL] = b;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The ghosts
 // ---------------------------------------------------------------------------
@@ -1587,13 +1869,14 @@ std::vector<Buf> synthEverything() {
   synthMedieval(S);
   synthAlien(S);
   synthRoman(S);
+  synthDino(S);
   synthGhosts(S);
   return S;
 }
 
 struct Audio::Impl {
   std::vector<Buf> sounds;
-  std::thread medievalSynth;  // the medieval army's, the aliens', the Romans' and the ghosts' sounds are made in the background
+  std::thread medievalSynth;  // the medieval army's, the aliens', the Romans', the dinosaurs' and the ghosts' sounds are made in the background
   struct Voice {
     int sfx = -1;
     double pos = 0;
@@ -1658,6 +1941,7 @@ bool Audio::init() {
     synthMedieval(med);
     synthAlien(med);
     synthRoman(med);
+    synthDino(med);
     synthGhosts(med);
     std::lock_guard<std::mutex> lk(impl->mtx);
     for (int i = SFX_HYMN; i < SFX_COUNT; ++i) impl->sounds[i] = std::move(med[i]);
@@ -1733,7 +2017,8 @@ static float musicDuck(Sfx s) {
     case SFX_MATE: return 0.25f;
     case SFX_BELL: case SFX_DRONE: return 0.35f;
     case SFX_CHECK: case SFX_HORN: case SFX_CORNU: return 0.45f;
-    case SFX_CROWD: return 0.6f;
+    case SFX_CROWD: case SFX_REXROAR: return 0.6f;
+    case SFX_METEOR: return 0.4f;
     default: return 1.0f;
   }
 }
@@ -1797,7 +2082,10 @@ bool Audio::dumpWav(const char* dir) {
                                          "twinkle", "sizzle",  "hatch",   "drone",   "sputter",
                                          "slash",   "stab",    "blood",   "draw",    "parry",  "shield", "grunt",
                                          "shout",   "death",   "fall",    "crowd",   "cornu",  "wheels", "whip",
-                                         "creak",   "ram",     "scorpion", "lion",   "gulp",   "cheer"};
+                                         "creak",   "ram",     "scorpion", "lion",   "gulp",
+                                         "rexroar", "screech", "hiss",    "growl",   "squawk", "bellow", "snort",
+                                         "flap",    "crunch",  "tear",    "snap",    "tailwhip", "quake", "dinodeath",
+                                         "meteor",  "gore",    "bodyfall", "cheer"};
   std::vector<Buf> S = synthEverything();
   for (int i = 0; i < SFX_COUNT; ++i) {
     std::string path = std::string(dir) + "/" + names[i] + ".wav";
@@ -1814,7 +2102,7 @@ bool Audio::dumpWav(const char* dir) {
   }
   // and every song of the music, in stereo: music-<army>-<piece>-<title>.wav
   static const char* const kPiece[::music::kPieces] = {"pawn", "knight", "bishop", "rook", "queen", "king"};
-  static const char* const kArmy[::music::kArmies] = {"marble", "medieval", "alien", "roman"};
+  static const char* const kArmy[::music::kArmies] = {"marble", "medieval", "alien", "roman", "dino"};
   ::music::Engine m;
   for (const std::string& w : m.warnings()) std::printf("[music] %s\n", w.c_str());
   for (int i = 0; i < m.songCount(); ++i) {

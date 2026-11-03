@@ -343,17 +343,20 @@
       <p>Pieces hop, lean and turn to face each other. Each kind knows three attacks &mdash; a bull charge, a joust,
         a judgment beam, a cannon shot, a frost nova, a rain of golden swords &mdash; and the loser breaks into real
         fragments that tumble across the board.</p></div>
-    <div><h3>Four armies</h3>
+    <div><h3>Five armies</h3>
       <p>Carved Staunton <b>marble</b>; a <b>medieval</b> army of men-at-arms, knights on horseback, bishops on their
         thrones and a gatehouse with a dragon inside; the <b>aliens</b>: little green men, flying saucers and
-        big-brained psychics floating in glass jars; and the <b>Romans</b>: legionaries in cloaks with spears and
-        swords, war chariots, a wooden siege tower, the empress and the emperor &mdash; who fight hand to hand.</p></div>
+        big-brained psychics floating in glass jars; the <b>Romans</b>: legionaries in cloaks with spears and
+        swords, war chariots, a wooden siege tower, the empress and the emperor &mdash; who fight hand to hand; and the
+        <b>dinosaurs</b>: feathered raptors, pteranodons, triceratops, a brachiosaurus, the spinosaurus queen and the
+        tyrannosaurus king &mdash; who fight tooth and claw.</p></div>
     <div><h3>The fallen come back</h3>
       <p>A captured piece returns as a translucent ghost beside the board, watches the rest of the game and cheers its
         side on.</p></div>
     <div><h3>Music for every piece</h3>
-      <p>Three themes for every piece in every army &mdash; concert-hall classical, early music from the castle, and
-        1950s science fiction with a theremin &mdash; and when a piece moves, its music takes over.</p></div>
+      <p>Three themes for every piece in every army &mdash; concert-hall classical, early music from the castle,
+        1950s science fiction with a theremin, sword-and-sandal epics and a lost world of horns and great drums
+        &mdash; and when a piece moves, its music takes over.</p></div>
     <div><h3>Play your way</h3>
       <p>Against the computer at five strengths, a friend on the same screen, a friend online with a link &mdash; or
         anyone online: pick a picture, meet the other players in the lobby, look at their stats and ask them to play,
@@ -531,7 +534,7 @@
   var args = [];
   var q = new URLSearchParams(location.search);
   var pieces = q.get('pieces');
-  if (pieces && /^(marble|medieval|alien|aliens|roman|romans)$/.test(pieces)) args.push('--pieces', pieces);
+  if (pieces && /^(marble|medieval|alien|aliens|roman|romans|dino|dinos|dinosaur|dinosaurs)$/.test(pieces)) args.push('--pieces', pieces);
   [['quality', /^[0-3]$/], ['graphics', /^[0-3]$/], ['level', /^[0-4]$/]].forEach(function (o) {
     var v = q.get(o[0]);
     if (v !== null && o[1].test(v)) args.push('--' + o[0], v);
