@@ -36,7 +36,6 @@ using namespace bkit;
 
 const float kTau = 6.2831853f;
 const vec3 kBlood(0.3f, 0.004f, 0.003f);
-const vec3 kGold(1.0f, 0.82f, 0.45f);
 const vec3 kSpark(3.2f, 2.6f, 1.8f);
 
 float approach(float x, float target, float rate) {

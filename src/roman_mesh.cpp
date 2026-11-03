@@ -22,8 +22,6 @@ using namespace sculpt;
 
 namespace {
 
-const float kPi = 3.14159265f;
-
 // ---------------------------------------------------------------------------
 // Joints
 // ---------------------------------------------------------------------------
@@ -617,7 +615,7 @@ Model legionaryModel() {
              return std::max(ellipsoid(q - vec3(0, 0, 0.008f), vec3(0.03f, 0.03f, 0.024f)), 0.006f - q.z);
            }, c + R * vec3(0, 0, 0.02f), 0.04f));
     // the emblem: a laurel ring round the boss, thunderbolts above and below, wings to each side
-    m.paint(RM_GOLD, fnS([c, Rt, rect, bulge](const vec3& p) {
+    m.paint(RM_GOLD, fnS([c, Rt, bulge](const vec3& p) {
               vec3 q = Rt * (p - c);
               float face = std::fabs(q.z + bulge(q.x)) - 0.0075f;
               float ring = std::fabs(glm::length(vec2(q.x, q.y)) - 0.055f) - 0.0035f;
