@@ -15,7 +15,7 @@
 import Foundation
 
 let musicPieceNames = ["pawn", "knight", "bishop", "rook", "queen", "king"]
-let musicArmyNames = ["marble", "medieval", "alien", "roman"]
+let musicArmyNames = ["marble", "medieval", "alien", "roman", "dino"]
 
 private let mSR = 44100
 private let mTAU = 6.283185307179586
@@ -27,7 +27,7 @@ private let mBlock = 256       // the mix is made in blocks of this many samples
 private let mEcho = 65536      // echo line per channel (1.49 s)
 private let mLevel: Float = 0.5  // music under the sound effects
 private let mPieces = 6
-private let mArmies = 4  // Living Marble, medieval, aliens, Romans
+private let mArmies = 5  // Living Marble, medieval, aliens, Romans, dinosaurs
 private let mSlots = mArmies * mPieces  // an army's piece: army * mPieces + piece
 
 // kinds, waves, filters and drums
@@ -1545,7 +1545,7 @@ struct MusicEngine {
     }
   }
 
-  /// Whose music: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans (from the next bar line).
+  /// Whose music: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs (from the next bar line).
   mutating func setArmy(_ a: Int) {
     let a = a >= 1 && a < mArmies ? a : 0
     if a == army { return }

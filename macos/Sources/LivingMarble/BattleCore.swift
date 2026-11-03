@@ -720,11 +720,12 @@ private func makeBattle(_ kind: Int, _ style: Int, _ plan: MovePlan) -> Anim {
   }
 }
 
-/// set: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans.
+/// set: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs.
 func battleStyleName(_ kind: Int, _ style: Int, _ set: Int = 0) -> String {
   if set == 1 { return medievalBattleStyleName(kind, style) }
   if set == 2 { return alienBattleStyleName(kind, style) }
   if set == 3 { return romanBattleStyleName(kind, style) }
+  if set == 4 { return dinoBattleStyleName(kind, style) }
   if kind < 0 || kind >= Kind.count || style < 0 || style >= kBattleStyles { return "" }
   return kStyleNames[kind][style]
 }
@@ -732,10 +733,12 @@ func battleStyleName(_ kind: Int, _ style: Int, _ set: Int = 0) -> String {
 func makeMoveAnim(_ w: World, _ plan: MovePlan) -> Anim {
   let seq = SeqAnim()
   let set = w.actors[plan.mover].set
-  let med = set == 1, ali = set == 2, rom = set == 3
+  let med = set == 1, ali = set == 2, rom = set == 3, din = set == 4
   if plan.victim >= 0 {
     if plan.fast {
-      if rom {
+      if din {
+        seq.add(makeDinoQuickCapture(plan))
+      } else if rom {
         seq.add(makeRomanQuickCapture(plan))
       } else {
         seq.add(med ? makeMedievalQuickCapture(plan) : (ali ? makeAlienQuickCapture(plan) : QuickCapture(plan)))
@@ -743,7 +746,9 @@ func makeMoveAnim(_ w: World, _ plan: MovePlan) -> Anim {
     } else {
       let kind = w.actors[plan.mover].kind
       let style = pickStyle(kind, plan.style)
-      if rom {
+      if din {
+        seq.add(makeDinoBattle(w, kind, style, plan))
+      } else if rom {
         seq.add(makeRomanBattle(w, kind, style, plan))
       } else {
         seq.add(med ? makeMedievalBattle(kind, style, plan)
@@ -751,7 +756,9 @@ func makeMoveAnim(_ w: World, _ plan: MovePlan) -> Anim {
       }
     }
   } else {
-    if rom {
+    if din {
+      seq.add(makeDinoQuiet(plan))
+    } else if rom {
       seq.add(makeRomanQuiet(plan))
     } else {
       seq.add(med ? makeMedievalQuiet(plan) : (ali ? makeAlienQuiet(plan) : QuietMove(plan)))
@@ -765,6 +772,7 @@ func makeCheckmateAnim(_ w: World, _ kingId: Int, _ winnerColor: Int) -> Anim {
   if w.actors[kingId].set == 1 { return makeMedievalCheckmate(kingId, winnerColor) }
   if w.actors[kingId].set == 2 { return makeAlienCheckmate(kingId, winnerColor) }
   if w.actors[kingId].set == 3 { return makeRomanCheckmate(kingId, winnerColor) }
+  if w.actors[kingId].set == 4 { return makeDinoCheckmate(kingId, winnerColor) }
   return CheckmateAnim(kingId, winnerColor)
 }
 

@@ -48,7 +48,7 @@ extension Renderer {
     var boneCount: Int32 = 0  // > 0: skinned (bones in vertex buffer 3)
     var stone: Float = 0      // medieval: turned to salt
     var ghost: Float = 0      // > 0: a translucent ghost (its opacity)
-    var interior: Float = 0   // Romans: fresh fracture faces show 0 splintered wood, 1 flesh
+    var interior: Float = 0   // Romans, dinosaurs: fresh fracture faces show 0 splintered wood, 1 flesh
 
     init() {}
     init(_ it: DrawItem) {
@@ -212,10 +212,13 @@ final class Renderer {
   var alienReady = false
   var roman = (0..<RAsset.count).map { _ in PieceGpu() }
   var romanReady = false
-  /// The GPU meshes of a skinned set (1 medieval, 2 aliens, 3 Romans) once uploaded, else nil.
+  var dino = (0..<DAsset.count).map { _ in PieceGpu() }
+  var dinoReady = false
+  /// The GPU meshes of a skinned set (1 medieval, 2 aliens, 3 Romans, 4 dinosaurs) once uploaded, else nil.
   func figures(_ set: Int) -> [PieceGpu]? {
     if set == 2 { return alienReady ? alien : nil }
     if set == 3 { return romanReady ? roman : nil }
+    if set == 4 { return dinoReady ? dino : nil }
     return medievalReady ? medieval : nil
   }
   /// Bound as the bone palette of meshes that are not skinned.
@@ -685,6 +688,11 @@ final class Renderer {
   func uploadRoman(_ lib: RomanLibrary) {
     uploadFigures(&roman, lib.asset)
     romanReady = true
+  }
+
+  func uploadDino(_ lib: DinoLibrary) {
+    uploadFigures(&dino, lib.asset)
+    dinoReady = true
   }
 
   func uploadBoardTextures(albedo: TexImage, detail: TexImage, half: Float) {

@@ -225,6 +225,7 @@ private struct SettingsSheet: View {
             Text("Medieval").tag(1)
             Text("Aliens").tag(2)
             Text("Romans").tag(3)
+            Text("Dinosaurs").tag(4)
           }
           if model.medievalBuilding {
             ProgressView("Raising the medieval army...", value: model.medievalProgress)
@@ -234,6 +235,9 @@ private struct SettingsSheet: View {
           }
           if model.romanBuilding {
             ProgressView("Mustering the legions...", value: model.romanProgress)
+          }
+          if model.dinoBuilding {
+            ProgressView("The dinosaurs are hatching...", value: model.dinoProgress)
           }
           Toggle("Battle animations", isOn: $model.battles)
           Toggle("Cinematic camera", isOn: $model.cinematic)
@@ -381,7 +385,7 @@ private struct HelpSheet: View {
 }
 
 private struct HelpList: View {
-  let pieceSet: Int  // whose battles to list: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans
+  let pieceSet: Int  // whose battles to list: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans, 4 dinosaurs
   private let touch = [
     "Tap a piece, then a glowing square to move it, or drag the piece onto the square",
     "Drag anywhere else to turn the board, even to look at it from underneath",
