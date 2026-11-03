@@ -1,10 +1,10 @@
 // Procedurally synthesised sound effects (no audio files), mixed in real time.
 // Every effect is built once at start-up from damped sines, filtered noise and
 // a few oscillators (the medieval army's organ, choir, thunder and the rest, the
-// aliens' ray guns, saucers and cows, and the ghosts' cheer, are made
-// on a background thread right after). An AVAudioSourceNode mixes up to 40 voices (pan, pitch via
-// resampling, volume) and the background music (Music.swift) at 44.1 kHz, and AVAudioEngine
-// converts to the device rate.
+// aliens' ray guns, saucers and cows, the Romans' blades, voices and horns, and the
+// ghosts' cheer, are made on a background thread right after). An AVAudioSourceNode
+// mixes up to 40 voices (pan, pitch via resampling, volume) and the background music
+// (Music.swift) at 44.1 kHz, and AVAudioEngine converts to the device rate.
 import AVFoundation
 #if os(macOS)
 import CoreAudio
@@ -344,11 +344,12 @@ extension Audio {
       return S
     }
 
-    /// Every effect, the medieval army's, the aliens' and the ghosts' included (for the .wav dump).
+    /// Every effect, the medieval army's, the aliens', the Romans' and the ghosts' included (for the .wav dump).
     static func synthEverything() -> [Buf] {
       var S = synthAll()
       synthMedieval(&S)
       synthAlien(&S)
+      synthRoman(&S)
       synthGhosts(&S)
       return S
     }
@@ -1301,10 +1302,432 @@ extension Audio {
       }
     }
 
+    // MARK: The Romans' sounds
+
+    /// A vowel: its three formants (Hz) and the levels of the second and third.
+    struct Vowel {
+      let f1, f2, f3, a2, a3: Float
+    }
+    static let kAh = Vowel(f1: 730, f2: 1090, f3: 2440, a2: 0.5, a3: 0.25)
+    static let kUh = Vowel(f1: 640, f2: 1190, f3: 2390, a2: 0.45, a3: 0.2)
+    static let kOh = Vowel(f1: 570, f2: 840, f3: 2410, a2: 0.4, a3: 0.15)
+    static let kEh = Vowel(f1: 530, f2: 1840, f3: 2480, a2: 0.45, a3: 0.2)
+    static let kAw = Vowel(f1: 600, f2: 900, f3: 2500, a2: 0.5, a3: 0.15)
+
+    /// A voice: a buzzing glottal source (a sawtooth whose pitch wanders) through the
+    /// formants of a vowel that can change into another, with breath and rasp.
+    static func addVoice(_ b: inout Buf, _ r: inout XorShift32, _ t0: Float, _ dur: Float, _ f0: (Float) -> Float,
+                         _ env: (Float) -> Float, _ v0: Vowel, _ v1: Vowel, _ vmix: (Float) -> Float,
+                         _ breath: Float, _ rasp: Float, _ gain: Float = 1) {
+      let s0 = Int(t0 * Float(SR)), n = Int(dur * Float(SR))
+      var ph = 0.0
+      var jit: Float = 0
+      var b1 = Biquad(), b2 = Biquad(), b3 = Biquad(), nb = Biquad(), lp = Biquad()
+      nb.bandpass(1800, 0.8)
+      lp.lowpass(3400, 0.6)
+      b.withUnsafeMutableBufferPointer { p in
+        var i = 0
+        while i < n && s0 + i < p.count {
+          let t = Float(i) / Float(SR)
+          if i % 32 == 0 {
+            let m: Float = min(1, max(0, vmix(t)))
+            b1.bandpass(v0.f1 + (v1.f1 - v0.f1) * m, 5)
+            b2.bandpass(v0.f2 + (v1.f2 - v0.f2) * m, 7)
+            b3.bandpass(v0.f3 + (v1.f3 - v0.f3) * m, 9)
+          }
+          let dt = Double(f0(t) * (1 + jit) / Float(SR))
+          ph += dt
+          if ph >= 1 {
+            ph -= 1
+            jit = r.bi() * rasp  // each glottal pulse a little off: roughness
+          }
+          let src: Float = Float(2 * ph - 1) - polyblep(ph, dt)
+          let x: Float = src + breath * r.bi() * 0.7
+          let mv: Float = min(1, max(0, vmix(t)))
+          let a2: Float = v0.a2 + (v1.a2 - v0.a2) * mv, a3: Float = v0.a3 + (v1.a3 - v0.a3) * mv
+          let y: Float = b1.run(x) + b2.run(x) * a2 + b3.run(x) * a3 + nb.run(r.bi()) * breath * 0.12
+          p[s0 + i] += lp.run(y) * env(t) * gain
+          i += 1
+        }
+      }
+    }
+
+    /// The Romans' effects (Sfx.slash ... Sfx.gulp) into S, which holds every Sfx.
+    /// Made on the background thread right after the aliens'.
+    static func synthRoman(_ S: inout [Buf]) {
+      var r = XorShift32(s: 7331)
+      do {  // SLASH: a blade swung through flesh
+        var b = make(0.6)
+        var f = Biquad()
+        for i in 0..<Int(0.16 * Float(SR)) {
+          let t = Float(i) / Float(SR), u: Float = t / 0.16
+          if i % 32 == 0 { f.bandpass(1500 + 5000 * u, 2) }
+          let s: Float = sin(u * 3.14159)
+          b[i] += f.run(r.bi()) * (s * s) * 0.7  // pow(s, 2), which clang emits as s * s
+        }
+        var w = Biquad()
+        w.bandpass(1300, 1.2)
+        addNoise(&b, &r, 0.13, 1.4, 35, w, 0.004)
+        var lo = Biquad()
+        lo.lowpass(500)
+        addNoise(&b, &r, 0.13, 1.2, 22, lo, 0.003)
+        addDampedSine(&b, 0.13, 140, 0.6, 25, 1.5)
+        normalize(&b, 0.85)
+        S[Sfx.slash.rawValue] = b
+      }
+      do {  // STAB: a blade driven in: a wet, heavy thud
+        var b = make(0.7)
+        addDampedSine(&b, 0, 120, 1.0, 18, 1.2)
+        addDampedSine(&b, 0, 240, 0.4, 30)
+        var sq = Biquad()
+        for i in 0..<Int(0.35 * Float(SR)) {
+          let t = Float(i) / Float(SR)
+          if i % 64 == 0 {
+            let fc: Float = 500 + 500 * sin(t * 70) + 300 * r.next()
+            sq.bandpass(fc, 3)
+          }
+          b[i] += sq.run(r.bi()) * exp(-t * 10) * 1.3
+        }
+        var hp = Biquad()
+        hp.highpass(3000)
+        addNoise(&b, &r, 0, 0.12, 150, hp)
+        normalize(&b, 0.9)
+        S[Sfx.stab.rawValue] = b
+      }
+      do {  // BLOOD: spattering on the board
+        var b = make(0.8)
+        var slap = Biquad()
+        slap.bandpass(700, 1.0)
+        addNoise(&b, &r, 0, 0.8, 30, slap, 0.003)
+        for _ in 0..<40 {
+          let t: Float = 0.03 + -log(1 - r.next() * 0.99) * 0.12
+          var d = Biquad()
+          d.bandpass(1500 + r.next() * 3500, 4.0)
+          let amp: Float = 0.15 + 0.3 * r.next()
+          addNoise(&b, &r, t, amp, 250, d)
+          if r.next() < 0.3 { addDampedSine(&b, t, 900 + r.next() * 1500, 0.08, 90, 3.0) }
+        }
+        normalize(&b, 0.7)
+        S[Sfx.blood.rawValue] = b
+      }
+      do {  // DRAW: a sword drawn from its scabbard: rising steel scrape and a ring
+        var b = make(1.2)
+        var f1 = Biquad(), f2 = Biquad(), f3 = Biquad()
+        let L: Float = 0.38
+        for i in 0..<Int(L * Float(SR)) {
+          let t = Float(i) / Float(SR), u = t / L
+          if i % 32 == 0 {
+            f1.bandpass(2300 + 1400 * u, 18)
+            f2.bandpass(4100 + 2000 * u, 22)
+            f3.bandpass(6400 + 1800 * u, 25)
+          }
+          let x: Float = r.bi() * (0.6 + 0.4 * sin(t * 260))
+          let env: Float = min(1, u * 6) * (0.6 + 0.4 * u)
+          b[i] += (f1.run(x) + f2.run(x) * 0.8 + f3.run(x) * 0.5) * env * 4
+        }
+        addDampedSine(&b, L, 3150, 0.25, 6)
+        addDampedSine(&b, L, 4870, 0.18, 8)
+        addDampedSine(&b, L, 7210, 0.1, 10)
+        reverb(&b, 0.2, 0.8, 0.4, 0.8)
+        normalize(&b, 0.7)
+        S[Sfx.draw.rawValue] = b
+      }
+      do {  // PARRY: blade on blade: a bright, inharmonic clash and a scrape
+        var b = make(1.4)
+        let ratio: [Float] = [1.0, 2.32, 3.91, 5.48, 7.6, 1.47]
+        let amp: [Float] = [0.8, 0.6, 0.5, 0.35, 0.2, 0.4]
+        let dec: [Float] = [4.0, 5.0, 7.0, 9.0, 12.0, 6.0]
+        for k in 0..<6 {
+          addDampedSine(&b, 0, 1180 * ratio[k], amp[k], dec[k])
+          addDampedSine(&b, 0.004, 1210 * ratio[k], amp[k] * 0.6, dec[k] * 1.2)
+        }
+        var hp = Biquad()
+        hp.highpass(3500)
+        addNoise(&b, &r, 0, 1.6, 70, hp)
+        var sc = Biquad()
+        sc.bandpass(5000, 3.0)
+        noiseShaped(&b, &r, 0.01, 0.12, sc, 0.5) { (t: Float) -> Float in exp(-t * 25) }
+        reverb(&b, 0.18, 0.8, 0.4, 0.8)
+        normalize(&b, 0.85)
+        S[Sfx.parry.rawValue] = b
+      }
+      do {  // SHIELD: a blow on a wooden shield with a bronze boss
+        var b = make(0.9)
+        addDampedSine(&b, 0, 165, 1.0, 16, 0.6)
+        addDampedSine(&b, 0, 410, 0.6, 28)
+        addDampedSine(&b, 0, 655, 0.35, 35)
+        addDampedSine(&b, 0.002, 2130, 0.25, 14)
+        addDampedSine(&b, 0.002, 3280, 0.15, 18)
+        var bp = Biquad()
+        bp.bandpass(900, 0.9)
+        addNoise(&b, &r, 0, 1.3, 45, bp)
+        reverb(&b, 0.12, 0.75, 0.5, 0.7)
+        normalize(&b, 0.9)
+        S[Sfx.shield.rawValue] = b
+      }
+      do {  // GRUNT: a soldier's grunt of effort ("hm-ah!")
+        var b = make(0.45)
+        addVoice(&b, &r, 0.0, 0.35, { (t: Float) -> Float in 125 - 50 * t },
+                 { (t: Float) -> Float in envAR(t, 0.015, 0.12, 0.2) }, kUh, kAh, { (t: Float) -> Float in t * 4 },
+                 0.35, 0.06)
+        normalize(&b, 0.75)
+        S[Sfx.grunt.rawValue] = b
+      }
+      do {  // SHOUT: a battle cry from many throats - "Ro-ma!"
+        var b = make(1.6)
+        for _ in 0..<6 {
+          let d: Float = r.next() * 0.06
+          let p: Float = 0.85 + 0.35 * r.next()
+          addVoice(&b, &r, d, 0.32, { (t: Float) -> Float in (150 + 30 * t / 0.32) * p },
+                   { (t: Float) -> Float in envAR(t, 0.03, 0.18, 0.1) }, kOh, kOh, { (_: Float) -> Float in 0 },
+                   0.25, 0.05, 0.7)
+          addVoice(&b, &r, d + 0.3, 0.75, { (t: Float) -> Float in
+            let rise: Float = 25 * sin(min(t, 0.3) * 9)
+            let fall: Float = 50 * max(0, t - 0.35)
+            return (190 + rise - fall) * p
+          }, { (t: Float) -> Float in envAR(t, 0.02, 0.38, 0.35) }, kAh, kUh, { (t: Float) -> Float in (t - 0.4) * 3 },
+          0.3, 0.06, 0.9)
+        }
+        reverb(&b, 0.35, 0.82, 0.4, 1.1)
+        normalize(&b, 0.8)
+        S[Sfx.shout.rawValue] = b
+      }
+      do {  // DEATH: a dying cry, breaking and falling away
+        var b = make(1.5)
+        addVoice(&b, &r, 0.0, 1.25, { (t: Float) -> Float in
+          let fall: Float = 230 * exp(-t * 0.8)
+          return fall + 10 * sin(t * 37)
+        }, { (t: Float) -> Float in
+          let sob: Float = 0.75 + 0.25 * sin(t * 23)
+          return envAR(t, 0.04, 0.45, 0.7) * sob
+        }, kAh, kUh, { (t: Float) -> Float in t * 1.4 }, 0.4, 0.12)
+        reverb(&b, 0.2, 0.8, 0.4, 0.9)
+        normalize(&b, 0.75)
+        S[Sfx.death.rawValue] = b
+      }
+      do {  // FALL: a body in armour crashing down: a heavy thud, the slap of cloth, mail and plates rattling
+        var b = make(0.9)
+        addDampedSine(&b, 0, 85, 1.0, 14, 0.7)
+        var lp = Biquad()
+        lp.lowpass(800)
+        addNoise(&b, &r, 0, 1.4, 25, lp, 0.004)
+        for _ in 0..<26 {
+          let u = r.next()
+          let t: Float = 0.01 + u * 0.35 * r.next()
+          let f: Float = 2800 + r.next() * 4500
+          let amp: Float = 0.08 + 0.08 * r.next()
+          let dec: Float = 110 + r.next() * 120
+          addDampedSine(&b, t, f, amp, dec)
+        }
+        normalize(&b, 0.85)
+        S[Sfx.fall.rawValue] = b
+      }
+      do {  // CROWD: the arena roars
+        var b = make(3.6)
+        let vs: [Vowel] = [kAh, kEh, kOh, kAw]
+        for k in 0..<22 {
+          let t0: Float = r.next() * 0.5
+          let dur: Float = 1.8 + 1.2 * r.next()
+          let f: Float = 120 + 200 * r.next()
+          let vib: Float = r.next() * 6.28
+          let v = vs[k % 4]
+          addVoice(&b, &r, t0, dur, { (t: Float) -> Float in
+            let swell: Float = 0.25 * min(t / 0.3, 1)
+            let wob: Float = 0.02 * sin(t * 5 + vib)
+            return f * (1 + swell + wob)
+          }, { (t: Float) -> Float in envAR(t, 0.25, dur * 0.4, dur * 0.5) }, v, kAh, { (t: Float) -> Float in t * 0.3 },
+          0.4, 0.05, 0.4)
+        }
+        var hiss = Biquad()
+        hiss.bandpass(1400, 0.6)
+        noiseShaped(&b, &r, 0.0, 3.4, hiss, 0.6) { (t: Float) -> Float in envAR(t, 0.4, 1.4, 1.6) }
+        for _ in 0..<60 {  // stamping and clapping
+          var c = Biquad()
+          c.bandpass(1100 + r.next() * 900, 1.5)
+          let t: Float = 0.3 + r.next() * 2.5
+          let amp: Float = 0.15 + 0.2 * r.next()
+          addNoise(&b, &r, t, amp, 80, c)
+        }
+        reverb(&b, 0.55, 0.86, 0.4, 1.4)
+        normalize(&b, 0.7)
+        S[Sfx.crowd.rawValue] = b
+      }
+      do {  // CORNU: a great bronze horn of the legions: a rough, low call
+        var b = make(3.2), src = make(3.2)
+        // the notes: start (s), length (s), pitch (Hz)
+        let nt: [Float] = [0.0, 0.6, 1.05], nd: [Float] = [0.55, 0.4, 1.6], nf: [Float] = [98.0, 146.8, 196.0]
+        for k in 0..<3 {
+          let d = nd[k], f = nf[k]
+          let env = { (t: Float) -> Float in envAR(t, 0.06, d - 0.06, 0.35) }
+          addSaw(&src, nt[k], d + 0.4, { (t: Float) -> Float in
+            let lip: Float = 0.97 + 0.03 * min(1, t / 0.08)
+            let vib: Float = 1 + 0.004 * sin(t * 30)
+            return f * lip * vib
+          }, env)
+          addSaw(&src, nt[k], d + 0.4, { (_: Float) -> Float in f * 1.006 }, { (t: Float) -> Float in env(t) * 0.6 })
+        }
+        var lp = Biquad()
+        for i in 0..<b.count {
+          let t = Float(i) / Float(SR)
+          let local: Float = t < 0.6 ? t : (t < 1.05 ? t - 0.6 : t - 1.05)
+          if i % 64 == 0 { lp.lowpass(700 + 1600 * exp(-local * 3), 1.5) }
+          b[i] = tanh(lp.run(src[i]) * 1.6)
+        }
+        reverb(&b, 0.45, 0.86, 0.35, 1.3)
+        normalize(&b, 0.8)
+        S[Sfx.cornu.rawValue] = b
+      }
+      do {  // WHEELS: iron-shod chariot wheels rumbling over the board
+        var b = make(1.8)
+        var lo = Biquad(), rat = Biquad()
+        lo.lowpass(220)
+        rat.bandpass(1300, 2.0)
+        for i in 0..<b.count {
+          let t = Float(i) / Float(SR)
+          let env = envAR(t, 0.15, 0.9, 0.7)
+          let spoke: Float = 0.7 + 0.3 * sin(t * 6.2831 * 14)
+          let rumble: Float = lo.run(r.bi()) * 9 * spoke
+          let rattle: Float = rat.run(r.bi()) * 0.12
+          let loud: Float = r.next() < 0.02 ? 4 : 0.6
+          b[i] = (rumble + rattle * loud) * env
+        }
+        for k in 0..<18 {
+          let t: Float = 0.1 + Float(k) * 0.08 + r.next() * 0.03
+          let f: Float = 90 + r.next() * 40
+          addDampedSine(&b, t, f, 0.35, 30)
+        }
+        normalize(&b, 0.7)
+        S[Sfx.wheels.rawValue] = b
+      }
+      do {  // WHIP: a swish, and the crack
+        var b = make(0.6)
+        var f = Biquad()
+        for i in 0..<Int(0.14 * Float(SR)) {
+          let t = Float(i) / Float(SR), u: Float = t / 0.14
+          if i % 32 == 0 { f.bandpass(800 + 3000 * u * u, 1.5) }
+          b[i] += f.run(r.bi()) * u * u * 0.6
+        }
+        var hp = Biquad()
+        hp.highpass(1800)
+        addNoise(&b, &r, 0.14, 2.5, 300, hp, 0.0003)
+        addDampedSine(&b, 0.14, 2600, 0.5, 150)
+        reverb(&b, 0.25, 0.8, 0.4, 0.9)
+        normalize(&b, 0.85)
+        S[Sfx.whip.rawValue] = b
+      }
+      do {  // CREAK: timber groaning under a load (stick-slip friction)
+        var b = make(1.1)
+        var r1 = Biquad(), r2 = Biquad(), r3 = Biquad()
+        r1.bandpass(380, 8.0)
+        r2.bandpass(870, 10.0)
+        r3.bandpass(1650, 12.0)
+        var ph = 0.0
+        for i in 0..<Int(0.95 * Float(SR)) {
+          let t = Float(i) / Float(SR), u: Float = t / 0.95
+          let rate: Float = 45 + 70 * sin(u * 3.14159) + 15 * sin(t * 13)
+          ph += Double(rate / Float(SR))
+          var pulse: Float = 0
+          if ph >= 1 {
+            ph -= 1
+            pulse = 1 + 0.5 * r.bi()
+          }
+          let env: Float = pow(sin(u * 3.14159), Float(0.7))
+          b[i] = (r1.run(pulse) + r2.run(pulse) * 0.7 + r3.run(pulse) * 0.35) * env
+        }
+        normalize(&b, 0.6)
+        S[Sfx.creak.rawValue] = b
+      }
+      do {  // RAM: an iron-headed beam swung into its target: a deep boom and the shudder of timber
+        var b = make(2.0)
+        addDampedSine(&b, 0, 52, 1.0, 5, 0.6)
+        addDampedSine(&b, 0, 118, 0.7, 9)
+        addDampedSine(&b, 0, 190, 0.5, 13)
+        addDampedSine(&b, 0, 305, 0.35, 18)
+        var lo = Biquad()
+        lo.lowpass(600)
+        addNoise(&b, &r, 0, 2.5, 12, lo)
+        var cr = Biquad()
+        cr.bandpass(2000, 1.0)
+        addNoise(&b, &r, 0, 1.2, 70, cr)
+        for _ in 0..<20 {
+          let t: Float = 0.05 + -log(1 - r.next() * 0.99) * 0.15
+          var c = Biquad()
+          c.bandpass(500 + r.next() * 1800, 2.0)
+          let amp: Float = 0.2 + 0.3 * r.next()
+          addNoise(&b, &r, t, amp, 120, c)
+        }
+        reverb(&b, 0.3, 0.85, 0.4, 1.2)
+        normalize(&b, 0.95)
+        S[Sfx.ram.rawValue] = b
+      }
+      do {  // SCORPION: the torsion springs let go: a hard knock, the string's twang, the bolt away
+        var b = make(1.0)
+        addDampedSine(&b, 0, 920, 0.6, 60)
+        addDampedSine(&b, 0, 1530, 0.4, 80)
+        addDampedSine(&b, 0.0, 210, 0.9, 7, 0.5)
+        addDampedSine(&b, 0.0, 422, 0.4, 9, 0.5)
+        var bp = Biquad()
+        bp.bandpass(1200, 1.0)
+        addNoise(&b, &r, 0, 1.0, 90, bp)
+        var f = Biquad()
+        let o = Int(0.02 * Float(SR))
+        for i in 0..<Int(0.3 * Float(SR)) {
+          let t = Float(i) / Float(SR), u: Float = t / 0.3
+          if i % 32 == 0 { f.bandpass(2500 - 1500 * u, 2.0) }
+          b[o + i] += f.run(r.bi()) * (1 - u) * 0.4
+        }
+        reverb(&b, 0.25, 0.82, 0.4, 1.0)
+        normalize(&b, 0.85)
+        S[Sfx.scorpion.rawValue] = b
+      }
+      do {  // LION: a roar - a huge, rough voice with a growl in it
+        var b = make(2.4)
+        addVoice(&b, &r, 0.0, 2.1, { (t: Float) -> Float in
+          let rise: Float = 55 * sin(min(t / 1.4, 1) * 3.14159)
+          let fall: Float = 20 * max(0, t - 1.4)
+          return 95 + rise - fall
+        }, { (t: Float) -> Float in
+          let growl: Float = 0.7 + 0.3 * sin(t * 6.2831 * 27)
+          return envAR(t, 0.25, 0.9, 0.9) * growl
+        }, kAw, kUh, { (t: Float) -> Float in t * 0.6 }, 0.45, 0.25)
+        addVoice(&b, &r, 0.0, 2.1, { (t: Float) -> Float in
+          let rise: Float = 20 * sin(min(t / 1.4, 1) * 3.14159)
+          return 48 + rise
+        }, { (t: Float) -> Float in envAR(t, 0.3, 0.9, 0.8) * 0.8 }, kAw, kAw, { (_: Float) -> Float in 0 }, 0.5, 0.3)
+        var dark = Biquad()
+        dark.lowpass(1600, 0.7)
+        for i in b.indices { b[i] = dark.run(b[i]) }
+        reverb(&b, 0.35, 0.84, 0.35, 1.3)
+        normalize(&b, 0.9)
+        S[Sfx.lion.rawValue] = b
+      }
+      do {  // GULP: two deep swallows, then a choking cough
+        var b = make(1.4)
+        for k in 0..<2 {
+          let t0: Float = 0.05 + 0.32 * Float(k)
+          addDampedSine(&b, t0, 320, 0.8, 22, 2.5)
+          var g = Biquad()
+          g.bandpass(450, 3.0)
+          addNoise(&b, &r, t0, 0.5, 40, g)
+        }
+        for k in 0..<3 {
+          let t0: Float = 0.8 + 0.17 * Float(k)
+          var c = Biquad()
+          c.bandpass(900, 1.2)
+          addNoise(&b, &r, t0, 1.2 - 0.25 * Float(k), 30, c, 0.005)
+          addVoice(&b, &r, t0, 0.1, { (t: Float) -> Float in 180 - 200 * t },
+                   { (t: Float) -> Float in envAR(t, 0.005, 0.03, 0.06) }, kAh, kUh, { (t: Float) -> Float in t * 8 },
+                   0.6, 0.2, 0.6)
+        }
+        normalize(&b, 0.7)
+        S[Sfx.gulp.rawValue] = b
+      }
+    }
+
     // MARK: The ghosts' cheer
 
     /// The ghosts' effect (Sfx.cheer) into S, which holds every Sfx.
-    /// Made on the background thread right after the aliens'.
+    /// Made on the background thread right after the Romans'.
     static func synthGhosts(_ S: inout [Buf]) {
       var r = XorShift32(s: 777)
       do {  // CHEER: a far-off little crowd of ghosts going "yaaay!", clapping, with a shimmer
@@ -1378,7 +1801,7 @@ extension Audio {
   /// The music's commands besides a piece's number (0 pawn .. 5 king).
   fileprivate enum MusicCommand: Int32 {
     case resume = 10, stop, off, on
-    case marble = 20, medieval, alien  // whose music: setArmy(0 ... 2)
+    case marble = 20, medieval, alien, roman  // whose music: setArmy(0 ... 3)
   }
 
   /// Everything the render block touches lives in plain manually allocated
@@ -1389,8 +1812,8 @@ extension Audio {
     let voiceCount = 40
     let queueCap = 256  // power of two
     let buffersOffset = MemoryLayout<AudioBufferList>.offset(of: \AudioBufferList.mBuffers) ?? 8
-    // The effects back to back: the start-up ones in `arena`, the medieval army's
-    // and the aliens' in a second block added by publish(). Neither moves until free().
+    // The effects back to back: the start-up ones in `arena`, the medieval army's,
+    // the aliens' and the Romans' in a second block added by publish(). Neither moves until free().
     let soundCount: Int
     let arena: UnsafeMutablePointer<Float>
     let lateArena: UnsafeMutablePointer<UnsafeMutablePointer<Float>?>
@@ -1583,7 +2006,7 @@ extension Audio {
         case .stop: music.pointee.stop()
         case .off: music.pointee.setEnabled(false)
         case .on: music.pointee.setEnabled(true)
-        case .marble, .medieval, .alien: music.pointee.setArmy(Int(c - MusicCommand.marble.rawValue))
+        case .marble, .medieval, .alien, .roman: music.pointee.setArmy(Int(c - MusicCommand.marble.rawValue))
         case nil: music.pointee.play(Int(c))
         }
       }
@@ -1685,7 +2108,7 @@ final class Audio {
   private var engine: AVAudioEngine?
   private var source: AVAudioSourceNode?
   private var observers: [NSObjectProtocol] = []
-  // the medieval army's, the aliens' and the ghosts' sounds, made in the background after start()
+  // the medieval army's, the aliens', the Romans' and the ghosts' sounds, made in the background after start()
   private let lateSynth = DispatchGroup()
 
   init() {}
@@ -1737,18 +2160,20 @@ final class Audio {
     case .organ, .theremin: return 0.2
     case .mate: return 0.25
     case .bell, .drone: return 0.35
-    case .check, .horn: return 0.45
+    case .check, .horn, .cornu: return 0.45
+    case .crowd: return 0.6
     default: return 1
     }
   }
 
-  /// Makes the medieval army's, the aliens' and the ghosts' sounds on another
-  /// thread; until they are ready, playing one of them does nothing.
+  /// Makes the medieval army's, the aliens', the Romans' and the ghosts' sounds on
+  /// another thread; until they are ready, playing one of them does nothing.
   private func synthesiseLate(_ m: Mixer) {
     DispatchQueue.global(qos: .userInitiated).async(group: lateSynth) {
       var S = [[Float]](repeating: [], count: Sfx.allCases.count)
       Synth.synthMedieval(&S)
       Synth.synthAlien(&S)
+      Synth.synthRoman(&S)
       Synth.synthGhosts(&S)
       m.publish(S)
     }
@@ -1786,9 +2211,9 @@ final class Audio {
 
   /// The music of this piece (0 pawn .. 5 king), from the next bar. Safe from any thread.
   func playMusic(_ piece: Int) { mixer?.pushMusic(Int32(piece)) }
-  /// Whose music: 0 Living Marble, 1 medieval, 2 aliens. Safe from any thread.
+  /// Whose music: 0 Living Marble, 1 medieval, 2 aliens, 3 Romans. Safe from any thread.
   func setMusicArmy(_ set: Int) {
-    musicArmy = set == 1 || set == 2 ? set : 0
+    musicArmy = set >= 1 && set <= 3 ? set : 0
     mixer?.pushMusic(MusicCommand.marble.rawValue + Int32(musicArmy))
   }
   /// A new game: starts the music again if it was stopped.
@@ -1915,7 +2340,9 @@ final class Audio {
                  "hymn", "organ", "thunder", "wind", "roar", "fire", "chain", "grind", "stomp", "hoof",
                  "neigh", "bell", "splinter", "armor", "slide", "bite", "pew", "ufo", "theremin", "beam",
                  "gibber", "slurp", "burp", "boing", "whistle", "splat", "moo", "pop", "shrink", "heatray",
-                 "horn", "twinkle", "sizzle", "hatch", "drone", "sputter", "cheer"]
+                 "horn", "twinkle", "sizzle", "hatch", "drone", "sputter",
+                 "slash", "stab", "blood", "draw", "parry", "shield", "grunt", "shout", "death", "fall", "crowd",
+                 "cornu", "wheels", "whip", "creak", "ram", "scorpion", "lion", "gulp", "cheer"]
     let S = Synth.synthEverything()
     for (i, buf) in S.enumerated() {
       let n = UInt32(buf.count), bytes = n * 2
