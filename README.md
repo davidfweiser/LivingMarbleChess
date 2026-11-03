@@ -4,7 +4,7 @@
 
 | Living Marble | Medieval | Aliens | Romans | Dinosaurs |
 | :---: | :---: | :---: | :---: | :---: |
-| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) | ![A legionary pole-vaults over his enemy in a somersault](docs/screenshots/roman-battle.jpg) | ![A brachiosaurus rears up over a spinosaurus, to crash down on her](docs/screenshots/dino-battle.jpg) |
+| ![The white queen's magic shatters a black rook](docs/screenshots/marble-battle.jpg) | ![A knight draws his sword and cuts down his rival at a gallop](docs/screenshots/medieval-battle.jpg) | ![A flying saucer beams up a psychic in a glass jar](docs/screenshots/alien-battle.jpg) | ![A legionary pole-vaults over his enemy in a somersault](docs/screenshots/roman-battle.jpg) | ![A tyrannosaurus lunges, jaws wide, at a pteranodon stabbing with its beak](docs/screenshots/dino-battle.jpg) |
 
 A photoreal 3D chess game in C++ where carved marble Staunton pieces come alive:
 they hop, lean, wobble and turn to face each other — and every capture is a
@@ -374,12 +374,19 @@ lion and a poisoned cup.
 The fifth army (*Pieces › Dinosaurs*, or `--pieces dino`) is sculpted the same
 way, also in the background the first time: muscled thighs and shoulders, knees,
 elbows and ankles, padded feet, folds of skin round the neck, lips over the
-teeth. Their scales, feathers, fur, horns and skin are drawn by the shader: each
-scale domed, with dark creases between them (fading into an even tone at a
-distance instead of glittering), the skin wrinkled in the creases behind the
-knees and elbows, the hides banded, mottled and countershaded (pale bellies).
-White's army is sand and cream with rust markings, Black's slate and charcoal
-with crimson (its raptors' feathers shimmer green and purple).
+teeth. Every mouth is sculpted agape, so that the upper and lower jaws, their
+teeth, the palate and the tongue are each a surface of its own: a bite opens
+wide, the jaws parting cleanly (no skin stretched between them), and closes with
+the teeth meeting under the lips. Their scales, feathers, fur, horns and skin
+are drawn by the shader: a ground of small pebbly scales with larger, domed
+scales scattered over the back in clusters and broad scales in rows under the
+belly, each scale one colour, waxy on top and matte in the creases (fading into
+an even tone at a distance instead of glittering); the hide folded into
+wrinkles, darker along the back, with narrow dark bands across it and the tail,
+speckled and countershaded (pale bellies), the feet dusty; the raptors'
+feathers lie in overlapping layers; wet, dark mouths. White's army is sand and
+tan with dark brown markings, Black's slate and charcoal with crimson (its
+raptors' feathers shimmer green and purple).
 
 - **Pawn** — a velociraptor: feathered, with quills on its arms and a fan of
   feathers on its tail, a long low snout full of teeth, and a sickle claw held up
