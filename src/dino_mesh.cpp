@@ -723,8 +723,9 @@ Model rexModel() {
   m.add(TH_HEAD, DM_SKIN, 0.0f, fnS(skull, vec3(0, 0.72f, 0.53f), 0.16f));
   m.paint(DM_MOUTH, fnS([](const vec3& p) {
             float y1 = 0.6645f + 0.01f * (p.z - 0.4f);
-            float hw = glm::mix(0.046f, 0.026f, glm::clamp((p.z - 0.45f) / 0.2f, 0.0f, 1.0f));  // inside the lips
-            return std::max(std::max(p.y - y1, (y1 - 0.012f) - p.y), std::max(0.43f - p.z, std::fabs(p.x) - hw));
+            float hw = glm::mix(0.046f, 0.012f, glm::clamp((p.z - 0.45f) / 0.21f, 0.0f, 1.0f));  // inside the lips
+            float d = std::max(std::max(p.y - y1, (y1 - 0.012f) - p.y), std::max(0.43f - p.z, std::fabs(p.x) - hw));
+            return std::max(d, p.z - 0.64f);  // (short of the rounded nose)
           }, vec3(0, 0.66f, 0.55f), 0.13f), DM_SKIN);
   for (int sd = -1; sd <= 1; sd += 2) {
     m.add(TH_HEAD, DM_SKIN, 0.02f, ellS(vec3(sd * 0.062f, 0.69f, 0.465f), vec3(0.022f, 0.032f, 0.05f)));  // the cheeks
@@ -755,8 +756,9 @@ Model rexModel() {
   m.add(TH_JAW, DM_BELLY, 0.02f, ellS(vec3(0, 0.615f, 0.49f), vec3(0.05f, 0.022f, 0.08f)));
   m.paint(DM_MOUTH, fnS([](const vec3& p) {
             float y0 = 0.656f + 0.008f * (p.z - 0.43f);
-            float hw = glm::mix(0.044f, 0.02f, glm::clamp((p.z - 0.45f) / 0.19f, 0.0f, 1.0f));  // inside the jaw's rim
-            return std::max(std::max(y0 - p.y, p.y - (y0 + 0.012f)), std::max(0.45f - p.z, std::fabs(p.x) - hw));
+            float hw = glm::mix(0.044f, 0.01f, glm::clamp((p.z - 0.45f) / 0.2f, 0.0f, 1.0f));  // inside the jaw's rim
+            float d = std::max(std::max(y0 - p.y, p.y - (y0 + 0.012f)), std::max(0.45f - p.z, std::fabs(p.x) - hw));
+            return std::max(d, p.z - 0.63f);  // (short of the chin)
           }, vec3(0, 0.66f, 0.55f), 0.13f), DM_SKIN);
   addTeeth(m, TH_HEAD, vec3(0.053f, 0.666f, 0.47f), vec3(0.031f, 0.664f, 0.645f), 8, glm::normalize(vec3(0, -1, 0.12f)), 0.024f, 0.0075f);
   addTeeth(m, TH_JAW, vec3(0.05f, 0.66f, 0.49f), vec3(0.028f, 0.66f, 0.63f), 7, glm::normalize(vec3(0, 1, 0.1f)), 0.017f, 0.006f);

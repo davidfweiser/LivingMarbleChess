@@ -476,8 +476,9 @@ extension Dino {
     m.add(THB.head, DMat.skin, 0, fnS(skull, vec3(0, 0.72, 0.53), 0.16))
     m.paint(DMat.mouth, fnS({ p in
       let y1: Float = 0.6645 + 0.01 * (p.z - 0.4)
-      let hw: Float = romanMix(0.046, 0.026, clamp((p.z - 0.45) / 0.2, 0, 1))  // inside the lips
-      return max(max(p.y - y1, (y1 - 0.012) - p.y), max(0.43 - p.z, abs(p.x) - hw))
+      let hw: Float = romanMix(0.046, 0.012, clamp((p.z - 0.45) / 0.21, 0, 1))  // inside the lips
+      let d: Float = max(max(p.y - y1, (y1 - 0.012) - p.y), max(0.43 - p.z, abs(p.x) - hw))
+      return max(d, p.z - 0.64)  // (short of the rounded nose)
     }, vec3(0, 0.66, 0.55), 0.13), DMat.skin)
     for sd in stride(from: -1, through: 1, by: 2) {
       let s = Float(sd)
@@ -513,8 +514,9 @@ extension Dino {
     m.add(THB.jaw, DMat.belly, 0.02, ellS(vec3(0, 0.615, 0.49), vec3(0.05, 0.022, 0.08)))
     m.paint(DMat.mouth, fnS({ p in
       let y0: Float = 0.656 + 0.008 * (p.z - 0.43)
-      let hw: Float = romanMix(0.044, 0.02, clamp((p.z - 0.45) / 0.19, 0, 1))  // inside the jaw's rim
-      return max(max(y0 - p.y, p.y - (y0 + 0.012)), max(0.45 - p.z, abs(p.x) - hw))
+      let hw: Float = romanMix(0.044, 0.01, clamp((p.z - 0.45) / 0.2, 0, 1))  // inside the jaw's rim
+      let d: Float = max(max(y0 - p.y, p.y - (y0 + 0.012)), max(0.45 - p.z, abs(p.x) - hw))
+      return max(d, p.z - 0.63)  // (short of the chin)
     }, vec3(0, 0.66, 0.55), 0.13), DMat.skin)
     addTeeth(m, THB.head, vec3(0.053, 0.666, 0.47), vec3(0.031, 0.664, 0.645), 8, normalize(vec3(0, -1, 0.12)), 0.024,
              0.0075)
