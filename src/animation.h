@@ -63,6 +63,8 @@ struct Actor {
   float dissolveVel = 0;  // automatic dissolve change per second (materialise / vanish)
   bool ghostOnDeath = false;  // captured: comes back as a ghost once it has died
   float fidgetT = -1, fidgetDir = 1;
+  float clearYaw = 0;  // a dinosaur at rest turned this far aside, clear of its neighbours
+  bool crowded = false;  // ... and standing so close to one that it doesn't fidget
   int fidgetType = 0;
   // secondary motion
   glm::vec3 prevPos{0}, vel{0}, accS{0};
@@ -313,5 +315,17 @@ class World {
   void updateFidgets(float dt);
   void updateGhosts(float dt);
   void keepApart();
+  void keepClear(float dt);
+  // keepClear's measure of a dinosaur at rest: its balls about its feet, as if it faced yaw 0
+  struct Stand {
+    float when = -1;  // (world time it was measured; < 0 never)
+    glm::vec3 pos{0};
+    std::vector<glm::vec3> c;
+    std::vector<float> r;
+    std::vector<glm::vec4> run;  // bounds of each run of them: centre, radius
+    std::vector<int> first;
+  };
+  std::vector<Stand> stands;  // (by actor id)
+  int clearNext = 0;          // (keepClear looks again at a couple of them each frame, in turn)
   void figureItems(Renderer& r, const Actor& a, std::vector<DrawItem>& out) const;
 };

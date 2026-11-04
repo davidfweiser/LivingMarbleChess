@@ -300,6 +300,7 @@ void World::reset() {
   puppets.clear();
   solids.clear();
   grips.clear();
+  stands.clear();
   for (int& a : actorAt) a = -1;
   fx.clear();
   chunks.clear();
@@ -701,6 +702,7 @@ void World::updateFidgets(float dt) {
     while (tries--) {
       Actor& a = actors[(size_t)(fx.rnd() * actors.size()) % actors.size()];
       if (!a.alive || !a.visible || a.fidgetT >= 0 || a.id == excludeFidget || a.dissolve > 0.01f) continue;
+      if (a.crowded) continue;  // (a look round, a swish of the tail would hit its neighbour)
       a.fidgetT = 0;
       float r = fx.rnd();
       a.fidgetType = r < 0.5f ? 0 : (r < 0.78f ? 1 : 2);
@@ -1118,6 +1120,175 @@ void World::updateGhosts(float dt) {
 }
 
 // ---------------------------------------------------------------------------
+// Dinosaurs at rest on neighbouring squares: one whose head, tail or sail would reach into a
+// neighbour turns a little aside (to its own right if that will do), shuffling round on the
+// spot, and back again once there is room. Only an animal standing on its square that nothing
+// else is turning (its target the way it faces there, as last set here) is turned.
+// ---------------------------------------------------------------------------
+void World::keepClear(float dt) {
+  if (!dlib) return;
+  auto level = [](const vec3& v) { return vec3(v.x, 0, v.z); };
+  auto resting = [&](const Actor& a) {
+    if (!a.alive || !a.visible || a.set != 4 || a.kind < 0 || a.kind > 5 || a.square < 0 || a.dissolve > 0.01f) return false;
+    if (a.pos.y > 0.005f || std::fabs(a.tilt.w) < 0.9999f || glm::length(level(a.pos) - squareCenter(a.square)) > 0.02f)
+      return false;
+    if (a.pose.count <= 0 || dlib->bulk[a.kind].empty()) return false;
+    for (const Solid& s : solids)
+      if (!s.puppet && s.id == a.id) return false;  // (fighting)
+    return std::fabs(wrapAngle(a.yawTarget - a.baseYaw - a.clearYaw)) < 1e-3f;  // (nothing else turning it)
+  };
+  // how far an animal's balls reach from its feet, along the board
+  static float reach[6] = {-1, -1, -1, -1, -1, -1};
+  for (int k = 0; k < 6; ++k)
+    if (reach[k] < 0 && !dlib->bulk[k].empty()) {
+      reach[k] = 0;
+      for (const dino::Ball& b : dlib->bulk[k]) reach[k] = std::max(reach[k], glm::length(vec2(b.c.x, b.c.z)) + b.r);
+      reach[k] += 0.1f;  // (as it moves)
+    }
+  if (stands.size() < actors.size()) stands.resize(actors.size());
+  std::vector<int> rest;
+  for (Actor& a : actors) {
+    if (resting(a)) {
+      rest.push_back(a.id);
+    } else {
+      if (a.set == 4) a.clearYaw = 0;
+      a.crowded = false;
+      stands[(size_t)a.id].when = -1;
+    }
+  }
+  // measured again a few times a second (it breathes, its tail sways), or when it has moved
+  auto measure = [&](int id) -> const Stand& {
+    Actor& a = actors[(size_t)id];
+    Stand& s = stands[(size_t)id];
+    vec3 pos = a.pos + vec3(0, a.bob * 0.3f, 0);
+    if (s.when >= 0 && time - s.when < 0.3f && glm::length(pos - s.pos) < 1e-3f) return s;
+    const std::vector<dino::Ball>& bulk = dlib->bulk[a.kind];
+    s.when = time;
+    s.pos = pos;
+    s.c.resize(bulk.size());
+    s.r.resize(bulk.size());
+    s.first.clear();
+    s.run.clear();
+    for (size_t i = 0; i < bulk.size(); ++i) {
+      const dino::Ball& k = bulk[i];
+      if (s.first.empty() || bulk[(size_t)s.first.back()].bone != k.bone || (int)i - s.first.back() >= dino::kBulkRun)
+        s.first.push_back((int)i);
+      s.c[i] = vec3(a.pose.bone[k.bone] * vec4(k.c, 1.0f)) * a.scale;
+      s.r[i] = k.r * a.scale;
+    }
+    s.first.push_back((int)bulk.size());
+    for (size_t g = 0; g + 1 < s.first.size(); ++g) {
+      vec3 m(0);
+      for (int i = s.first[g]; i < s.first[g + 1]; ++i) m += s.c[(size_t)i];
+      m /= (float)(s.first[g + 1] - s.first[g]);
+      float rad = 0;
+      for (int i = s.first[g]; i < s.first[g + 1]; ++i) rad = std::max(rad, glm::length(s.c[(size_t)i] - m) + s.r[(size_t)i]);
+      s.run.push_back(vec4(m, rad));
+    }
+    return s;
+  };
+  // how deep the two sink into each other, A turned to ya, B to yb: the most any ball of one
+  // reaches into one of the other (< 0: the gap between them), looking no further than 'look'
+  struct Turn {
+    float c, s;
+    vec3 operator()(const vec3& v) const { return vec3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c); }
+  };
+  std::vector<vec3> wa, ra, rb;
+  auto depth = [&](const Stand& A, float ya, const Stand& B, float yb, float look) {
+    Turn ta{std::cos(ya), std::sin(ya)}, tb{std::cos(yb), std::sin(yb)};
+    ra.resize(A.run.size());
+    rb.resize(B.run.size());
+    for (size_t g = 0; g < A.run.size(); ++g) ra[g] = A.pos + ta(vec3(A.run[g]));
+    for (size_t g = 0; g < B.run.size(); ++g) rb[g] = B.pos + tb(vec3(B.run[g]));
+    float worst = -look;
+    for (size_t ga = 0; ga < A.run.size(); ++ga) {
+      bool walked = false;
+      for (size_t gb = 0; gb < B.run.size(); ++gb) {
+        float R = A.run[ga].w + B.run[gb].w + look;
+        vec3 d = ra[ga] - rb[gb];
+        if (glm::dot(d, d) > R * R) continue;
+        if (!walked) {  // (A's balls in this run, turned and placed)
+          walked = true;
+          wa.clear();
+          for (int i = A.first[ga]; i < A.first[ga + 1]; ++i) wa.push_back(A.pos + ta(A.c[(size_t)i]));
+        }
+        for (int j = B.first[gb]; j < B.first[gb + 1]; ++j) {
+          vec3 pb = B.pos + tb(B.c[(size_t)j]);
+          for (int i = A.first[ga]; i < A.first[ga + 1]; ++i) {
+            float r = A.r[(size_t)i] + B.r[(size_t)j];
+            vec3 e = wa[(size_t)(i - A.first[ga])] - pb;
+            float d2 = glm::dot(e, e);
+            if (d2 < (r + look) * (r + look)) worst = std::max(worst, r - std::sqrt(d2));
+          }
+        }
+      }
+    }
+    return worst;
+  };
+  // a couple of them each frame, in turn: each one turned as little as will keep it clear of its
+  // neighbours (as they are turned now), its own right first
+  // (the balls lie a little inside the skin: a couple of centimetres of air is kept between them)
+  const float gap = 0.02f, room = 0.035f, elbow = 0.06f, step = 0.15f;
+  int n = (int)rest.size();
+  for (int k = 0; k < std::min(n, 2); ++k) {
+    Actor& a = actors[(size_t)rest[(size_t)((clearNext + k) % n)]];
+    std::vector<int> near;
+    for (int id : rest) {
+      const Actor& b = actors[(size_t)id];
+      if (id != a.id && glm::length(level(a.pos - b.pos)) < reach[a.kind] + reach[b.kind]) near.push_back(id);
+    }
+    if (near.empty()) {
+      a.clearYaw = 0;
+      a.crowded = false;
+      continue;
+    }
+    for (int id : near) measure(id);
+    const Stand& A = measure(a.id);
+    auto worst = [&](float off, float look) {
+      float w = -look;
+      for (int id : near)
+        w = std::max(w, depth(A, a.baseYaw + off, stands[(size_t)id], actors[(size_t)id].baseYaw + actors[(size_t)id].clearYaw, look));
+      return w;
+    };
+    float now = worst(a.clearYaw, elbow);
+    if (now + gap <= 0.0f) {
+      // clear: back towards facing straight, if that leaves room to spare
+      if (a.clearYaw != 0.0f) {
+        float back = a.clearYaw - (a.clearYaw > 0 ? 1.0f : -1.0f) * std::min(std::fabs(a.clearYaw), step);
+        if (worst(back, room) + room <= 0.0f) a.clearYaw = back;
+      }
+    } else {
+      float best = a.clearYaw, bestW = 1e9f;
+      for (int i = 0; i <= 10; ++i) {
+        float off = (i & 1 ? -1.0f : 1.0f) * step * (float)((i + 1) / 2);  // 0, -0.15, +0.15, -0.3 ...
+        float w = worst(off, gap);
+        if (w < bestW - 1e-4f) {
+          bestW = w;
+          best = off;
+        }
+        if (w + gap <= 0.0f) break;
+      }
+      a.clearYaw = best;
+      now = worst(best, elbow);
+    }
+    a.crowded = now + elbow > 0.0f;
+  }
+  if (n > 0) clearNext = (clearNext + 2) % n;
+  // turning to it: slowly, shuffling round on the spot
+  for (int id : rest) {
+    Actor& a = actors[(size_t)id];
+    a.yawTarget = a.baseYaw + a.clearYaw;
+    a.yawRate = 3.0f;
+    if (std::fabs(wrapAngle(a.yawTarget - a.yaw)) > 0.03f) {
+      a.ctl.gait += dt * 4.0f;
+      a.ctl.stride = std::min(0.25f, a.ctl.stride + dt * 2.0f);
+    } else if (a.ctl.stride > 0.0f) {
+      a.ctl.stride = std::max(0.0f, a.ctl.stride - dt * 2.0f);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Animals that must not pass through each other (the dinosaurs' fights). Each is its bulk
 // (balls packed inside it, riding on its bones); wherever two of them overlap they are
 // shoved apart, the lighter one the more: along the board while both stand on it, any way
@@ -1283,6 +1454,7 @@ void World::keepApart() {
 
 void World::simulate(float dt) {
   updateFidgets(dt);
+  keepClear(dt);
   // dust motes drifting through the pool of light
   if (motes) {
     moteTimer -= dt;

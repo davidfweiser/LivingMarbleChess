@@ -1031,9 +1031,11 @@ extension Dino {
   /// the skin furthest out goes next, until they leave none of it more than a few millimetres
   /// out (or there are 'most' of them). Then the same, with smaller balls, for the horns and
   /// the beak, and for the frill, the sail and the crest (thin, but they must not pass through
-  /// anyone either). Thin skin, wings, claws and teeth are left out.
-  private static func fillBulk(_ m: Model, _ lo: vec3, _ hi: vec3, rmin: Float, most: Int) -> [DinoBall] {
-    let hc: Float = 0.02, hf: Float = 0.005, hf2: Float = 0.0025, rminThin: Float = 0.0025
+  /// anyone either); and the last of the tail and the beak, to their tips. Thin skin, wings,
+  /// claws and teeth are left out.
+  private static func fillBulk(_ m: Model, _ lo: vec3, _ hi: vec3, rmin: Float, most: Int,
+                               tips: [(vec3, vec3)]) -> [DinoBall] {
+    let hc: Float = 0.02, hf: Float = 0.004, hf2: Float = 0.002, rminThin: Float = 0.0015
     struct Cand {
       var p: vec3
       var r: Float
@@ -1074,7 +1076,7 @@ extension Dino {
             out.append(Cand(p: q, r: -d, ext: -d, seen: 0, trimmed: false))
             continue
           }
-          let f = 4
+          let f = 5
           for c in 0..<f {
             for b in 0..<f {
               for a in 0..<f {
@@ -1086,7 +1088,7 @@ extension Dino {
           }
           let mat = m.materialAt(q, nil).mat
           if mat == DMat.horn || mat == DMat.frill || mat == DMat.sail || mat == DMat.crest {
-            let f2 = 8
+            let f2 = 10
             for c in 0..<f2 {
               for b in 0..<f2 {
                 for a in 0..<f2 {
@@ -1210,7 +1212,28 @@ extension Dino {
     }
     fill(0, most, rmin, 0.003)
     fill(1, 200, rminThin, 0.002)  // horns, the beak
-    fill(2, 120, rminThin, 0.004)  // the frill, the sail, the crest
+    fill(2, 240, rminThin, 0.004)  // the frill, the sail, the crest
+    // the end of a tail or a beak tapers to a point, below the smallest of them: small balls are
+    // laid along it from the tip back towards the body (as thick as it is there), until they meet
+    // the balls already there
+    for (tip, inner) in tips {
+      let d = normalize(inner - tip)
+      let len = length(inner - tip)
+      var s: Float = 0
+      while s < len {
+        let p = tip + d * s
+        s += 0.008
+        let r = -m.eval(p) - 0.0003
+        if r < 0.0012 { continue }  // (the very point)
+        if out.contains(where: { length(p - $0.c) + r <= $0.r + 0.002 }) { break }
+        var v = Vertex(pos: p, nrm: vec3(0, 1, 0))
+        m.skin(&v)
+        let b1 = Int(floor(v.bones / 64 + 0.001))
+        let b0 = Int(v.bones - 64 * Float(b1) + 0.5)
+        let w0 = v.mat - floor(v.mat + 0.0001)
+        out.append(DinoBall(c: p, r: r, bone: w0 >= 0.499 ? b0 : b1))
+      }
+    }
     // in bone order, and each bone's in runs lying close together: the bounds of a run, or of a
     // bone, tell whom it may touch
     out = out.enumerated().sorted { $0.element.bone != $1.element.bone ? $0.element.bone < $1.element.bone : $0.offset < $1.offset }
@@ -1248,9 +1271,14 @@ extension Dino {
                  pieceRadius(kind))
       if d.z != 0 { shiftAll(&lib.asset[kind], d) }
       // its bulk (found where the model stands, then moved by d like the meshes)
+      // the tips: of the tail, and the pteranodon's beak (where the model stands, d behind)
+      var tips: [(vec3, vec3)] = []
+      if theropod(kind) { tips.append((theroJ(kind).tip - d, theroJ(kind).tail3 - d)) }
+      if quadruped(kind) { tips.append((quadJ(kind).tip - d, quadJ(kind).tail3 - d)) }
+      if kind == DAsset.knight { tips.append((toModel(kind, vec3(0, 0.466, 0.5)) - d, headPoint(kind) - d)) }
       let small = kind <= DAsset.knight
-      lib.bulk[kind] = fillBulk(m, toModel(kind, lo) - d, toModel(kind, hi) - d, rmin: small ? 0.0055 : 0.008,
-                                most: small ? 240 : 400).map { DinoBall(c: $0.c + d, r: $0.r, bone: $0.bone) }
+      lib.bulk[kind] = fillBulk(m, toModel(kind, lo) - d, toModel(kind, hi) - d, rmin: 0.003,
+                                most: small ? 240 : 400, tips: tips).map { DinoBall(c: $0.c + d, r: $0.r, bone: $0.bone) }
     }
     build(DAsset.pawn, raptorModel(), vec3(-0.11, -0.005, -0.52), vec3(0.11, 0.5, 0.36))
     tick("Hatching the raptors")

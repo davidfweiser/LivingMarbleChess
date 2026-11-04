@@ -1382,10 +1382,11 @@ static void orderRuns(std::vector<Ball>& v, int first, int end) {
 // biggest ball that fits there; the one over which the balls already taken leave the skin
 // furthest out goes next, until they leave none of it more than a few millimetres out (or there
 // are 'most' of them). Then the same, with smaller balls, for the horns and the beak, and for the
-// frill, the sail and the crest (thin, but they must not pass through anyone either). Thin skin,
-// wings, claws and teeth are left out.
-static std::vector<Ball> fillBulk(const Model& m, vec3 lo, vec3 hi, float rmin, int most) {
-  const float hc = 0.02f, hf = 0.005f, hf2 = 0.0025f, rminThin = 0.0025f;
+// frill, the sail and the crest (thin, but they must not pass through anyone either); and the
+// last of the tail and the beak, to their tips. Thin skin, wings, claws and teeth are left out.
+static std::vector<Ball> fillBulk(const Model& m, vec3 lo, vec3 hi, float rmin, int most,
+                                  const std::vector<std::pair<vec3, vec3>>& tips) {
+  const float hc = 0.02f, hf = 0.004f, hf2 = 0.002f, rminThin = 0.0015f;
   struct Cand {
     vec3 p;
     float r;
@@ -1419,7 +1420,7 @@ static std::vector<Ball> fillBulk(const Model& m, vec3 lo, vec3 hi, float rmin, 
           out.push_back({q, -d, -d, 0, false});
           continue;
         }
-        const int f = 4;
+        const int f = 5;
         for (int c = 0; c < f; ++c)
           for (int b = 0; b < f; ++b)
             for (int a = 0; a < f; ++a) {
@@ -1430,7 +1431,7 @@ static std::vector<Ball> fillBulk(const Model& m, vec3 lo, vec3 hi, float rmin, 
         int mat = m.materialAt(q, nullptr, nullptr);
         if (mat == DM_HORN || mat == DM_FRILL || mat == DM_SAIL || mat == DM_CREST) {
           std::vector<Cand>& thin = mat == DM_HORN ? slabRod[(size_t)k] : slabSheet[(size_t)k];
-          const int f2 = 8;
+          const int f2 = 10;
           for (int c = 0; c < f2; ++c)
             for (int b = 0; b < f2; ++b)
               for (int a = 0; a < f2; ++a) {
@@ -1524,7 +1525,30 @@ static std::vector<Ball> fillBulk(const Model& m, vec3 lo, vec3 hi, float rmin, 
   };
   fill(slab, most, rmin, 0.003f);
   fill(slabRod, 200, rminThin, 0.002f);    // horns, the beak
-  fill(slabSheet, 120, rminThin, 0.004f);  // the frill, the sail, the crest
+  fill(slabSheet, 240, rminThin, 0.004f);  // the frill, the sail, the crest
+  // the end of a tail or a beak tapers to a point, below the smallest of them: small balls are
+  // laid along it from the tip back towards the body (as thick as it is there), until they meet
+  // the balls already there
+  for (const auto& t : tips) {
+    vec3 d = glm::normalize(t.second - t.first);
+    float len = glm::length(t.second - t.first);
+    for (float s = 0.0f; s < len; s += 0.008f) {
+      vec3 p = t.first + d * s;
+      float r = -m.eval(p) - 0.0003f;
+      if (r < 0.0012f) continue;  // (the very point)
+      bool met = false;
+      for (const Ball& b : out)
+        if (glm::length(p - b.c) + r <= b.r + 0.002f) met = true;
+      if (met) break;
+      Vertex v;
+      v.pos = p;
+      m.skin(v);
+      int b1 = (int)std::floor(v.bones / 64.0f + 0.001f);
+      int b0 = (int)(v.bones - 64.0f * (float)b1 + 0.5f);
+      float w0 = v.mat - std::floor(v.mat + 0.0001f);
+      out.push_back({p, r, w0 >= 0.499f ? b0 : b1});
+    }
+  }
   // in bone order, and each bone's in runs of 16 close together (split again and again across
   // their longest side): the bounds of a run, or of a bone, tell whom it may touch
   std::stable_sort(out.begin(), out.end(), [](const Ball& a, const Ball& b) { return a.bone < b.bone; });
@@ -1555,8 +1579,12 @@ void buildLibrary(Library& lib, int quality, meshgen::BuildProgress* prog) {
     vec3 d(0, 0, animalShift(kind));
     if (d.z != 0.0f) shiftAll(m, d);
     buildAsset(lib.asset[kind], m, toModel(kind, lo), toModel(kind, hi), quality, 0, 0u, pieceHeight(kind), pieceRadius(kind));
-    lib.bulk[kind] = fillBulk(m, toModel(kind, lo), toModel(kind, hi), kind <= D_KNIGHT ? 0.0055f : 0.008f,
-                              kind <= D_KNIGHT ? 240 : 400);
+    // the tips: of the tail, and the pteranodon's beak
+    std::vector<std::pair<vec3, vec3>> tips;
+    if (theropod(kind)) tips.push_back({theroJ(kind).tip, theroJ(kind).tail3});
+    if (quadruped(kind)) tips.push_back({quadJ(kind).tip, quadJ(kind).tail3});
+    if (kind == D_KNIGHT) tips.push_back({toModel(kind, vec3(0, 0.466f, 0.5f)), headPoint(kind)});
+    lib.bulk[kind] = fillBulk(m, toModel(kind, lo), toModel(kind, hi), 0.003f, kind <= D_KNIGHT ? 240 : 400, tips);
   };
   build(D_PAWN, raptorModel(), vec3(-0.11f, -0.005f, -0.52f), vec3(0.11f, 0.5f, 0.36f));
   tick("Hatching the raptors");

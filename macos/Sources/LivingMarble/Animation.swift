@@ -96,6 +96,8 @@ final class Actor {
   var ghostOnDeath = false  // captured: comes back as a ghost once it has died
   var fidgetT: Float = -1, fidgetDir: Float = 1
   var fidgetType = 0
+  var clearYaw: Float = 0  // a dinosaur at rest turned this far aside, clear of its neighbours
+  var crowded = false      // ... and standing so close to one that it doesn't fidget
   // secondary motion
   var prevPos = vec3(0), vel = vec3(0), accS = vec3(0)
   var first = true
@@ -141,6 +143,7 @@ final class Actor {
     a.dissolveVel = dissolveVel
     a.ghostOnDeath = ghostOnDeath
     a.fidgetT = fidgetT; a.fidgetDir = fidgetDir; a.fidgetType = fidgetType
+    a.clearYaw = clearYaw; a.crowded = crowded
     a.prevPos = prevPos; a.vel = vel; a.accS = accS; a.first = first
     a.bx = bx; a.bz = bz; a.sq = sq; a.tw = tw
     a.rig = rig
@@ -513,6 +516,18 @@ final class World {
   func grip(_ holder: Int, _ held: Int, _ bone1: Int, _ bone2: Int) {
     grips.append(Grip(holder: holder, held: held, bone1: bone1, bone2: bone2))
   }
+  /// keepClear's measure of a dinosaur at rest: its balls about its feet, as if it faced yaw 0.
+  final class Stand {
+    var when: Float = -1  // (world time it was measured; < 0 never)
+    var pos = vec3(0)
+    var c: [vec3] = []
+    var r: [Float] = []
+    var run: [vec4] = []  // bounds of each run of them: centre, radius
+    var first: [Int] = []
+  }
+  var stands: [Stand] = []  // (by actor id)
+  var clearNext = 0         // (keepClear looks again at a couple of them each frame, in turn)
+  private var dinoReach = [Float](repeating: -1, count: 6)
 
   func at(_ square: Int) -> Actor? { actorAt[square] >= 0 ? actors[actorAt[square]] : nil }
   func puppet(_ id: Int) -> Puppet? { puppets.first { $0.id == id } }
@@ -558,6 +573,7 @@ final class World {
     puppets.removeAll()
     solids.removeAll()
     grips.removeAll()
+    stands.removeAll()
     for i in 0..<64 { actorAt[i] = -1 }
     fx.clear()
     chunks.removeAll()
@@ -983,6 +999,7 @@ final class World {
         tries -= 1
         let a = actors[Int(fx.rnd() * Float(actors.count)) % actors.count]
         if !a.alive || !a.visible || a.fidgetT >= 0 || a.id == excludeFidget || a.dissolve > 0.01 { continue }
+        if a.crowded { continue }  // (a look round, a swish of the tail would hit its neighbour)
         a.fidgetT = 0
         let r = fx.rnd()
         a.fidgetType = r < 0.5 ? 0 : (r < 0.78 ? 1 : 2)
@@ -1390,6 +1407,7 @@ final class World {
 
   func simulate(_ dt: Float) {
     updateFidgets(dt)
+    keepClear(dt)
     // dust motes drifting through the pool of light
     if motes {
       moteTimer -= dt
@@ -1443,6 +1461,169 @@ final class World {
     rings.removeAll { $0.life <= 0 }
     lights.removeAll { $0.life <= 0 }
     props.removeAll { !$0.alive }
+  }
+
+  /// Dinosaurs at rest on neighbouring squares: one whose head, tail or sail would reach into a
+  /// neighbour turns a little aside (to its own right if that will do), shuffling round on the
+  /// spot, and back again once there is room. Only an animal standing on its square that nothing
+  /// else is turning (its target the way it faces there, as last set here) is turned.
+  private func keepClear(_ dt: Float) {
+    func resting(_ a: Actor) -> Bool {
+      if !a.alive || !a.visible || a.set != 4 || a.kind < 0 || a.kind > 5 || a.square < 0 || a.dissolve > 0.01 { return false }
+      if a.pos.y > 0.005 || abs(a.tilt.w) < 0.9999 || length(flat(a.pos) - squareCenter(a.square)) > 0.02 { return false }
+      if a.pose.count <= 0 || dlib.bulk[a.kind].isEmpty { return false }
+      if solids.contains(where: { !$0.puppet && $0.id == a.id }) { return false }  // (fighting)
+      return abs(wrapAngle(a.yawTarget - a.baseYaw - a.clearYaw)) < 1e-3  // (nothing else turning it)
+    }
+    // how far an animal's balls reach from its feet, along the board
+    for k in 0..<6 where dinoReach[k] < 0 && !dlib.bulk[k].isEmpty {
+      var m: Float = 0
+      for b in dlib.bulk[k] { m = max(m, length(vec2(b.c.x, b.c.z)) + b.r) }
+      dinoReach[k] = m + 0.1  // (as it moves)
+    }
+    while stands.count < actors.count { stands.append(Stand()) }
+    var rest: [Int] = []
+    for a in actors {
+      if resting(a) {
+        rest.append(a.id)
+      } else {
+        if a.set == 4 { a.clearYaw = 0 }
+        a.crowded = false
+        stands[a.id].when = -1
+      }
+    }
+    // measured again a few times a second (it breathes, its tail sways), or when it has moved
+    func measure(_ id: Int) -> Stand {
+      let a = actors[id]
+      let s = stands[id]
+      let pos = a.pos + vec3(0, a.bob * 0.3, 0)
+      if s.when >= 0 && time - s.when < 0.3 && length(pos - s.pos) < 1e-3 { return s }
+      let bulk = dlib.bulk[a.kind]
+      s.when = time
+      s.pos = pos
+      s.c.removeAll(keepingCapacity: true)
+      s.r.removeAll(keepingCapacity: true)
+      s.first.removeAll(keepingCapacity: true)
+      s.run.removeAll(keepingCapacity: true)
+      for (i, k) in bulk.enumerated() {
+        if s.first.isEmpty || bulk[s.first[s.first.count - 1]].bone != k.bone || i - s.first[s.first.count - 1] >= Dino.bulkRun {
+          s.first.append(i)
+        }
+        s.c.append(vec3(a.pose.bone[k.bone] * vec4(k.c, 1)) * a.scale)
+        s.r.append(k.r * a.scale)
+      }
+      s.first.append(bulk.count)
+      for g in 0..<(s.first.count - 1) {
+        var m = vec3(0)
+        for i in s.first[g]..<s.first[g + 1] { m += s.c[i] }
+        m /= Float(s.first[g + 1] - s.first[g])
+        var rad: Float = 0
+        for i in s.first[g]..<s.first[g + 1] { rad = max(rad, length(s.c[i] - m) + s.r[i]) }
+        s.run.append(vec4(m, rad))
+      }
+      return s
+    }
+    // how deep the two sink into each other, A turned to ya, B to yb: the most any ball of one
+    // reaches into one of the other (< 0: the gap between them), looking no further than 'look'
+    var wa: [vec3] = [], ra: [vec3] = [], rb: [vec3] = []
+    func depth(_ A: Stand, _ ya: Float, _ B: Stand, _ yb: Float, _ look: Float) -> Float {
+      let ca = cos(ya), sa = sin(ya), cb = cos(yb), sb = sin(yb)
+      func ta(_ v: vec3) -> vec3 { vec3(v.x * ca + v.z * sa, v.y, -v.x * sa + v.z * ca) }
+      func tb(_ v: vec3) -> vec3 { vec3(v.x * cb + v.z * sb, v.y, -v.x * sb + v.z * cb) }
+      ra.removeAll(keepingCapacity: true)
+      rb.removeAll(keepingCapacity: true)
+      for g in A.run { ra.append(A.pos + ta(g.xyz)) }
+      for g in B.run { rb.append(B.pos + tb(g.xyz)) }
+      var worst = -look
+      for ga in 0..<A.run.count {
+        var walked = false
+        for gb in 0..<B.run.count {
+          let R = A.run[ga].w + B.run[gb].w + look
+          let d = ra[ga] - rb[gb]
+          if simd_dot(d, d) > R * R { continue }
+          if !walked {  // (A's balls in this run, turned and placed)
+            walked = true
+            wa.removeAll(keepingCapacity: true)
+            for i in A.first[ga]..<A.first[ga + 1] { wa.append(A.pos + ta(A.c[i])) }
+          }
+          for j in B.first[gb]..<B.first[gb + 1] {
+            let pb = B.pos + tb(B.c[j])
+            for i in A.first[ga]..<A.first[ga + 1] {
+              let r = A.r[i] + B.r[j]
+              let e = wa[i - A.first[ga]] - pb
+              let d2 = simd_dot(e, e)
+              if d2 < (r + look) * (r + look) { worst = max(worst, r - d2.squareRoot()) }
+            }
+          }
+        }
+      }
+      return worst
+    }
+    // a couple of them each frame, in turn: each one turned as little as will keep it clear of
+    // its neighbours (as they are turned now), its own right first
+    // (the balls lie a little inside the skin: a couple of centimetres of air is kept between them)
+    let gap: Float = 0.02, room: Float = 0.035, elbow: Float = 0.06, step: Float = 0.15
+    let n = rest.count
+    for k in 0..<min(n, 2) {
+      let a = actors[rest[(clearNext + k) % n]]
+      var near: [Int] = []
+      for id in rest where id != a.id {
+        let b = actors[id]
+        if length(flat(a.pos - b.pos)) < dinoReach[a.kind] + dinoReach[b.kind] { near.append(id) }
+      }
+      if near.isEmpty {
+        a.clearYaw = 0
+        a.crowded = false
+        continue
+      }
+      for id in near { _ = measure(id) }
+      let A = measure(a.id)
+      func worst(_ off: Float, _ look: Float) -> Float {
+        var w = -look
+        for id in near {
+          w = max(w, depth(A, a.baseYaw + off, stands[id], actors[id].baseYaw + actors[id].clearYaw, look))
+        }
+        return w
+      }
+      var now = worst(a.clearYaw, elbow)
+      if now + gap <= 0 {
+        // clear: back towards facing straight, if that leaves room to spare
+        if a.clearYaw != 0 {
+          let toward: Float = a.clearYaw > 0 ? 1 : -1
+          let back = a.clearYaw - toward * min(abs(a.clearYaw), step)
+          if worst(back, room) + room <= 0 { a.clearYaw = back }
+        }
+      } else {
+        var best = a.clearYaw
+        var bestW: Float = 1e9
+        for i in 0...10 {
+          let sign: Float = (i & 1) == 1 ? -1 : 1
+          let off = sign * step * Float((i + 1) / 2)  // 0, -0.15, +0.15, -0.3 ...
+          let w = worst(off, gap)
+          if w < bestW - 1e-4 {
+            bestW = w
+            best = off
+          }
+          if w + gap <= 0 { break }
+        }
+        a.clearYaw = best
+        now = worst(best, elbow)
+      }
+      a.crowded = now + elbow > 0
+    }
+    if n > 0 { clearNext = (clearNext + 2) % n }
+    // turning to it: slowly, shuffling round on the spot
+    for id in rest {
+      let a = actors[id]
+      a.yawTarget = a.baseYaw + a.clearYaw
+      a.yawRate = 3
+      if abs(wrapAngle(a.yawTarget - a.yaw)) > 0.03 {
+        a.ctl.gait += dt * 4
+        a.ctl.stride = min(0.25, a.ctl.stride + dt * 2)
+      } else if a.ctl.stride > 0 {
+        a.ctl.stride = max(0, a.ctl.stride - dt * 2)
+      }
+    }
   }
 
   /// Animals that must not pass through each other (the dinosaurs' fights). Each is its bulk

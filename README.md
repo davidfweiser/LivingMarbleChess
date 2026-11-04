@@ -410,7 +410,10 @@ raptors' feathers shimmer green and purple).
 
 They breathe, look about, sniff the air, yawn and swish their tails; at rest a
 tail curls to one side (slowly shifting from side to side), and it straightens
-out behind as they walk. Heads bob as they walk, the feet stay flat on the board
+out behind as they walk. Standing on neighbouring squares they keep out of each
+other's way: one whose head, tail or sail would reach into its neighbour turns a
+little aside (shuffling round on the spot) and turns back once there is room,
+and while it stands that close it doesn't look round or swish its tail. Heads bob as they walk, the feet stay flat on the board
 as they bear the weight, and the lowest foot always stays on the board. The
 dinosaurs fight back: a victim threatens, lunges and snaps at its attacker.
 The fallen don't shatter: they stagger, their legs give way and they fall on
@@ -748,7 +751,7 @@ across the short side), with 4× instead of 8× MSAA.
 | `textures.*` | Bakes the inlaid wooden board (grain, pores, seams, brass, lettering) and 3D noise |
 | `shaders.cpp` | All GLSL: PBR, PCSS, marble, lacquer, IBL generation, SSAO, DoF, bloom, tone mapping |
 | `renderer.*` | Render passes: shadow → reflection → prepass → SSAO → MSAA HDR → DoF → bloom → composite |
-| `animation.*` | The living-piece rig, rigid-body debris, props, lights, cinematic camera, the ghosts; fighting dinosaurs kept from passing through each other |
+| `animation.*` | The living-piece rig, rigid-body debris, props, lights, cinematic camera, the ghosts; dinosaurs kept from passing through each other (fighting, or standing side by side) |
 | `battle.*`, `battle_kit.h` | Choreography for moves, castling, promotion, checkmate and the marble battles |
 | `battle_medieval.cpp` | The medieval army's moves, castling, checkmate and its 18 battles |
 | `battle_alien.cpp` | The aliens' moves, castling, checkmate and their 18 battles |
