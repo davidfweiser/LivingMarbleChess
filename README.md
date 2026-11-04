@@ -413,8 +413,9 @@ tail curls to one side (slowly shifting from side to side), and it straightens
 out behind as they walk. Standing on neighbouring squares they keep out of each
 other's way: one whose head, tail or sail would reach into its neighbour turns a
 little aside (shuffling round on the spot) and turns back once there is room,
-and while it stands that close it doesn't look round or swish its tail. Heads bob as they walk, the feet stay flat on the board
-as they bear the weight, and the lowest foot always stays on the board. The
+and while it stands that close it doesn't look round or swish its tail.
+Heads bob as they walk, the feet stay flat on the board as they bear the
+weight, and the lowest foot always stays on the board. The
 dinosaurs fight back: a victim threatens, lunges and snaps at its attacker.
 The fallen don't shatter: they stagger, their legs give way and they fall on
 their sides - or are knocked flying, or flung - and lie in a spreading pool of
